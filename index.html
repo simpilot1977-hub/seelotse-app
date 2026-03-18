@@ -1153,6 +1153,23 @@
     .fd-tide-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; }
     .fd-tide-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .fd-tide-name { font-weight: 700; font-size: 13px; color: var(--navy); }
+    /* ── Wind Widget ── */
+    .wind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 12px; }
+    .wind-station { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .wind-station-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 2px; align-self: flex-start; }
+    .wind-main { display: flex; align-items: center; gap: 14px; width: 100%; }
+    .wind-compass { flex-shrink: 0; }
+    .wind-data { flex: 1; }
+    .wind-speed-row { display: flex; align-items: baseline; gap: 6px; }
+    .wind-kn { font-size: 24px; font-weight: 800; color: var(--navy); line-height: 1; }
+    .wind-kn-unit { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    .wind-bft { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 50%; font-size: 13px; font-weight: 800; color: #fff; margin-left: 4px; }
+    .wind-dir-label { font-size: 13px; font-weight: 700; color: var(--navy); margin-top: 4px; }
+    .wind-gusts { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+    .wind-source { font-size: 9px; color: #94a3b8; align-self: flex-end; margin-top: 4px; }
+    .wind-badge-synop { background: #dcfce7; color: #166534; border-radius: 3px; padding: 1px 5px; font-size: 9px; font-weight: 700; }
+    .wind-badge-model { background: #fef9c3; color: #713f12; border-radius: 3px; padding: 1px 5px; font-size: 9px; font-weight: 700; }
+    .wind-err { color: var(--text-muted); font-size: 12px; text-align: center; padding: 16px; }
     .fd-tide-row { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; }
     .fd-tide-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--text-muted); min-width: 68px; }
     .fd-tide-val { font-size: 12px; color: var(--navy); }
@@ -1388,6 +1405,151 @@ function getElbeCurrent(ataDt, waypointKey) {
   else                     idx = Math.floor((offsetH - 0.25) / 0.25) + 27;
   idx = Math.max(0, Math.min(49, idx));
   return db.values[idx];
+}
+
+// ── Wind Widget ──────────────────────────────────────────────────────────────
+
+let _windRefreshTimer = null;
+
+function _msToKn(ms) { return ms * 1.94384; }
+
+function _msToBeaufort(ms) {
+  const bfts = [0.3,1.6,3.4,5.5,8.0,10.8,13.9,17.2,20.8,24.5,28.5,32.7];
+  for (let i = 0; i < bfts.length; i++) if (ms < bfts[i]) return i;
+  return 12;
+}
+
+function _bftColor(bft) {
+  if (bft <= 3) return '#16a34a';
+  if (bft <= 5) return '#ca8a04';
+  if (bft <= 7) return '#ea580c';
+  return '#dc2626';
+}
+
+function _degToCompass(deg) {
+  const d = ['N','NNO','NO','ONO','O','OSO','SO','SSO','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return d[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+}
+
+function _makeWindCompassSVG(deg, bft) {
+  const sz = 76, cx = sz/2, cy = sz/2, r = sz/2 - 10;
+  const col = _bftColor(bft);
+  // Arrow points DOWNWIND (toward deg+180), tail at deg position (upwind source)
+  const fromRad = ((deg - 90) * Math.PI / 180);
+  const toRad   = ((deg + 180 - 90) * Math.PI / 180);
+  const x1 = cx + Math.cos(fromRad) * r * 0.72;
+  const y1 = cy + Math.sin(fromRad) * r * 0.72;
+  const x2 = cx + Math.cos(toRad)   * r * 0.72;
+  const y2 = cy + Math.sin(toRad)   * r * 0.72;
+  const ticks = Array.from({length:16},(_,i) => {
+    const a = (i * 22.5 - 90) * Math.PI / 180;
+    const len = i%4===0 ? 6 : 3;
+    const sw  = i%4===0 ? 1.5 : 0.8;
+    const col2 = i%4===0 ? '#94a3b8' : '#cbd5e1';
+    return `<line x1="${cx+Math.cos(a)*(r-len)}" y1="${cy+Math.sin(a)*(r-len)}" x2="${cx+Math.cos(a)*r}" y2="${cy+Math.sin(a)*r}" stroke="${col2}" stroke-width="${sw}"/>`;
+  }).join('');
+  const lbls = [{a:0,t:'N'},{a:90,t:'O'},{a:180,t:'S'},{a:270,t:'W'}].map(({a,t}) => {
+    const lr = (a-90)*Math.PI/180;
+    return `<text x="${cx+Math.cos(lr)*(r-11)}" y="${cy+Math.sin(lr)*(r-11)}" text-anchor="middle" dominant-baseline="central" font-size="7.5" font-weight="800" fill="#64748b">${t}</text>`;
+  }).join('');
+  const uid = 'ah' + Math.random().toString(36).slice(2,7);
+  return `<svg viewBox="0 0 ${sz} ${sz}" width="${sz}" height="${sz}" style="overflow:visible">
+    <circle cx="${cx}" cy="${cy}" r="${r}" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+    ${ticks}${lbls}
+    <defs><marker id="${uid}" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto">
+      <polygon points="0 0,7 2.5,0 5" fill="${col}"/>
+    </marker></defs>
+    <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${col}" stroke-width="2.8" stroke-linecap="round" marker-end="url(#${uid})"/>
+    <circle cx="${x1}" cy="${y1}" r="3" fill="${col}" opacity="0.4"/>
+  </svg>`;
+}
+
+function _renderWindStation(name, ms, dirDeg, gustMs, badge, stationInfo) {
+  if (ms == null || dirDeg == null) {
+    return `<div class="wind-station"><div class="wind-station-name">${name}</div><div class="wind-err">Keine Daten</div></div>`;
+  }
+  const kn   = _msToKn(ms);
+  const bft  = _msToBeaufort(ms);
+  const col  = _bftColor(bft);
+  const comp = _degToCompass(dirDeg);
+  const svg  = _makeWindCompassSVG(dirDeg, bft);
+  const gustStr = gustMs != null ? `Böen: ${_msToKn(gustMs).toFixed(0)} kn` : '';
+  return `<div class="wind-station">
+    <div class="wind-station-name">${name}</div>
+    <div class="wind-main">
+      <div class="wind-compass">${svg}</div>
+      <div class="wind-data">
+        <div class="wind-speed-row">
+          <span class="wind-kn">${kn.toFixed(0)}</span>
+          <span class="wind-kn-unit">kn</span>
+          <span class="wind-bft" style="background:${col}">${bft}</span>
+        </div>
+        <div class="wind-dir-label">aus ${comp} (${Math.round(dirDeg)}°)</div>
+        ${gustStr ? `<div class="wind-gusts">${gustStr}</div>` : ''}
+      </div>
+    </div>
+    <div class="wind-source"><span class="${badge==='SYNOP'?'wind-badge-synop':'wind-badge-model'}">${badge}</span> ${stationInfo}</div>
+  </div>`;
+}
+
+async function fetchWindData() {
+  const inner = document.getElementById('ar-wind-inner');
+  const meta  = document.getElementById('ar-wind-meta');
+  const btn   = document.getElementById('ar-wind-refresh-btn');
+  if (!inner) return;
+  if (btn) btn.textContent = '⏳ Laden…';
+
+  const results = { cux: null, brb: null, bakeA: null };
+
+  await Promise.allSettled([
+    // Cuxhaven – echter DWD SYNOP (station 00891)
+    fetch('https://api.brightsky.dev/current_weather?dwd_station_id=00891')
+      .then(r => r.json())
+      .then(d => {
+        const w = d.weather;
+        results.cux = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp };
+      }).catch(() => {}),
+
+    // Brunsbüttel – Open-Meteo Modell (kein SYNOP verfügbar)
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=53.9196&longitude=9.1417&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=UTC')
+      .then(r => r.json())
+      .then(d => {
+        const c = d.current;
+        results.brb = { ms: c.wind_speed_10m, dir: c.wind_direction_10m, gust: c.wind_gusts_10m, ts: c.time };
+      }).catch(() => {}),
+
+    // Bake A – Leuchtturm Alte Weser (DWD 00102, nächste maritime SYNOP-Station)
+    fetch('https://api.brightsky.dev/current_weather?dwd_station_id=00102')
+      .then(r => r.json())
+      .then(d => {
+        const w = d.weather;
+        results.bakeA = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp };
+      }).catch(() => {})
+  ]);
+
+  const fmtTs = ts => {
+    if (!ts) return '';
+    try { const d = new Date(ts); return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr'; }
+    catch { return ''; }
+  };
+
+  inner.innerHTML =
+    _renderWindStation('Cuxhaven',
+      results.cux?.ms, results.cux?.dir, results.cux?.gust,
+      'SYNOP', 'DWD · ' + fmtTs(results.cux?.ts)) +
+    _renderWindStation('Brunsbüttel',
+      results.brb?.ms, results.brb?.dir, results.brb?.gust,
+      'Modell', 'DWD ICON · ' + fmtTs(results.brb?.ts)) +
+    _renderWindStation('Bake A',
+      results.bakeA?.ms, results.bakeA?.dir, results.bakeA?.gust,
+      'SYNOP', 'DWD LT Alte Weser · ' + fmtTs(results.bakeA?.ts));
+
+  if (meta) meta.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr · Quellen: DWD / Open-Meteo';
+  if (btn) btn.textContent = '↻ Aktualisieren';
+
+  // Auto-refresh alle 10 Minuten
+  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
+  _windRefreshTimer = setTimeout(() => { if (document.getElementById('ar-wind-inner')) fetchWindData(); }, 10 * 60 * 1000);
 }
 
 // ── Aktuelle Reise Hilfsfunktionen ───────────────────────────────────────────
@@ -4776,6 +4938,18 @@ function renderFahrtDashboard(entry) {
           </div>
         </div>
 
+        <!-- Wind Widget -->
+        <div class="fd-card" id="ar-wind-card">
+          <div class="fd-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+            <span>🌬️ Aktueller Wind</span>
+            <button onclick="fetchWindData()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);display:flex;align-items:center;gap:4px" id="ar-wind-refresh-btn">↻ Aktualisieren</button>
+          </div>
+          <div id="ar-wind-inner" class="wind-grid">
+            <div class="wind-err">Winddaten werden geladen…</div>
+          </div>
+          <div id="ar-wind-meta" style="text-align:right;font-size:9px;color:#94a3b8;margin-top:6px"></div>
+        </div>
+
         <!-- ETA Wegpunkte -->
         ${etaCardHtml}
 
@@ -4790,6 +4964,10 @@ function renderFahrtDashboard(entry) {
         </div>` : ''}
       </div>
     </div>`;
+
+  // Winddaten asynchron nachladen
+  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
+  setTimeout(() => fetchWindData(), 0);
 }
 
 /* ════════════════════════════════════════════
