@@ -1202,6 +1202,12 @@
     .ais-empty { text-align: center; padding: 20px; color: var(--text-muted); font-size: 13px; line-height: 1.6; }
     .ais-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-bottom: 10px; flex-wrap: wrap; }
     .ais-legend span { display: flex; align-items: center; gap: 4px; }
+    .ais-filter-bar { background: var(--blue-pale); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .ais-type-btn { font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--card-bg); cursor: pointer; font-family: inherit; color: var(--text); transition: background .15s; white-space: nowrap; }
+    .ais-type-btn.off { background: var(--bg); color: var(--text-muted); text-decoration: line-through; border-color: transparent; }
+    .ais-table th.sortable { cursor: pointer; user-select: none; }
+    .ais-table th.sortable:hover { color: var(--blue); }
+    .ais-table th.sort-active { color: var(--blue); }
     .wind-station { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 12px 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; overflow: hidden; }
     .wind-station-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 2px; align-self: flex-start; }
     .wind-main { display: flex; align-items: center; gap: 14px; width: 100%; }
@@ -4085,11 +4091,13 @@ function _aisShipType(t) {
 const _AIS_NAV = ['Fahrt','Ankern','Manövr.los','Eingeschr.','Tiefgang','Vertäut','Aufgelaufen','Fischerei','Segeln'];
 
 // ── AIS State ─────────────────────────────────────────────────────
-let _aisWs            = null;
-let _aisShips         = new Map();   // MMSI → Schiffsobjekt
-let _aisStatus        = 'off';
-let _aisRenderTimer   = null;
-let _aisRenderPending = false;
+let _aisWs              = null;
+let _aisShips           = new Map();   // MMSI → Schiffsobjekt
+let _aisStatus          = 'off';
+let _aisRenderTimer     = null;
+let _aisRenderPending   = false;
+let _aisInitialLoaded   = false;
+let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, sortIn: null, sortOut: null };
 
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
@@ -4232,7 +4240,11 @@ function _aisMsgIn(msg) {
     s.trackNm = _elbeNm(s.lat, s.lon);
   }
   _aisShips.set(mmsi, s);
-  if (!_aisRenderPending) { _aisRenderPending = true; setTimeout(() => { _aisRenderPending = false; _aisRenderTable(); }, 600); }
+  // Quick-render nur solange noch kein erster Ladevorgang abgeschlossen — danach nur 30s-Timer
+  if (!_aisInitialLoaded && !_aisRenderPending) {
+    _aisRenderPending = true;
+    setTimeout(() => { _aisRenderPending = false; _aisRenderTable(); }, 800);
+  }
 }
 
 function _aisUpdateBadge() {
@@ -4242,17 +4254,68 @@ function _aisUpdateBadge() {
   el.textContent = t; el.className = `ais-conn-status ${c}`;
 }
 
+// ── Filter & Sort ─────────────────────────────────────────────────
+function _aisEtaMs(s, wpKey) {
+  const wpNm = _etCum[ELBE_WP_IDX[wpKey]];
+  const rem  = s.dir === 'in' ? wpNm - s.trackNm : s.trackNm - wpNm;
+  if (rem < -2) return -1;             // passiert → ganz vorne
+  if (s.sog < 0.3) return Infinity;   // steht → ganz hinten
+  return rem / s.sog * 3600000;
+}
+function _aisFToggle(type) {
+  if (_aisFilter.hiddenTypes.has(type)) _aisFilter.hiddenTypes.delete(type);
+  else _aisFilter.hiddenTypes.add(type);
+  _aisRenderTable();
+}
+function _aisSetMinLen(v) {
+  _aisFilter.minLen = parseInt(v) || 0;
+  _aisRenderTable();
+}
+function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
+function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
+
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
   const container = document.getElementById('ais-table-container');
   if (!container) { aisDisconnect(); return; }   // Seite verlassen
   if (!_aisProxyUrl()) { _aisShowSetup(); return; }  // kein Proxy → Setup anzeigen
 
+  _aisInitialLoaded = true;
   const now    = Date.now();
-  const ships  = [..._aisShips.values()].filter(s => s.lat !== null && s.lon !== null);
-  const inList = ships.filter(s => s.dir === 'in' ).sort((a,b) => a.trackNm - b.trackNm);
-  const outList= ships.filter(s => s.dir === 'out').sort((a,b) => b.trackNm - a.trackNm);
-  const ancList= ships.filter(s => s.dir === 'stationary');
+
+  // Alle Typen die aktuell vorkommen (für Filter-Bar)
+  const allTypes = ['Frachter','Tanker','Fahrgast','Yacht','Schlepper','Fischer','Dienst','Sonstige'];
+
+  // Filter anwenden
+  function applyFilter(list) {
+    return list.filter(s => {
+      const tL = _aisShipType(s.shipType).l;
+      if (_aisFilter.hiddenTypes.has(tL)) return false;
+      if (_aisFilter.minLen > 0 && s.length < _aisFilter.minLen) return false;
+      return true;
+    });
+  }
+
+  const ships   = [..._aisShips.values()].filter(s => s.lat !== null && s.lon !== null);
+  const inRaw   = ships.filter(s => s.dir === 'in');
+  const outRaw  = ships.filter(s => s.dir === 'out');
+  const ancList = applyFilter(ships.filter(s => s.dir === 'stationary'));
+
+  // Sortierung einkommend
+  let inList = applyFilter(inRaw);
+  if (_aisFilter.sortIn) {
+    inList.sort((a,b) => _aisEtaMs(a, _aisFilter.sortIn) - _aisEtaMs(b, _aisFilter.sortIn));
+  } else {
+    inList.sort((a,b) => a.trackNm - b.trackNm);
+  }
+
+  // Sortierung ausgehend
+  let outList = applyFilter(outRaw);
+  if (_aisFilter.sortOut) {
+    outList.sort((a,b) => _aisEtaMs(a, _aisFilter.sortOut) - _aisEtaMs(b, _aisFilter.sortOut));
+  } else {
+    outList.sort((a,b) => b.trackNm - a.trackNm);
+  }
 
   function wpEtaCells(s, wps) {
     return wps.map(([k, lbl]) => {
@@ -4295,9 +4358,24 @@ function _aisRenderTable() {
   const inWps  = [['cuxhaven','Cuxhaven'],['brunsbuettel','Brunsbüttel'],['hamburg','Hamburg']];
   const outWps = [['brunsbuettel','Brunsbüttel'],['cuxhaven','Cuxhaven'],['racon','Elbe-Racon']];
 
-  let html = `<div class="ais-legend">
+  // ── Filter-Bar ──
+  const typeBtns = allTypes.map(t => {
+    const off = _aisFilter.hiddenTypes.has(t) ? ' off' : '';
+    return `<button class="ais-type-btn${off}" onclick="_aisFToggle('${t}')">${t}</button>`;
+  }).join('');
+  const lenOpts = [0,50,100,150,200].map(v => {
+    const sel = _aisFilter.minLen === v ? ' selected' : '';
+    return `<option value="${v}"${sel}>${v === 0 ? 'Alle' : '≥ '+v+' m'}</option>`;
+  }).join('');
+  let html = `<div class="ais-filter-bar">
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">Ausblenden:</span>
+    ${typeBtns}
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;margin-left:8px">Mindestlänge:</span>
+    <select onchange="_aisSetMinLen(this.value)" style="font-size:11px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit">${lenOpts}</select>
+  </div>`;
+  html += `<div class="ais-legend">
     <span>● Live-Update</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
-    <span style="margin-left:auto;color:#94a3b8">Gesamt: ${ships.length} Schiffe erfasst</span>
+    <span style="margin-left:auto;color:#94a3b8">Gesamt: ${ships.length} Schiffe · ${inList.length + outList.length + ancList.length} angezeigt</span>
   </div>`;
 
   // ── Einkommend ──
@@ -4306,9 +4384,14 @@ function _aisRenderTable() {
   if (!inList.length) {
     html += `<div class="ais-empty">Keine einkommenden Schiffe erkannt<br><small>Racon → Cuxhaven → Brunsbüttel → Hamburg</small></div>`;
   } else {
+    const siC = _aisFilter.sortIn==='cuxhaven'      ? ' sort-active' : '';
+    const siB = _aisFilter.sortIn==='brunsbuettel'  ? ' sort-active' : '';
+    const siH = _aisFilter.sortIn==='hamburg'        ? ' sort-active' : '';
     html += `<table class="ais-table"><thead><tr>
       <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
-      <th>ETA Cux</th><th>ETA Brb</th><th>ETA HH</th>
+      <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
+      <th class="sortable${siB}" onclick="_aisSortIn('brunsbuettel')">ETA Brb${siB?' ▲':' ⇅'}</th>
+      <th class="sortable${siH}" onclick="_aisSortIn('hamburg')">ETA HH${siH?' ▲':' ⇅'}</th>
     </tr></thead><tbody>${inList.map(s => shipRow(s, inWps)).join('')}</tbody></table>`;
   }
   html += '</div>';
@@ -4319,9 +4402,14 @@ function _aisRenderTable() {
   if (!outList.length) {
     html += `<div class="ais-empty">Keine ausgehenden Schiffe erkannt<br><small>Hamburg → Brunsbüttel → Cuxhaven → Elbe-Racon</small></div>`;
   } else {
+    const soB = _aisFilter.sortOut==='brunsbuettel' ? ' sort-active' : '';
+    const soC = _aisFilter.sortOut==='cuxhaven'     ? ' sort-active' : '';
+    const soR = _aisFilter.sortOut==='racon'         ? ' sort-active' : '';
     html += `<table class="ais-table"><thead><tr>
       <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
-      <th>ETA Brb</th><th>ETA Cux</th><th>ETA Racon</th>
+      <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
+      <th class="sortable${soC}" onclick="_aisSortOut('cuxhaven')">ETA Cux${soC?' ▲':' ⇅'}</th>
+      <th class="sortable${soR}" onclick="_aisSortOut('racon')">ETA Racon${soR?' ▲':' ⇅'}</th>
     </tr></thead><tbody>${outList.map(s => shipRow(s, outWps)).join('')}</tbody></table>`;
   }
   html += '</div>';
@@ -4354,6 +4442,8 @@ function _aisRenderTable() {
 function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
+  _aisInitialLoaded = false;
+  _aisFilter = { hiddenTypes: new Set(), minLen: 0, sortIn: null, sortOut: null };
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
