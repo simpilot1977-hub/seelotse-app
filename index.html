@@ -1706,7 +1706,27 @@ function renderAstroDashboard() {
     </div>`;
 }
 
-let _pressureHours = 24;
+const WEATHER_STATIONS = {
+  helgoland:    { label: 'Helgoland',    apiParam: 'dwd_station_id=01964' },
+  cuxhaven:     { label: 'Cuxhaven',     apiParam: 'dwd_station_id=00891' },
+  brunsbuettel: { label: 'Brunsbüttel',  apiParam: 'lat=53.9196&lon=9.1417' },
+  hamburg:      { label: 'Hamburg',      apiParam: 'lat=53.545&lon=9.966'  },
+};
+
+let _pressureHours   = 24;
+let _pressureStation = 'cuxhaven';
+
+function selectPressureStation(key) {
+  _pressureStation = key;
+  // Update dropdown display
+  const sel = document.getElementById('pstation-select');
+  if (sel) sel.value = key;
+  // Update card title
+  const title = document.getElementById('pchart-title');
+  if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[key]?.label || key}`;
+  fetchPressureHistory();
+}
+
 async function fetchPressureHistory(hours) {
   _pressureHours = hours || _pressureHours;
   const el = document.getElementById('ar-pressure-inner');
@@ -1717,12 +1737,13 @@ async function fetchPressureHistory(hours) {
     if (b) { b.style.background = h === _pressureHours ? 'var(--blue)' : 'var(--bg)'; b.style.color = h === _pressureHours ? '#fff' : ''; b.style.borderColor = h === _pressureHours ? 'var(--blue)' : 'var(--border)'; }
   });
   el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Laden…</span>';
+  const station = WEATHER_STATIONS[_pressureStation] || WEATHER_STATIONS.cuxhaven;
   try {
     const now = new Date();
     const from = new Date(now.getTime() - _pressureHours * 3600000);
     const pad = n => String(n).padStart(2,'0');
     const fmtISO = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
-    const url = `https://api.brightsky.dev/weather?dwd_station_id=00891&date=${encodeURIComponent(fmtISO(from))}&last_date=${encodeURIComponent(fmtISO(now))}&tz=UTC`;
+    const url = `https://api.brightsky.dev/weather?${station.apiParam}&date=${encodeURIComponent(fmtISO(from))}&last_date=${encodeURIComponent(fmtISO(now))}&tz=UTC`;
     const data = await fetch(url).then(r => r.json());
     const allPts = (data.weather || []).map(w => ({
       t: new Date(w.timestamp),
@@ -3956,7 +3977,15 @@ function renderWetterPage() {
         <!-- Verlaufskurven -->
         <div id="ar-pressure-card" style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Verlaufskurven · Cuxhaven</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <div id="pchart-title" style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Verlaufskurven · Cuxhaven</div>
+              <select id="pstation-select" onchange="selectPressureStation(this.value)" style="font-size:11px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;cursor:pointer">
+                <option value="helgoland">Helgoland</option>
+                <option value="cuxhaven" selected>Cuxhaven</option>
+                <option value="brunsbuettel">Brunsbüttel</option>
+                <option value="hamburg">Hamburg</option>
+              </select>
+            </div>
             <div style="display:flex;gap:6px">
               <button onclick="fetchPressureHistory(6)"  id="pbtn-6"  style="${btnStyle}">6h</button>
               <button onclick="fetchPressureHistory(12)" id="pbtn-12" style="${btnStyle}">12h</button>
@@ -3969,6 +3998,11 @@ function renderWetterPage() {
         </div>
       </div>
     </div>`;
+  // Sync dropdown to current station state
+  const sel = document.getElementById('pstation-select');
+  if (sel) sel.value = _pressureStation;
+  const title = document.getElementById('pchart-title');
+  if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
   setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
 }
