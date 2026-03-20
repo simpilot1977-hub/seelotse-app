@@ -4092,23 +4092,99 @@ let _aisRenderTimer   = null;
 let _aisRenderPending = false;
 
 // ── WebSocket ─────────────────────────────────────────────────────
+// aisstream.io blockiert direkte Browser-Verbindungen (CORS).
+// Lösung: Cloudflare Worker als Proxy (URL in localStorage speichern).
+function _aisProxyUrl() {
+  return (localStorage.getItem('ais_proxy_url') || '').trim();
+}
+function _aisSaveProxy(url) {
+  localStorage.setItem('ais_proxy_url', url.trim());
+}
+
 function aisConnect() {
+  const proxyUrl = _aisProxyUrl();
+  if (!proxyUrl) { _aisShowSetup(); return; }
   if (_aisWs && (_aisWs.readyState === 0 || _aisWs.readyState === 1)) return;
   _aisStatus = 'connecting';
   _aisUpdateBadge();
-  _aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
-  _aisWs.onopen = () => {
-    _aisWs.send(JSON.stringify({
-      APIKey: 'cef13862ef8e366459beaafc142f50bc4ab60d77',
-      BoundingBoxes: [[[53.4, 8.0], [54.1, 10.2]]],
-      FilterMessageTypes: ['PositionReport','ShipStaticAndVoyageRelatedData','ExtendedClassBPositionReport']
-    }));
-    _aisStatus = 'live';
-    _aisUpdateBadge();
-  };
+  // Verbindung über Cloudflare Worker Proxy (aisstream.io blockiert Browser direkt)
+  const wsUrl = proxyUrl.replace(/^https?:\/\//, m => m === 'https://' ? 'wss://' : 'ws://');
+  _aisWs = new WebSocket(wsUrl.startsWith('ws') ? wsUrl : 'wss://' + wsUrl);
+  _aisWs.onopen  = () => { _aisStatus = 'live'; _aisUpdateBadge(); };
   _aisWs.onmessage = e => { try { _aisMsgIn(JSON.parse(e.data)); } catch {} };
   _aisWs.onerror   = ()  => { _aisStatus = 'error'; _aisUpdateBadge(); };
   _aisWs.onclose   = ()  => { if (_aisStatus !== 'off') { _aisStatus = 'error'; _aisUpdateBadge(); } };
+}
+
+function _aisShowSetup() {
+  const container = document.getElementById('ais-table-container'); if (!container) return;
+  container.innerHTML = `
+    <div style="max-width:560px;margin:0 auto;padding:8px 0">
+      <div style="background:var(--warn-bg);border:1.5px solid #f59e0b;border-radius:var(--r-md);padding:16px 20px;margin-bottom:16px">
+        <div style="font-weight:700;color:var(--warn);margin-bottom:6px">⚠️ Einmalige Einrichtung erforderlich</div>
+        <div style="font-size:12px;color:var(--warn);line-height:1.6">
+          aisstream.io blockiert direkte Browser-Verbindungen aus Sicherheitsgründen.
+          Ein kostenloser <strong>Cloudflare Worker</strong> als Proxy löst das Problem in ~3 Minuten.
+        </div>
+      </div>
+
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Anleitung (kostenlos, einmalig):</div>
+
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="background:var(--blue);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">1</div>
+          <div style="font-size:12px;line-height:1.5"><strong>Cloudflare-Account anlegen</strong> (falls noch nicht vorhanden):<br>
+            <a href="https://dash.cloudflare.com/sign-up" target="_blank" style="color:var(--blue)">dash.cloudflare.com/sign-up</a> — kostenlos, keine Kreditkarte
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="background:var(--blue);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">2</div>
+          <div style="font-size:12px;line-height:1.5"><strong>Neuen Worker erstellen:</strong><br>
+            Dashboard → <em>Workers &amp; Pages</em> → <em>Create Application</em> → <em>Create Worker</em>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="background:var(--blue);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">3</div>
+          <div style="font-size:12px;line-height:1.5"><strong>Worker-Code einfügen:</strong><br>
+            Den Inhalt der Datei <code style="background:var(--bg);padding:1px 4px;border-radius:3px">ais-proxy/worker.js</code> aus dem
+            <a href="https://github.com/simpilot1977-hub/seelotse-app/blob/main/ais-proxy/worker.js" target="_blank" style="color:var(--blue)">GitHub-Repository</a>
+            kopieren und in den Worker-Editor einfügen → <em>Save &amp; Deploy</em>
+          </div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div style="background:var(--blue);color:#fff;border-radius:50%;width:22px;height:22px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">4</div>
+          <div style="font-size:12px;line-height:1.5"><strong>Worker-URL hier eintragen:</strong><br>
+            Die URL sieht aus wie: <code style="background:var(--bg);padding:1px 4px;border-radius:3px">ais-proxy.IHR-NAME.workers.dev</code>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="ais-proxy-input" type="text" placeholder="ais-proxy.IHR-NAME.workers.dev"
+          style="flex:1;padding:8px 12px;font-size:13px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-family:inherit;background:var(--surface)"
+          value="${_aisProxyUrl()}">
+        <button onclick="_aisSaveAndConnect()" style="padding:8px 16px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);font-size:13px;font-weight:600;cursor:pointer">
+          Verbinden
+        </button>
+      </div>
+      <div id="ais-setup-err" style="font-size:11px;color:var(--danger);margin-top:6px;display:none"></div>
+    </div>`;
+}
+
+function _aisSaveAndConnect() {
+  const input = document.getElementById('ais-proxy-input');
+  const url = (input?.value || '').trim();
+  if (!url) {
+    const err = document.getElementById('ais-setup-err');
+    if (err) { err.textContent = 'Bitte Worker-URL eingeben.'; err.style.display = 'block'; }
+    return;
+  }
+  _aisSaveProxy(url);
+  aisDisconnect();
+  _aisShips.clear();
+  const container = document.getElementById('ais-table-container');
+  if (container) container.innerHTML = '<div class="ais-empty">Verbinde…</div>';
+  aisConnect();
 }
 
 function aisDisconnect() {
@@ -4286,11 +4362,11 @@ function goVerkehr() {
           AIS Live-Daten · Elbe-Racon → Cuxhaven → Brunsbüttel → Hamburg · ETA basiert auf aktueller SOG
         </div>
         <div id="ais-table-container">
-          <div class="ais-empty">AIS-Verbindung wird aufgebaut…<br><small>Schiffe erscheinen sobald erste Signale empfangen werden</small></div>
+          <div class="ais-empty">⟳ Verbindung wird aufgebaut…</div>
         </div>
       </div>
     </div>`;
-  aisConnect();
+  aisConnect();  // zeigt Setup-Guide wenn kein Proxy konfiguriert
   _aisRenderTimer = setInterval(_aisRenderTable, 30000);
 }
 
