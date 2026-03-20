@@ -4039,6 +4039,38 @@ const ELBE_WP_IDX = { racon: 0, cuxhaven: 4, brunsbuettel: 7, hamburg: 14 };
 const _etSeg = []; for (let i=0;i<ELBE_TRACK.length-1;i++) _etSeg.push(_hvNm(ELBE_TRACK[i].lat,ELBE_TRACK[i].lon,ELBE_TRACK[i+1].lat,ELBE_TRACK[i+1].lon));
 const _etCum = [0]; for (const d of _etSeg) _etCum.push(_etCum[_etCum.length-1]+d);
 
+// Stromkilometer ↔ Tracklänge (piecewise linear über Referenzpunkte)
+const _KM_REFS = () => [
+  [0,                                    755],   // Elbe Racon
+  [_etCum[ELBE_WP_IDX.cuxhaven],         726],   // Cuxhaven
+  [_etCum[ELBE_WP_IDX.brunsbuettel],     695],   // Brunsbüttel
+  [_etCum[ELBE_WP_IDX.hamburg],          620],   // Hamburg
+];
+function _elbKm(nm) {
+  const refs = _KM_REFS();
+  for (let i = 0; i < refs.length-1; i++) {
+    const [n1,k1]=refs[i], [n2,k2]=refs[i+1];
+    if (nm <= n2) return k1 + (nm-n1)/(n2-n1)*(k2-k1);
+  }
+  return 620;
+}
+function _elbKmToNm(km) {
+  const refs = _KM_REFS();
+  for (let i = 0; i < refs.length-1; i++) {
+    const [n1,k1]=refs[i], [n2,k2]=refs[i+1];
+    if (km <= k1 && km >= k2) return n1 + (k1-km)/(k1-k2)*(n2-n1);
+  }
+  return km > 755 ? 0 : _etCum[ELBE_WP_IDX.hamburg];
+}
+// Benannte Wegpunkte auf der Unterelbe (Stromkilometer)
+const ELBE_KM_MARKS = [
+  {km:755,n:'Elbe Racon'}, {km:749,n:'Scharhörn'}, {km:738,n:'Neuwerk'},
+  {km:726,n:'Cuxhaven'},   {km:714,n:'Otterndorf'},{km:703,n:'Freiburg/Elbe'},
+  {km:695,n:'Brunsbüttel'},{km:681,n:'Glückstadt'},{km:662,n:'Stade'},
+  {km:650,n:'Stadersand'}, {km:638,n:'Wedel'},     {km:629,n:'Schulau'},
+  {km:625,n:'Blankenese'}, {km:620,n:'Hamburg'},
+];
+
 // Projiziert (lat,lon) auf die Elbe-Mittellinie → kum. Seemeilen von Racon
 function _elbeNm(lat, lon) {
   let best = Infinity, bestCum = 0;
@@ -4098,6 +4130,7 @@ let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
 let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
+let _aisCustomKm        = null;
 
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
@@ -4275,6 +4308,11 @@ function _aisToggleAnc() {
   _aisFilter.hideAnc = !_aisFilter.hideAnc;
   _aisRenderTable();
 }
+function _aisSetCustomKm(v) {
+  const n = parseInt(v);
+  _aisCustomKm = (!v || isNaN(n)) ? null : Math.max(620, Math.min(760, n));
+  _aisRenderTable();
+}
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
 
@@ -4334,14 +4372,31 @@ function _aisRenderTable() {
   }
 
   function posLabel(trackNm) {
-    const cux = _etCum[4], brb = _etCum[7], hh = _etCum[14];
-    if (trackNm < cux - 1)  return `${(cux - trackNm).toFixed(1)} sm vor Cux`;
-    if (trackNm < cux + 1)  return 'Cuxhaven';
-    if (trackNm < brb - 1)  return `Cux → Brb`;
-    if (trackNm < brb + 1)  return 'Brunsbüttel';
-    if (trackNm < hh  - 1)  return `Brb → Hamburg`;
-    return 'Hamburg';
+    const km = _elbKm(trackNm);
+    let best = null, bestD = 4;
+    for (const m of ELBE_KM_MARKS) {
+      const d = Math.abs(m.km - km);
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    const kmStr = `<span style="color:var(--text-muted);font-size:10px"> km ${Math.round(km)}</span>`;
+    return best ? `${best.n}${kmStr}` : kmStr;
   }
+
+  function customEtaCell(s) {
+    if (_aisCustomKm === null) return '<td class="ais-eta">—</td>';
+    const wpNm = _elbKmToNm(_aisCustomKm);
+    const rem  = s.dir === 'in' ? wpNm - s.trackNm : s.trackNm - wpNm;
+    if (rem < -2)  return `<td class="ais-eta" style="color:#16a34a">✓</td>`;
+    if (rem < 0.5) return `<td class="ais-eta soon">~jetzt</td>`;
+    const str = _etaStr(rem, s.sog);
+    return `<td class="ais-eta${rem < 3 ? ' soon' : ''}">${str}</td>`;
+  }
+
+  const customKmVal = _aisCustomKm !== null ? _aisCustomKm : '';
+  const customThInput = `<input type="number" min="620" max="755" placeholder="km" value="${customKmVal}"
+    oninput="_aisSetCustomKm(this.value)"
+    onclick="event.stopPropagation()"
+    style="width:44px;font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);font-family:inherit;text-align:center">`;
 
   function shipRow(s, wps) {
     const { l: tL, e: tE } = _aisShipType(s.shipType);
@@ -4357,6 +4412,7 @@ function _aisRenderTable() {
       <td class="ais-pos">${posLabel(s.trackNm)}</td>
       <td class="ais-sog">${sog}</td>
       ${wpEtaCells(s, wps)}
+      ${customEtaCell(s)}
     </tr>`;
   }
 
@@ -4401,6 +4457,7 @@ function _aisRenderTable() {
       <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
       <th class="sortable${siB}" onclick="_aisSortIn('brunsbuettel')">ETA Brb${siB?' ▲':' ⇅'}</th>
       <th class="sortable${siH}" onclick="_aisSortIn('hamburg')">ETA HH${siH?' ▲':' ⇅'}</th>
+      <th style="white-space:nowrap">ETA ${customThInput}</th>
     </tr></thead><tbody>${inList.map(s => shipRow(s, inWps)).join('')}</tbody></table>`;
   }
   html += '</div>';
@@ -4419,6 +4476,7 @@ function _aisRenderTable() {
       <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
       <th class="sortable${soC}" onclick="_aisSortOut('cuxhaven')">ETA Cux${soC?' ▲':' ⇅'}</th>
       <th class="sortable${soR}" onclick="_aisSortOut('racon')">ETA Racon${soR?' ▲':' ⇅'}</th>
+      <th style="white-space:nowrap">ETA ${customThInput}</th>
     </tr></thead><tbody>${outList.map(s => shipRow(s, outWps)).join('')}</tbody></table>`;
   }
   html += '</div>';
@@ -4453,6 +4511,7 @@ function goVerkehr() {
   _aisShips.clear();
   _aisInitialLoaded = false;
   _aisFilter = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
+  _aisCustomKm = null;
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
