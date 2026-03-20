@@ -1,25 +1,15 @@
 /**
  * Cloudflare Worker: AIS-Proxy für Seelotse-App
- *
- * Dieser Worker leitet WebSocket-Verbindungen vom Browser an aisstream.io weiter,
- * da aisstream.io direkte Browser-Verbindungen aus Sicherheitsgründen blockiert.
- *
- * Deployment:
- *   1. https://dash.cloudflare.com → Workers & Pages → Create Application → Create Worker
- *   2. Diesen Code einfügen und "Save & Deploy" klicken
- *   3. Die Worker-URL (z.B. ais-proxy.IHR-NAME.workers.dev) in der App eintragen
+ * Leitet Browser-WebSocket-Verbindungen an aisstream.io weiter.
+ * aisstream.io blockiert direkte Browser-Verbindungen (CORS).
  */
 
 const AIS_WS_URL  = 'wss://stream.aisstream.io/v0/stream';
 const AIS_API_KEY = 'cef13862ef8e366459beaafc142f50bc4ab60d77';
-
-// Elbe Bounding Box: Elbe-Racon → Hamburg
 const BOUNDING_BOX = [[53.4, 8.0], [54.1, 10.2]];
 
 export default {
-  async fetch(request) {
-    const url = new URL(request.url);
-
+  async fetch(request, env, ctx) {
     // CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, {
@@ -30,8 +20,8 @@ export default {
       });
     }
 
-    // Status-Endpunkt
-    if (url.pathname === '/' || url.pathname === '/status') {
+    // Status-Endpunkt (HTTP)
+    if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response(JSON.stringify({ status: 'ok', service: 'AIS-Proxy Seelotse' }), {
         headers: {
           'Content-Type': 'application/json',
@@ -40,49 +30,75 @@ export default {
       });
     }
 
-    // WebSocket-Upgrade
-    if (request.headers.get('Upgrade') !== 'websocket') {
-      return new Response('WebSocket-Verbindung erwartet', { status: 426 });
-    }
-
+    // WebSocket-Verbindung aufbauen
     const [browserSide, workerSide] = Object.values(new WebSocketPair());
     workerSide.accept();
 
-    // Verbindung zu aisstream.io aufbauen
+    // Outbound-Verbindung zu aisstream.io
     let aisWs;
     try {
       aisWs = new WebSocket(AIS_WS_URL);
     } catch (e) {
-      workerSide.close(1011, 'Fehler beim Verbinden mit aisstream.io');
+      console.error('[ais-proxy] WebSocket-Erstellung fehlgeschlagen:', e.message);
+      workerSide.close(1011, 'Verbindungsfehler');
       return new Response(null, { status: 101, webSocket: browserSide });
     }
 
-    aisWs.addEventListener('open', () => {
-      aisWs.send(JSON.stringify({
-        APIKey: AIS_API_KEY,
-        BoundingBoxes: [BOUNDING_BOX],
-        FilterMessageTypes: ['PositionReport', 'ShipStaticAndVoyageRelatedData', 'ExtendedClassBPositionReport'],
-      }));
+    // Promise das aufgelöst wird wenn eine Seite die Verbindung schliesst
+    // ctx.waitUntil hält den Worker am Leben solange die WS-Verbindungen aktiv sind
+    let msgCount = 0;
+    const done = new Promise((resolve) => {
+      // aisstream.io verbunden → Subscription senden
+      aisWs.addEventListener('open', () => {
+        console.log('[ais-proxy] aisstream.io OPEN — sende Subscription');
+        try {
+          const sub = JSON.stringify({
+            APIKey: AIS_API_KEY,
+            BoundingBoxes: [BOUNDING_BOX],
+            FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'ExtendedClassBPositionReport'],
+          });
+          aisWs.send(sub);
+          console.log('[ais-proxy] Subscription gesendet:', sub.substring(0, 80));
+        } catch (e) { console.error('[ais-proxy] Subscription Fehler:', e.message); }
+      });
+
+      // aisstream.io → Browser weiterleiten
+      aisWs.addEventListener('message', event => {
+        msgCount++;
+        if (msgCount <= 3) console.log('[ais-proxy] AIS msg #' + msgCount + ':', String(event.data).substring(0, 100));
+        try {
+          if (workerSide.readyState === 1) workerSide.send(event.data);
+        } catch {}
+      });
+
+      aisWs.addEventListener('error', (e) => {
+        console.error('[ais-proxy] aisstream.io ERROR:', e.message || JSON.stringify(e));
+        try { workerSide.close(1011, 'aisstream.io Fehler'); } catch {}
+        resolve();
+      });
+
+      aisWs.addEventListener('close', (e) => {
+        console.log('[ais-proxy] aisstream.io CLOSE code=' + e.code + ' reason=' + e.reason + ' msgs=' + msgCount);
+        try { workerSide.close(1000); } catch {}
+        resolve();
+      });
+
+      // Browser → aisstream.io (falls der Browser Nachrichten sendet)
+      workerSide.addEventListener('message', event => {
+        try {
+          if (aisWs.readyState === 1) aisWs.send(event.data);
+        } catch {}
+      });
+
+      workerSide.addEventListener('close', () => {
+        console.log('[ais-proxy] Browser CLOSE — schließe aisstream.io. msgs=' + msgCount);
+        try { aisWs.close(); } catch {}
+        resolve();
+      });
     });
 
-    // aisstream → Browser
-    aisWs.addEventListener('message', event => {
-      try {
-        if (workerSide.readyState === WebSocket.READY_STATE_OPEN) {
-          workerSide.send(event.data);
-        }
-      } catch {}
-    });
-
-    aisWs.addEventListener('error',  () => { try { workerSide.close(1011, 'aisstream Fehler'); } catch {} });
-    aisWs.addEventListener('close',  () => { try { workerSide.close(); } catch {} });
-
-    // Browser → aisstream (Steuernachrichten weiterleiten)
-    workerSide.addEventListener('message', event => {
-      try { if (aisWs.readyState === WebSocket.READY_STATE_OPEN) aisWs.send(event.data); } catch {}
-    });
-    workerSide.addEventListener('close', () => { try { aisWs.close(); } catch {} });
-    workerSide.addEventListener('error', () => { try { aisWs.close(); } catch {} });
+    // Worker am Leben halten solange WebSocket-Verbindungen aktiv sind
+    ctx.waitUntil(done);
 
     return new Response(null, {
       status: 101,

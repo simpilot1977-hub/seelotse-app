@@ -4093,9 +4093,10 @@ let _aisRenderPending = false;
 
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
-// Lösung: Cloudflare Worker als Proxy (URL in localStorage speichern).
+// Lösung: Cloudflare Worker als Proxy — deployed auf seelotse.workers.dev
+const _AIS_PROXY_DEFAULT = 'ais-proxy.seelotse.workers.dev';
 function _aisProxyUrl() {
-  return (localStorage.getItem('ais_proxy_url') || '').trim();
+  return (localStorage.getItem('ais_proxy_url') || _AIS_PROXY_DEFAULT).trim();
 }
 function _aisSaveProxy(url) {
   localStorage.setItem('ais_proxy_url', url.trim());
@@ -4207,13 +4208,14 @@ function _aisMsgIn(msg) {
       s.sog = pr.Sog ?? 0;  s.cog = pr.Cog ?? 0;
       s.navStatus = pr.NavigationalStatus ?? s.navStatus;
     }
-  } else if (msg.MessageType === 'ShipStaticAndVoyageRelatedData') {
-    const sv = msg.Message?.ShipStaticAndVoyageRelatedData;
+  } else if (msg.MessageType === 'ShipStaticData') {
+    const sv = msg.Message?.ShipStaticData;
     if (sv) {
-      if (meta.ShipName) s.name = meta.ShipName.trim();
-      s.shipType   = sv.Type    ?? s.shipType;
-      s.draught    = (sv.Draught ?? 0) / 10;
-      s.length     = (sv.DimensionA ?? 0) + (sv.DimensionB ?? 0);
+      const n = (sv.Name || meta.ShipName || '').trim();
+      if (n) s.name = n;
+      s.shipType   = sv.Type ?? s.shipType;
+      s.draught    = sv.MaximumStaticDraught ?? s.draught;
+      s.length     = (sv.Dimension?.A ?? 0) + (sv.Dimension?.B ?? 0);
       s.destination = (sv.Destination ?? '').trim().replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ');
     }
   }
