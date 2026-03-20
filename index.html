@@ -1756,50 +1756,67 @@ async function fetchPressureHistory(hours) {
     const ptsTempDew  = allPts.filter(w => w.temp != null);
     const ptsVis      = allPts.filter(w => w.vis != null);
     if (!ptsPressure.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
+    const tRange = { min: from.getTime(), max: now.getTime() };
     el.style.display = 'grid';
     el.style.gridTemplateColumns = 'repeat(2, 1fr)';
     el.style.gap = '16px';
     el.innerHTML =
-      _renderPressureChart(ptsPressure) +
-      (ptsTempDew.length ? _renderTempDewChart(ptsTempDew) : '<div></div>') +
-      (ptsVis.length ? _renderVisibilityChart(ptsVis) : '<div></div>');
+      _renderPressureChart(ptsPressure, tRange) +
+      (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '<div></div>') +
+      (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>');
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
 }
 
-function _renderPressureChart(pts) {
-  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 28;
+// Generate evenly-spaced x-axis time labels across the full requested range
+function _makeXLabels(tMin, tMax, W, padL, padR, H, padB) {
+  const spanH = (tMax - tMin) / 3600000;
+  const count = 6;
+  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
+  const multiDay = spanH > 24;
+  let labels = '';
+  for (let i = 0; i <= count; i++) {
+    const t = tMin + (tMax - tMin) * i / count;
+    const d = new Date(t);
+    const time = d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+    const lbl = multiDay
+      ? d.toLocaleDateString('de-DE', {weekday:'short'}) + '\n' + time
+      : time;
+    if (multiDay) {
+      const x = xOf(t).toFixed(1);
+      labels += `<text x="${x}" y="${H-13}" text-anchor="middle" font-size="8" fill="#637485">${d.toLocaleDateString('de-DE',{weekday:'short'})}</text>`;
+      labels += `<text x="${x}" y="${H-4}" text-anchor="middle" font-size="8" fill="#637485">${time}</text>`;
+    } else {
+      labels += `<text x="${xOf(t).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${time}</text>`;
+    }
+  }
+  return labels;
+}
+
+function _renderPressureChart(pts, tRange) {
+  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 34;
+  const tMin = tRange ? tRange.min : pts[0].t.getTime();
+  const tMax = tRange ? tRange.max : pts[pts.length-1].t.getTime();
   const pVals = pts.map(p => p.p);
   const pCenter = (Math.min(...pVals) + Math.max(...pVals)) / 2;
   const pSpread = Math.max(Math.max(...pVals) - Math.min(...pVals), 0.5);
   const pMin = pCenter - pSpread / 2 - pSpread * 0.15;
   const pMax = pCenter + pSpread / 2 + pSpread * 0.15;
-  const tMin = pts[0].t.getTime(), tMax = pts[pts.length-1].t.getTime();
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = p => padT + (1 - (p - pMin) / (pMax - pMin)) * (H - padT - padB);
 
   // Gradient fill path
   const linePts = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.p).toFixed(1)}`).join(' ');
-  const fillPts = `${xOf(tMin).toFixed(1)},${(H-padB).toFixed(1)} ` + linePts + ` ${xOf(tMax).toFixed(1)},${(H-padB).toFixed(1)}`;
+  const fillPts = `${xOf(pts[0].t.getTime()).toFixed(1)},${(H-padB).toFixed(1)} ` + linePts + ` ${xOf(pts[pts.length-1].t.getTime()).toFixed(1)},${(H-padB).toFixed(1)}`;
 
   // Gridlines & labels
   let gridLines = '', yLabels = '';
-  const steps = 4;
-  for (let i = 0; i <= steps; i++) {
-    const p = pMin + (pMax - pMin) * i / steps;
+  for (let i = 0; i <= 4; i++) {
+    const p = pMin + (pMax - pMin) * i / 4;
     const y = yOf(p).toFixed(1);
     gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
     yLabels  += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${p.toFixed(0)}</text>`;
   }
-
-  // X-axis time labels (every ~4 data points or nice intervals)
-  let xLabels = '';
-  const labelCount = Math.min(6, pts.length);
-  const step = Math.floor(pts.length / labelCount);
-  for (let i = 0; i < pts.length; i += step) {
-    const x = xOf(pts[i].t.getTime()).toFixed(1);
-    const lbl = pts[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
-    xLabels += `<text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${lbl}</text>`;
-  }
+  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
 
   // Current value marker
   const last = pts[pts.length-1];
@@ -1826,8 +1843,10 @@ function _renderPressureChart(pts) {
   </div>`;
 }
 
-function _renderTempDewChart(pts) {
-  const W = 700, H = 240, padL = 38, padR = 10, padT = 12, padB = 28;
+function _renderTempDewChart(pts, tRange) {
+  const W = 700, H = 240, padL = 38, padR = 10, padT = 12, padB = 34;
+  const tMin = tRange ? tRange.min : pts[0].t.getTime();
+  const tMax = tRange ? tRange.max : pts[pts.length-1].t.getTime();
   const temps = pts.filter(p => p.temp != null).map(p => p.temp);
   const dews  = pts.filter(p => p.dew  != null).map(p => p.dew);
   const allVals = [...temps, ...dews];
@@ -1835,7 +1854,6 @@ function _renderTempDewChart(pts) {
   const vSpread = Math.max(Math.max(...allVals) - Math.min(...allVals), 1);
   const yMin = vCenter - vSpread / 2 - vSpread * 0.20;
   const yMax = vCenter + vSpread / 2 + vSpread * 0.20;
-  const tMin = pts[0].t.getTime(), tMax = pts[pts.length-1].t.getTime();
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
 
@@ -1846,11 +1864,7 @@ function _renderTempDewChart(pts) {
     gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
     yLabels += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(1)}°</text>`;
   }
-  let xLabels = '';
-  const step = Math.max(1, Math.floor(pts.length / Math.min(6, pts.length)));
-  for (let i = 0; i < pts.length; i += step) {
-    xLabels += `<text x="${xOf(pts[i].t.getTime()).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${pts[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}</text>`;
-  }
+  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
   const tempLinePts = pts.filter(p => p.temp!=null).map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.temp).toFixed(1)}`).join(' ');
   const dewLinePts  = pts.filter(p => p.dew!=null).map(p  => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.dew).toFixed(1)}`).join(' ');
   const lastT = [...pts].reverse().find(p => p.temp != null);
@@ -1870,15 +1884,16 @@ function _renderTempDewChart(pts) {
   </div>`;
 }
 
-function _renderVisibilityChart(pts) {
-  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 28;
+function _renderVisibilityChart(pts, tRange) {
+  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 34;
   const ptsk = pts.map(p => ({ t: p.t, v: p.vis / 1000 }));
+  const tMin = tRange ? tRange.min : ptsk[0].t.getTime();
+  const tMax = tRange ? tRange.max : ptsk[ptsk.length-1].t.getTime();
   const vals = ptsk.map(p => p.v);
   const vCenter = (Math.min(...vals) + Math.max(...vals)) / 2;
   const vSpread = Math.max(Math.max(...vals) - Math.min(...vals), 0.5);
   const yMin = Math.max(0, vCenter - vSpread / 2 - vSpread * 0.20);
   const yMax = vCenter + vSpread / 2 + vSpread * 0.20;
-  const tMin = ptsk[0].t.getTime(), tMax = ptsk[ptsk.length-1].t.getTime();
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
   const visColor = v => v < 1 ? '#dc2626' : v < 2 ? '#ca8a04' : '#0891b2';
@@ -1895,11 +1910,7 @@ function _renderVisibilityChart(pts) {
   if (yMin < 2 && yMax > 2) refLines += `<line x1="${padL}" y1="${yOf(2).toFixed(1)}" x2="${W-padR}" y2="${yOf(2).toFixed(1)}" stroke="#ca8a04" stroke-width=".8" stroke-dasharray="4 3" opacity=".7"/>`;
   if (yMin < 1 && yMax > 1) refLines += `<line x1="${padL}" y1="${yOf(1).toFixed(1)}" x2="${W-padR}" y2="${yOf(1).toFixed(1)}" stroke="#dc2626" stroke-width=".8" stroke-dasharray="4 3" opacity=".7"/>`;
 
-  let xLabels = '';
-  const step = Math.max(1, Math.floor(ptsk.length / Math.min(6, ptsk.length)));
-  for (let i = 0; i < ptsk.length; i += step) {
-    xLabels += `<text x="${xOf(ptsk[i].t.getTime()).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${ptsk[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}</text>`;
-  }
+  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
 
   // Build colored segments: group consecutive points by color
   const segments = [];
