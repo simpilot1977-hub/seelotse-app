@@ -1732,8 +1732,10 @@ async function fetchPressureHistory(hours) {
 function _renderPressureChart(pts) {
   const W = 700, H = 90, padL = 46, padR = 10, padT = 8, padB = 22;
   const pVals = pts.map(p => p.p);
-  const pMin = Math.floor(Math.min(...pVals) - 1);
-  const pMax = Math.ceil(Math.max(...pVals) + 1);
+  const pCenter = (Math.min(...pVals) + Math.max(...pVals)) / 2;
+  const pSpread = Math.max(Math.max(...pVals) - Math.min(...pVals), 0.5);
+  const pMin = pCenter - pSpread / 2 - pSpread * 0.15;
+  const pMax = pCenter + pSpread / 2 + pSpread * 0.15;
   const tMin = pts[0].t.getTime(), tMax = pts[pts.length-1].t.getTime();
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = p => padT + (1 - (p - pMin) / (pMax - pMin)) * (H - padT - padB);
