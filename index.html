@@ -1513,7 +1513,7 @@ function _renderWindStation(name, ms, dirDeg, gustMs, badge, stationInfo) {
         ${gustStr ? `<div class="wind-gusts">${gustStr}</div>` : ''}
       </div>
     </div>
-    <div class="wind-source"><span class="${badge==='SYNOP'?'wind-badge-synop':'wind-badge-model'}">${badge}</span> ${stationInfo}</div>
+    <div class="wind-source" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%"><span class="${badge==='SYNOP'?'wind-badge-synop':'wind-badge-model'}">${badge}</span> ${stationInfo}</div>
   </div>`;
 }
 
@@ -1537,11 +1537,12 @@ async function fetchWindData() {
       }).catch(() => {}),
 
     // Cuxhaven – echter DWD SYNOP (station 00891)
+    // Bright Sky liefert Windgeschwindigkeit in km/h → durch 3.6 in m/s umrechnen
     fetch('https://api.brightsky.dev/current_weather?dwd_station_id=00891')
       .then(r => r.json())
       .then(d => {
         const w = d.weather;
-        results.cux = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: d.sources?.[0]?.station_name };
+        results.cux = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: d.sources?.[0]?.station_name };
       }).catch(() => {}),
 
     // Brunsbüttel – Bright Sky SYNOP mit Koordinaten (gibt nächste aktive Station zurück: Freiburg/Elbe ~12 km)
@@ -1550,7 +1551,7 @@ async function fetchWindData() {
       .then(d => {
         const w = d.weather;
         const stn = d.sources?.[0]?.station_name || 'DWD';
-        results.brb = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
+        results.brb = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
       }).catch(() => {}),
 
     // Hamburg – DWD SYNOP via Bright Sky Koordinaten Hamburg-Hafen
@@ -1559,7 +1560,7 @@ async function fetchWindData() {
       .then(d => {
         const w = d.weather;
         const stn = d.sources?.[0]?.station_name || 'Hamburg';
-        results.hh = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
+        results.hh = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
       }).catch(() => {})
   ]);
 
@@ -1610,7 +1611,16 @@ function getMoonData() {
   else if (phase < 0.6875)                     { phaseName = 'Abnehmend';      phaseIcon = '🌖'; }
   else if (phase < 0.8125)                     { phaseName = 'Letztes Viertel';phaseIcon = '🌗'; }
   else                                         { phaseName = 'Abnehmend';      phaseIcon = '🌘'; }
-  return { phase, ageDays, phaseName, phaseIcon, illumination: illum.fraction };
+  // Letztes Phasenereignis berechnen
+  let lastEventName, daysSinceLast;
+  if      (phase < 0.25) { lastEventName = 'Neumond';         daysSinceLast = phase * 29.53; }
+  else if (phase < 0.50) { lastEventName = 'Erstes Viertel';  daysSinceLast = (phase - 0.25) * 29.53; }
+  else if (phase < 0.75) { lastEventName = 'Vollmond';        daysSinceLast = (phase - 0.50) * 29.53; }
+  else                   { lastEventName = 'Letztes Viertel'; daysSinceLast = (phase - 0.75) * 29.53; }
+  const lastEventDate = new Date(now.getTime() - daysSinceLast * 86400000);
+  const fmtEvent = d => d.toLocaleDateString('de-DE',{day:'numeric',month:'long'}) + ', ' + d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+
+  return { phase, ageDays, phaseName, phaseIcon, illumination: illum.fraction, lastEventName, lastEventDate, fmtEvent };
 }
 
 function getTidalAge(moonAgeDays) {
@@ -1653,6 +1663,7 @@ function renderAstroDashboard() {
       <div class="astro-card-title">🌙 Mond</div>
       <div class="astro-big"><span class="astro-moon-icon">${moon.phaseIcon}</span>${moon.phaseName}</div>
       <div class="astro-sub">Beleuchtung: ${Math.round(moon.illumination * 100)} % · Alter: ${moon.ageDays.toFixed(1)} Tage</div>
+      <div class="astro-sub" style="margin-top:4px;color:var(--navy);font-weight:600">${moon.lastEventName}: ${moon.fmtEvent(moon.lastEventDate)}</div>
     </div>
     <div class="astro-card">
       <div class="astro-card-title">☀️ Sonne · Brunsbüttel</div>
