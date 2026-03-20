@@ -4097,7 +4097,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, sortIn: null, sortOut: null };
+let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
 
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
@@ -4271,6 +4271,10 @@ function _aisSetMinLen(v) {
   _aisFilter.minLen = parseInt(v) || 0;
   _aisRenderTable();
 }
+function _aisToggleAnc() {
+  _aisFilter.hideAnc = !_aisFilter.hideAnc;
+  _aisRenderTable();
+}
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
 
@@ -4280,7 +4284,6 @@ function _aisRenderTable() {
   if (!container) { aisDisconnect(); return; }   // Seite verlassen
   if (!_aisProxyUrl()) { _aisShowSetup(); return; }  // kein Proxy → Setup anzeigen
 
-  _aisInitialLoaded = true;
   const now    = Date.now();
 
   // Alle Typen die aktuell vorkommen (für Filter-Bar)
@@ -4297,9 +4300,11 @@ function _aisRenderTable() {
   }
 
   const ships   = [..._aisShips.values()].filter(s => s.lat !== null && s.lon !== null);
+  // Erst als geladen markieren wenn echte Positionsdaten vorhanden
+  if (ships.length > 0) _aisInitialLoaded = true;
   const inRaw   = ships.filter(s => s.dir === 'in');
   const outRaw  = ships.filter(s => s.dir === 'out');
-  const ancList = applyFilter(ships.filter(s => s.dir === 'stationary'));
+  const ancList = _aisFilter.hideAnc ? [] : applyFilter(ships.filter(s => s.dir === 'stationary'));
 
   // Sortierung einkommend
   let inList = applyFilter(inRaw);
@@ -4363,15 +4368,19 @@ function _aisRenderTable() {
     const off = _aisFilter.hiddenTypes.has(t) ? ' off' : '';
     return `<button class="ais-type-btn${off}" onclick="_aisFToggle('${t}')">${t}</button>`;
   }).join('');
-  const lenOpts = [0,50,100,150,200].map(v => {
-    const sel = _aisFilter.minLen === v ? ' selected' : '';
-    return `<option value="${v}"${sel}>${v === 0 ? 'Alle' : '≥ '+v+' m'}</option>`;
-  }).join('');
+  const ancOff = _aisFilter.hideAnc ? ' off' : '';
+  const lenVal = _aisFilter.minLen > 0 ? _aisFilter.minLen : '';
   let html = `<div class="ais-filter-bar">
     <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">Ausblenden:</span>
     ${typeBtns}
+    <button class="ais-type-btn${ancOff}" onclick="_aisToggleAnc()">⚓ Liegende</button>
     <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;margin-left:8px">Mindestlänge:</span>
-    <select onchange="_aisSetMinLen(this.value)" style="font-size:11px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit">${lenOpts}</select>
+    <div style="display:flex;align-items:center;gap:4px">
+      <input type="number" min="0" step="10" placeholder="0" value="${lenVal}"
+        oninput="_aisSetMinLen(this.value)"
+        style="font-size:11px;width:58px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
+      <span style="font-size:11px;color:var(--text-muted)">m</span>
+    </div>
   </div>`;
   html += `<div class="ais-legend">
     <span>● Live-Update</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
@@ -4443,7 +4452,7 @@ function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
   _aisInitialLoaded = false;
-  _aisFilter = { hiddenTypes: new Set(), minLen: 0, sortIn: null, sortOut: null };
+  _aisFilter = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
