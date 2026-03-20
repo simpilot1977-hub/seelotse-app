@@ -1720,17 +1720,29 @@ async function fetchPressureHistory(hours) {
     const fmtISO = d => `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}T${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:00`;
     const url = `https://api.brightsky.dev/weather?dwd_station_id=00891&date=${encodeURIComponent(fmtISO(from))}&last_date=${encodeURIComponent(fmtISO(now))}&tz=UTC`;
     const data = await fetch(url).then(r => r.json());
-    const pts = (data.weather || []).filter(w => w.pressure_msl != null).map(w => ({ t: new Date(w.timestamp), p: w.pressure_msl / 3.6 }));
-    // pressure_msl from Bright Sky is in km/h units? No — pressure is in hPa, no unit conversion needed
-    // Actually only wind speed is in km/h, pressure is hPa directly
-    const pts2 = (data.weather || []).filter(w => w.pressure_msl != null).map(w => ({ t: new Date(w.timestamp), p: w.pressure_msl }));
-    if (!pts2.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
-    el.innerHTML = _renderPressureChart(pts2);
+    const allPts = (data.weather || []).map(w => ({
+      t: new Date(w.timestamp),
+      p: w.pressure_msl,
+      temp: w.temperature,
+      dew: w.dew_point,
+      vis: w.visibility
+    }));
+    const ptsPressure = allPts.filter(w => w.p != null);
+    const ptsTempDew  = allPts.filter(w => w.temp != null);
+    const ptsVis      = allPts.filter(w => w.vis != null);
+    if (!ptsPressure.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
+    el.style.display = 'grid';
+    el.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    el.style.gap = '16px';
+    el.innerHTML =
+      _renderPressureChart(ptsPressure) +
+      (ptsTempDew.length ? _renderTempDewChart(ptsTempDew) : '<div></div>') +
+      (ptsVis.length ? _renderVisibilityChart(ptsVis) : '<div></div>');
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
 }
 
 function _renderPressureChart(pts) {
-  const W = 700, H = 160, padL = 46, padR = 10, padT = 10, padB = 26;
+  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 28;
   const pVals = pts.map(p => p.p);
   const pCenter = (Math.min(...pVals) + Math.max(...pVals)) / 2;
   const pSpread = Math.max(Math.max(...pVals) - Math.min(...pVals), 0.5);
@@ -1786,6 +1798,98 @@ function _renderPressureChart(pts) {
       <text x="${Math.min(lx+6, W-padR-30).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="10" font-weight="700" fill="#1b3d5f">${last.p.toFixed(1)} hPa</text>
     </svg>
     <div style="text-align:right;font-size:10px;margin-top:2px"><span style="color:${trendColor};font-weight:700">${trendArrow} ${Math.abs(trend).toFixed(1)} hPa</span> <span style="color:#94a3b8">Änderung über ${_pressureHours}h</span></div>
+  </div>`;
+}
+
+function _renderTempDewChart(pts) {
+  const W = 700, H = 240, padL = 38, padR = 10, padT = 12, padB = 28;
+  const temps = pts.filter(p => p.temp != null).map(p => p.temp);
+  const dews  = pts.filter(p => p.dew  != null).map(p => p.dew);
+  const allVals = [...temps, ...dews];
+  const vCenter = (Math.min(...allVals) + Math.max(...allVals)) / 2;
+  const vSpread = Math.max(Math.max(...allVals) - Math.min(...allVals), 1);
+  const yMin = vCenter - vSpread / 2 - vSpread * 0.20;
+  const yMax = vCenter + vSpread / 2 + vSpread * 0.20;
+  const tMin = pts[0].t.getTime(), tMax = pts[pts.length-1].t.getTime();
+  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
+  const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+
+  let gridLines = '', yLabels = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + (yMax - yMin) * i / 4;
+    const y = yOf(v).toFixed(1);
+    gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
+    yLabels += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(1)}°</text>`;
+  }
+  let xLabels = '';
+  const step = Math.max(1, Math.floor(pts.length / Math.min(6, pts.length)));
+  for (let i = 0; i < pts.length; i += step) {
+    xLabels += `<text x="${xOf(pts[i].t.getTime()).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${pts[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}</text>`;
+  }
+  const tempLinePts = pts.filter(p => p.temp!=null).map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.temp).toFixed(1)}`).join(' ');
+  const dewLinePts  = pts.filter(p => p.dew!=null).map(p  => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.dew).toFixed(1)}`).join(' ');
+  const lastT = [...pts].reverse().find(p => p.temp != null);
+  const lastD = [...pts].reverse().find(p => p.dew  != null);
+  return `<div>
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:10px">
+      <span style="color:#2a6495">— Temperatur</span>
+      <span style="color:#ca8a04">- - Taupunkt</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      ${gridLines}${yLabels}${xLabels}
+      <polyline points="${tempLinePts}" fill="none" stroke="#2a6495" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      <polyline points="${dewLinePts}"  fill="none" stroke="#ca8a04" stroke-width="1.8" stroke-dasharray="6 3" stroke-linejoin="round" stroke-linecap="round"/>
+      ${lastT ? `<circle cx="${xOf(lastT.t.getTime()).toFixed(1)}" cy="${yOf(lastT.temp).toFixed(1)}" r="3" fill="#2a6495"/><text x="${Math.min(xOf(lastT.t.getTime())+5,W-padR-28).toFixed(1)}" y="${(yOf(lastT.temp)-4).toFixed(1)}" font-size="9" font-weight="700" fill="#2a6495">${lastT.temp.toFixed(1)}°C</text>` : ''}
+      ${lastD ? `<circle cx="${xOf(lastD.t.getTime()).toFixed(1)}" cy="${yOf(lastD.dew).toFixed(1)}"  r="3" fill="#ca8a04"/><text  x="${Math.min(xOf(lastD.t.getTime())+5,W-padR-28).toFixed(1)}" y="${(yOf(lastD.dew)+12).toFixed(1)}"  font-size="9" font-weight="700" fill="#ca8a04">${lastD.dew.toFixed(1)}°C</text>` : ''}
+    </svg>
+  </div>`;
+}
+
+function _renderVisibilityChart(pts) {
+  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 28;
+  const ptsk = pts.map(p => ({ t: p.t, v: p.vis / 1000 }));
+  const vals = ptsk.map(p => p.v);
+  const vCenter = (Math.min(...vals) + Math.max(...vals)) / 2;
+  const vSpread = Math.max(Math.max(...vals) - Math.min(...vals), 0.5);
+  const yMin = Math.max(0, vCenter - vSpread / 2 - vSpread * 0.20);
+  const yMax = vCenter + vSpread / 2 + vSpread * 0.20;
+  const tMin = ptsk[0].t.getTime(), tMax = ptsk[ptsk.length-1].t.getTime();
+  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
+  const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+
+  let gridLines = '', yLabels = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + (yMax - yMin) * i / 4;
+    const y = yOf(v).toFixed(1);
+    gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
+    yLabels += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v >= 10 ? v.toFixed(0) : v.toFixed(1)} km</text>`;
+  }
+  let xLabels = '';
+  const step = Math.max(1, Math.floor(ptsk.length / Math.min(6, ptsk.length)));
+  for (let i = 0; i < ptsk.length; i += step) {
+    xLabels += `<text x="${xOf(ptsk[i].t.getTime()).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${ptsk[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}</text>`;
+  }
+  const linePts = ptsk.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+  const fillPts = `${xOf(tMin).toFixed(1)},${(H-padB).toFixed(1)} ` + linePts + ` ${xOf(tMax).toFixed(1)},${(H-padB).toFixed(1)}`;
+  const last = ptsk[ptsk.length-1];
+  const lx = xOf(last.t.getTime()), ly = yOf(last.v);
+  return `<div>
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">
+      <span style="color:#0891b2">— Sichtweite</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      <defs>
+        <linearGradient id="vgrd" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0891b2" stop-opacity=".25"/>
+          <stop offset="100%" stop-color="#0891b2" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      ${gridLines}${yLabels}${xLabels}
+      <polygon points="${fillPts}" fill="url(#vgrd)"/>
+      <polyline points="${linePts}" fill="none" stroke="#0891b2" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.5" fill="#0891b2"/>
+      <text x="${Math.min(lx+6,W-padR-32).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="10" font-weight="700" fill="#0891b2">${last.v >= 10 ? last.v.toFixed(0) : last.v.toFixed(1)} km</text>
+    </svg>
   </div>`;
 }
 
@@ -5203,7 +5307,7 @@ function renderFahrtDashboard(entry) {
           <!-- Luftdruckverlauf -->
           <div id="ar-pressure-card" style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Luftdruckverlauf · Cuxhaven</div>
+              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Verlaufskurven · Cuxhaven</div>
               <div style="display:flex;gap:6px">
                 <button onclick="fetchPressureHistory(6)"  id="pbtn-6"  style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">6h</button>
                 <button onclick="fetchPressureHistory(12)" id="pbtn-12" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">12h</button>
@@ -5212,7 +5316,7 @@ function renderFahrtDashboard(entry) {
                 <button onclick="fetchPressureHistory(72)" id="pbtn-72" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">72h</button>
               </div>
             </div>
-            <div id="ar-pressure-inner" style="min-height:80px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:12px">Wird geladen…</div>
+            <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
           </div>
         </div>
 
