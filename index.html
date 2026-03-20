@@ -12,6 +12,7 @@
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <title>⚓ Seelotsen-Fahrtenbuch</title>
   <script src="xlsx.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
   <style>
     :root {
       --navy:       #1b3d5f;
@@ -338,32 +339,38 @@
     .form-top-bar h2 { font-size: 20px; font-weight: 700; }
     .form-top-bar p { font-size: 13px; opacity: .7; margin-top: 2px; }
 
-    .form-body { padding: 28px; }
+    .form-body { padding: 0; }
 
-    .form-section { margin-bottom: 32px; }
+    .form-section {
+      margin-bottom: 0;
+      padding: 24px 28px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .form-section:last-of-type { border-bottom: none; }
     .section-title {
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: .7px;
-      color: var(--blue);
+      letter-spacing: .8px;
+      color: var(--text-muted);
       margin-bottom: 16px;
-      padding-bottom: 8px;
-      border-bottom: 2px solid var(--blue-pale);
+      padding-left: 10px;
+      border-left: 3px solid var(--blue);
       display: flex;
       align-items: center;
       gap: 8px;
+      line-height: 1.4;
     }
 
     .form-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 18px;
+      gap: 16px;
     }
     .form-grid-4 {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
-      gap: 18px;
+      gap: 16px;
     }
     .wm-group {
       display: flex;
@@ -374,13 +381,13 @@
 
     .form-grid-row2 {
       display: grid;
-      grid-template-columns: 2fr 0.7fr 0.7fr 0.7fr 2fr;
-      gap: 18px;
+      grid-template-columns: 2.5fr 1fr 1fr 1fr 2fr;
+      gap: 16px;
     }
     .form-grid-2 {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 18px;
+      gap: 16px;
     }
 
     .field { display: flex; flex-direction: column; gap: 6px; }
@@ -425,22 +432,30 @@
     .field input[type="datetime-local"] { padding: 0 12px; font-size: 14px; }
 
     .datetime-box {
-      background: #f7fafd;
+      background: var(--surface);
       border: 1.5px solid var(--border);
+      border-top: 3px solid var(--blue-lt);
       border-radius: var(--r);
       padding: 14px;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .datetime-box:focus-within {
+      border-top-color: var(--blue);
+      box-shadow: 0 2px 8px rgba(42,100,149,.12);
     }
     .datetime-label {
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
       color: var(--navy);
       display: flex;
       align-items: center;
       gap: 6px;
       justify-content: space-between;
+      text-transform: uppercase;
+      letter-spacing: .3px;
     }
     .now-btn {
       height: 26px;
@@ -483,7 +498,7 @@
       justify-content: flex-end;
       gap: 12px;
       padding: 20px 28px;
-      background: #f5f8fc;
+      background: linear-gradient(to bottom, #f5f8fc, #eef3f9);
       border-top: 1px solid var(--border);
     }
 
@@ -1154,7 +1169,17 @@
     .fd-tide-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .fd-tide-name { font-weight: 700; font-size: 13px; color: var(--navy); }
     /* ── Wind Widget ── */
-    .wind-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 12px; }
+    .wind-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+    .astro-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+    .astro-card { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 16px 12px; }
+    .astro-card-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; color: var(--text-muted); margin-bottom: 8px; }
+    .astro-big { font-size: 22px; font-weight: 700; color: var(--navy); display: flex; align-items: center; gap: 8px; }
+    .astro-moon-icon { font-size: 26px; line-height:1; }
+    .astro-sub { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+    .astro-sun-row { display: flex; gap: 14px; margin-top: 4px; }
+    .astro-sun-item { display: flex; align-items: center; gap: 5px; font-size: 13px; font-weight: 600; color: var(--navy); }
+    .astro-sun-item span.lbl { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+    .tidal-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; margin-top: 6px; }
     .wind-station { background: var(--bg); border: 1.5px solid var(--border); border-radius: var(--r-md); padding: 14px 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px; }
     .wind-station-name { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 2px; align-self: flex-start; }
     .wind-main { display: flex; align-items: center; gap: 14px; width: 100%; }
@@ -1499,31 +1524,42 @@ async function fetchWindData() {
   if (!inner) return;
   if (btn) btn.textContent = '⏳ Laden…';
 
-  const results = { cux: null, brb: null, bakeA: null };
+  const results = { bakeA: null, cux: null, brb: null, hh: null };
 
   await Promise.allSettled([
+    // Bake A – Open-Meteo Modell für exakte Position Elbe-Mündung (53.99°N, 8.49°E)
+    // Keine SYNOP-Station an Bake A (Feuerschiff Elbe 1 kapselte 1999, nicht ersetzt)
+    fetch('https://api.open-meteo.com/v1/forecast?latitude=53.99&longitude=8.49&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=UTC')
+      .then(r => r.json())
+      .then(d => {
+        const c = d.current;
+        results.bakeA = { ms: c.wind_speed_10m, dir: c.wind_direction_10m, gust: c.wind_gusts_10m, ts: c.time };
+      }).catch(() => {}),
+
     // Cuxhaven – echter DWD SYNOP (station 00891)
     fetch('https://api.brightsky.dev/current_weather?dwd_station_id=00891')
       .then(r => r.json())
       .then(d => {
         const w = d.weather;
-        results.cux = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp };
+        results.cux = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: d.sources?.[0]?.station_name };
       }).catch(() => {}),
 
-    // Brunsbüttel – Open-Meteo Modell (kein SYNOP verfügbar)
-    fetch('https://api.open-meteo.com/v1/forecast?latitude=53.9196&longitude=9.1417&current=wind_speed_10m,wind_direction_10m,wind_gusts_10m&wind_speed_unit=ms&timezone=UTC')
-      .then(r => r.json())
-      .then(d => {
-        const c = d.current;
-        results.brb = { ms: c.wind_speed_10m, dir: c.wind_direction_10m, gust: c.wind_gusts_10m, ts: c.time };
-      }).catch(() => {}),
-
-    // Bake A – Leuchtturm Alte Weser (DWD 00102, nächste maritime SYNOP-Station)
-    fetch('https://api.brightsky.dev/current_weather?dwd_station_id=00102')
+    // Brunsbüttel – Bright Sky SYNOP mit Koordinaten (gibt nächste aktive Station zurück: Freiburg/Elbe ~12 km)
+    fetch('https://api.brightsky.dev/current_weather?lat=53.9196&lon=9.1417')
       .then(r => r.json())
       .then(d => {
         const w = d.weather;
-        results.bakeA = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp };
+        const stn = d.sources?.[0]?.station_name || 'DWD';
+        results.brb = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
+      }).catch(() => {}),
+
+    // Hamburg – DWD SYNOP via Bright Sky Koordinaten Hamburg-Hafen
+    fetch('https://api.brightsky.dev/current_weather?lat=53.545&lon=9.966')
+      .then(r => r.json())
+      .then(d => {
+        const w = d.weather;
+        const stn = d.sources?.[0]?.station_name || 'Hamburg';
+        results.hh = { ms: w.wind_speed_10, dir: w.wind_direction_10, gust: w.wind_gust_speed_10, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
       }).catch(() => {})
   ]);
 
@@ -1533,16 +1569,22 @@ async function fetchWindData() {
     catch { return ''; }
   };
 
+  const brbBadge = (results.brb?.obsType === 'synop') ? 'SYNOP' : 'Modell';
+  const hhBadge  = (results.hh?.obsType  === 'synop') ? 'SYNOP' : 'Modell';
+
   inner.innerHTML =
+    _renderWindStation('Bake A',
+      results.bakeA?.ms, results.bakeA?.dir, results.bakeA?.gust,
+      'Modell', 'Open-Meteo · ' + fmtTs(results.bakeA?.ts)) +
     _renderWindStation('Cuxhaven',
       results.cux?.ms, results.cux?.dir, results.cux?.gust,
       'SYNOP', 'DWD · ' + fmtTs(results.cux?.ts)) +
     _renderWindStation('Brunsbüttel',
       results.brb?.ms, results.brb?.dir, results.brb?.gust,
-      'Modell', 'DWD ICON · ' + fmtTs(results.brb?.ts)) +
-    _renderWindStation('Bake A',
-      results.bakeA?.ms, results.bakeA?.dir, results.bakeA?.gust,
-      'SYNOP', 'DWD LT Alte Weser · ' + fmtTs(results.bakeA?.ts));
+      brbBadge, (results.brb?.src || 'DWD') + ' · ' + fmtTs(results.brb?.ts)) +
+    _renderWindStation('Hamburg',
+      results.hh?.ms, results.hh?.dir, results.hh?.gust,
+      hhBadge, (results.hh?.src || 'DWD') + ' · ' + fmtTs(results.hh?.ts));
 
   if (meta) meta.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr · Quellen: DWD / Open-Meteo';
   if (btn) btn.textContent = '↻ Aktualisieren';
@@ -1550,6 +1592,81 @@ async function fetchWindData() {
   // Auto-refresh alle 10 Minuten
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
   _windRefreshTimer = setTimeout(() => { if (document.getElementById('ar-wind-inner')) fetchWindData(); }, 10 * 60 * 1000);
+}
+
+// ── Astronomie / Umwelt-Dashboard ────────────────────────────────────────────
+function getMoonData() {
+  if (typeof SunCalc === 'undefined') return null;
+  const now = new Date();
+  const illum = SunCalc.getMoonIllumination(now);
+  const phase = illum.phase; // 0=Neu, 0.25=Erst.Viertel, 0.5=Voll, 0.75=Letzt.Viertel
+  const ageDays = phase * 29.53;
+  let phaseName, phaseIcon;
+  if      (phase < 0.0625 || phase >= 0.9375) { phaseName = 'Neumond';        phaseIcon = '🌑'; }
+  else if (phase < 0.1875)                     { phaseName = 'Zunehmend';      phaseIcon = '🌒'; }
+  else if (phase < 0.3125)                     { phaseName = 'Erstes Viertel'; phaseIcon = '🌓'; }
+  else if (phase < 0.4375)                     { phaseName = 'Zunehmend';      phaseIcon = '🌔'; }
+  else if (phase < 0.5625)                     { phaseName = 'Vollmond';       phaseIcon = '🌕'; }
+  else if (phase < 0.6875)                     { phaseName = 'Abnehmend';      phaseIcon = '🌖'; }
+  else if (phase < 0.8125)                     { phaseName = 'Letztes Viertel';phaseIcon = '🌗'; }
+  else                                         { phaseName = 'Abnehmend';      phaseIcon = '🌘'; }
+  return { phase, ageDays, phaseName, phaseIcon, illumination: illum.fraction };
+}
+
+function getTidalAge(moonAgeDays) {
+  const cyclePos = moonAgeDays % 14.765;
+  const dist = Math.min(cyclePos, 14.765 - cyclePos);
+  if (dist <= 2)  return { label: 'Springtide', color: '#dc2626', bg: '#fef2f2' };
+  if (dist >= 5)  return { label: 'Niptide',    color: '#16a34a', bg: '#f0fdf4' };
+  return               { label: 'Mittide',    color: '#ca8a04', bg: '#fffbeb' };
+}
+
+function getSunData() {
+  if (typeof SunCalc === 'undefined') return null;
+  const now = new Date();
+  const times = SunCalc.getTimes(now, 53.9, 9.1); // Brunsbüttel
+  const fmt = t => {
+    if (!t || isNaN(t.getTime())) return '–';
+    return t.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'}) + ' Uhr';
+  };
+  const dayLen = (times.sunset - times.sunrise) / 60000;
+  const h = Math.floor(dayLen / 60), m = Math.round(dayLen % 60);
+  return { sunrise: fmt(times.sunrise), sunset: fmt(times.sunset), dayLength: `${h}h ${m}m` };
+}
+
+function renderAstroDashboard() {
+  const el = document.getElementById('ar-astro-grid');
+  if (!el) return;
+  const moon = getMoonData();
+  const sun  = getSunData();
+  if (!moon || !sun) { el.innerHTML = '<div style="color:var(--text-muted);font-size:12px">SunCalc nicht geladen</div>'; return; }
+  const tidal = getTidalAge(moon.ageDays);
+  const distFromSpring = (() => { const c = moon.ageDays % 14.765; return Math.min(c, 14.765 - c); })();
+  const tidalContext = distFromSpring <= 2
+    ? `${distFromSpring.toFixed(1)} Tage nach Neu-/Vollmond`
+    : distFromSpring >= 5
+      ? `${(7.4 - distFromSpring + 7.4).toFixed(1)} Tage bis Springtide`
+      : `Übergang (${distFromSpring.toFixed(1)} Tage)`;
+
+  el.innerHTML = `
+    <div class="astro-card">
+      <div class="astro-card-title">🌙 Mond</div>
+      <div class="astro-big"><span class="astro-moon-icon">${moon.phaseIcon}</span>${moon.phaseName}</div>
+      <div class="astro-sub">Beleuchtung: ${Math.round(moon.illumination * 100)} % · Alter: ${moon.ageDays.toFixed(1)} Tage</div>
+    </div>
+    <div class="astro-card">
+      <div class="astro-card-title">☀️ Sonne · Brunsbüttel</div>
+      <div class="astro-sun-row">
+        <div class="astro-sun-item"><span>🌅</span><div><div>${sun.sunrise}</div><span class="lbl">Aufgang</span></div></div>
+        <div class="astro-sun-item"><span>🌇</span><div><div>${sun.sunset}</div><span class="lbl">Untergang</span></div></div>
+      </div>
+      <div class="astro-sub">Tageslänge: ${sun.dayLength}</div>
+    </div>
+    <div class="astro-card">
+      <div class="astro-card-title">🌊 Gezeitenalter</div>
+      <div class="astro-big" style="color:${tidal.color}">${tidal.label}</div>
+      <div><span class="tidal-badge" style="background:${tidal.bg};color:${tidal.color}">${tidalContext}</span></div>
+    </div>`;
 }
 
 // ── Aktuelle Reise Hilfsfunktionen ───────────────────────────────────────────
@@ -4357,13 +4474,12 @@ function renderForm(f) {
       <form class="form-body" id="fahrt-form" onsubmit="handleSubmit(event)">
         <input type="hidden" name="id" value="${v('id')}">
 
-        <!-- Schiffsdaten -->
+        <!-- Sektion 1: Einsatz & Route -->
         <div class="form-section">
           <div class="section-title">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 17l1-8h16l1 8"/><path d="M7 9V5h10v4"/><path d="M3 17h18"/></svg>
-            Schiffsdaten
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 17l1-8h16l1 8"/><path d="M7 9V5h10v4"/><path d="M3 17h18"/></svg>
+            Einsatz &amp; Route
           </div>
-          <!-- Zeile 1: Art des Einsatzes | Von | Nach -->
           <div class="form-grid">
             <div class="field">
               <label for="artDesEinsatzes">Art des Einsatzes <span class="req">*</span></label>
@@ -4387,7 +4503,6 @@ function renderForm(f) {
               </select>
             </div>
           </div>
-          <!-- Cux-Option: nur wenn Nach = Cux -->
           <div id="cux-option-group" style="margin-top:12px;display:none">
             <label class="richtung-btn${f?.cuxOption==='draussen'?' active':''}" onclick="toggleCuxOption(event,'draussen')">
               <input type="radio" name="cuxOption" value="draussen" ${f?.cuxOption==='draussen'?'checked':''}>
@@ -4400,8 +4515,15 @@ function renderForm(f) {
               ↩ Zurück nach BrB (kein Anschlusseinsatz)
             </label>
           </div>
-          <!-- Zeile 2: Schiffsname | Tiefgang | Personen | Agentur -->
-          <div class="form-grid-row2" style="margin-top:18px">
+        </div>
+
+        <!-- Sektion 2: Schiffsdaten -->
+        <div class="form-section">
+          <div class="section-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            Schiffsdaten
+          </div>
+          <div class="form-grid-row2">
             <div class="field">
               <label for="schiffsname">Schiffsname <span class="req">*</span></label>
               <input type="text" id="schiffsname" name="schiffsname" value="${v('schiffsname')}" placeholder="z. B. MS Hamburg" required>
@@ -4424,46 +4546,53 @@ function renderForm(f) {
             </div>
             <datalist id="agentur-list"></datalist>
           </div>
-          <!-- Zeile 3: Ausgehend / Einkommend / Abgeschöpft / Wartestunden / Manöver + Anteile -->
-          <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-top:18px">
-          <div class="richtung-group" id="richtung-group" style="margin-top:0">
-            <label class="richtung-btn${f?.ausgehend?' active':''}" onclick="toggleRichtung(event,'ausgehend')">
-              <input type="checkbox" name="ausgehend" ${f?.ausgehend?'checked':''}>
-              <span class="cb-check"></span>
-              ⬆️ Ausgehend
-            </label>
-            <label class="richtung-btn${f?.einkommend?' active':''}" id="btn-einkommend" onclick="toggleRichtung(event,'einkommend')">
-              <input type="checkbox" name="einkommend" ${f?.einkommend?'checked':''}>
-              <span class="cb-check"></span>
-              ⬇️ Einkommend
-            </label>
-            <label class="richtung-btn${f?.abgeschöpft?' active':''}" id="btn-abgeschoepft" onclick="toggleAbgeschoepft(event)" style="display:none">
-              <input type="checkbox" name="abgeschöpft" ${f?.abgeschöpft?'checked':''}>
-              <span class="cb-check"></span>
-              ✂️ Abgeschöpft
-            </label>
-            <div class="field" id="wm-group" style="min-width:110px">
-              <label for="wartestunden">Wartestunden</label>
-              <input type="number" id="wartestunden" name="wartestunden" value="${v('wartestunden')}" placeholder="0" step="0.5" min="0" max="99">
+        </div>
+
+        <!-- Sektion 3: Fahrtrichtung & Optionen -->
+        <div class="form-section">
+          <div class="section-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="17 7 12 2 7 7"/><polyline points="17 17 12 22 7 17"/></svg>
+            Fahrtrichtung &amp; Optionen
+          </div>
+          <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
+            <div class="richtung-group" id="richtung-group" style="margin-top:0">
+              <label class="richtung-btn${f?.ausgehend?' active':''}" onclick="toggleRichtung(event,'ausgehend')">
+                <input type="checkbox" name="ausgehend" ${f?.ausgehend?'checked':''}>
+                <span class="cb-check"></span>
+                ⬆️ Ausgehend
+              </label>
+              <label class="richtung-btn${f?.einkommend?' active':''}" id="btn-einkommend" onclick="toggleRichtung(event,'einkommend')">
+                <input type="checkbox" name="einkommend" ${f?.einkommend?'checked':''}>
+                <span class="cb-check"></span>
+                ⬇️ Einkommend
+              </label>
+              <label class="richtung-btn${f?.abgeschöpft?' active':''}" id="btn-abgeschoepft" onclick="toggleAbgeschoepft(event)" style="display:none">
+                <input type="checkbox" name="abgeschöpft" ${f?.abgeschöpft?'checked':''}>
+                <span class="cb-check"></span>
+                ✂️ Abgeschöpft
+              </label>
+              <div class="field" id="wm-group" style="min-width:110px">
+                <label for="wartestunden">Wartestunden</label>
+                <input type="number" id="wartestunden" name="wartestunden" value="${v('wartestunden')}" placeholder="0" step="0.5" min="0" max="99">
+              </div>
+              <label class="richtung-btn${f?.manöver?' active':''}" id="btn-manoever" onclick="toggleManöver(event)">
+                <input type="checkbox" name="manöver" ${f?.manöver?'checked':''}>
+                <span class="cb-check"></span>
+                ⚙️ Manöver
+              </label>
             </div>
-            <label class="richtung-btn${f?.manöver?' active':''}" id="btn-manoever" onclick="toggleManöver(event)">
-              <input type="checkbox" name="manöver" ${f?.manöver?'checked':''}>
-              <span class="cb-check"></span>
-              ⚙️ Manöver
-            </label>
+            <!-- Schiffsanteile: schmal, in gleicher Zeile -->
+            <div class="field" id="field-schiffsanteile" style="min-width:64px;max-width:80px;flex-shrink:0">
+              <label for="schiffsanteile" style="font-size:11px;white-space:nowrap">Anteile</label>
+              <select id="schiffsanteile" name="schiffsanteile" onchange="updateFormVisibility()" style="padding:5px 4px;width:100%">
+                <option value="" ${!v('schiffsanteile')?'selected':''}>—</option>
+                <option value="1" ${v('schiffsanteile')==='1'||v('schiffsanteile')==1?'selected':''}>1</option>
+                <option value="2" ${v('schiffsanteile')==='2'||v('schiffsanteile')==2?'selected':''}>2</option>
+                <option value="3" ${v('schiffsanteile')==='3'||v('schiffsanteile')==3?'selected':''}>3</option>
+                <option value="4" ${v('schiffsanteile')==='4'||v('schiffsanteile')==4?'selected':''}>4</option>
+              </select>
+            </div>
           </div>
-          <!-- Schiffsanteile: immer sichtbar, schmal -->
-          <div class="field" id="field-schiffsanteile" style="min-width:64px;max-width:80px;flex-shrink:0">
-            <label for="schiffsanteile" style="font-size:11px;white-space:nowrap">Anteile</label>
-            <select id="schiffsanteile" name="schiffsanteile" onchange="updateFormVisibility()" style="padding:5px 4px;width:100%">
-              <option value="" ${!v('schiffsanteile')?'selected':''}>—</option>
-              <option value="1" ${v('schiffsanteile')==='1'||v('schiffsanteile')==1?'selected':''}>1</option>
-              <option value="2" ${v('schiffsanteile')==='2'||v('schiffsanteile')==2?'selected':''}>2</option>
-              <option value="3" ${v('schiffsanteile')==='3'||v('schiffsanteile')==3?'selected':''}>3</option>
-              <option value="4" ${v('schiffsanteile')==='4'||v('schiffsanteile')==4?'selected':''}>4</option>
-            </select>
-          </div>
-          </div><!-- end flex-wrapper -->
           <!-- Anspleissen: nur bei Radar -->
           <div id="anspleissen-group" style="margin-top:12px;display:none">
             <label class="richtung-btn${f?.anspleissen?' active':''}" onclick="toggleAnspleissen(event)">
@@ -4474,10 +4603,10 @@ function renderForm(f) {
           </div>
         </div>
 
-        <!-- Zeiten -->
+        <!-- Sektion 4: Datum & Uhrzeit -->
         <div class="form-section">
           <div class="section-title">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             Datum &amp; Uhrzeit
           </div>
           <div class="form-grid-4">
@@ -4948,6 +5077,8 @@ function renderFahrtDashboard(entry) {
             <div class="wind-err">Winddaten werden geladen…</div>
           </div>
           <div id="ar-wind-meta" style="text-align:right;font-size:9px;color:#94a3b8;margin-top:6px"></div>
+          <!-- Astronomie & Umwelt -->
+          <div id="ar-astro-grid" class="astro-grid"></div>
         </div>
 
         <!-- ETA Wegpunkte -->
@@ -4965,9 +5096,9 @@ function renderFahrtDashboard(entry) {
       </div>
     </div>`;
 
-  // Winddaten asynchron nachladen
+  // Winddaten + Astronomie asynchron nachladen
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
-  setTimeout(() => fetchWindData(), 0);
+  setTimeout(() => { fetchWindData(); renderAstroDashboard(); }, 0);
 }
 
 /* ════════════════════════════════════════════
