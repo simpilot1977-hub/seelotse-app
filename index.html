@@ -1302,6 +1302,10 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
         Aktuelle Reise
       </button>
+      <button class="nav-btn" id="nav-wetter" onclick="goWetter()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+        Wetter
+      </button>
       <button class="nav-btn" id="nav-ie" onclick="goImportExport()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
         Import / Export
@@ -1732,7 +1736,7 @@ async function fetchPressureHistory(hours) {
     const ptsVis      = allPts.filter(w => w.vis != null);
     if (!ptsPressure.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
     el.style.display = 'grid';
-    el.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    el.style.gridTemplateColumns = 'repeat(2, 1fr)';
     el.style.gap = '16px';
     el.innerHTML =
       _renderPressureChart(ptsPressure) +
@@ -1856,6 +1860,7 @@ function _renderVisibilityChart(pts) {
   const tMin = ptsk[0].t.getTime(), tMax = ptsk[ptsk.length-1].t.getTime();
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+  const visColor = v => v < 1 ? '#dc2626' : v < 2 ? '#ca8a04' : '#0891b2';
 
   let gridLines = '', yLabels = '';
   for (let i = 0; i <= 4; i++) {
@@ -1864,31 +1869,50 @@ function _renderVisibilityChart(pts) {
     gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
     yLabels += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v >= 10 ? v.toFixed(0) : v.toFixed(1)} km</text>`;
   }
+  // Threshold reference lines (only if thresholds are within y-range)
+  let refLines = '';
+  if (yMin < 2 && yMax > 2) refLines += `<line x1="${padL}" y1="${yOf(2).toFixed(1)}" x2="${W-padR}" y2="${yOf(2).toFixed(1)}" stroke="#ca8a04" stroke-width=".8" stroke-dasharray="4 3" opacity=".7"/>`;
+  if (yMin < 1 && yMax > 1) refLines += `<line x1="${padL}" y1="${yOf(1).toFixed(1)}" x2="${W-padR}" y2="${yOf(1).toFixed(1)}" stroke="#dc2626" stroke-width=".8" stroke-dasharray="4 3" opacity=".7"/>`;
+
   let xLabels = '';
   const step = Math.max(1, Math.floor(ptsk.length / Math.min(6, ptsk.length)));
   for (let i = 0; i < ptsk.length; i += step) {
     xLabels += `<text x="${xOf(ptsk[i].t.getTime()).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="9" fill="#637485">${ptsk[i].t.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})}</text>`;
   }
-  const linePts = ptsk.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
-  const fillPts = `${xOf(tMin).toFixed(1)},${(H-padB).toFixed(1)} ` + linePts + ` ${xOf(tMax).toFixed(1)},${(H-padB).toFixed(1)}`;
+
+  // Build colored segments: group consecutive points by color
+  const segments = [];
+  let curColor = null, curSeg = [];
+  for (const pt of ptsk) {
+    const c = visColor(pt.v);
+    if (c !== curColor) {
+      if (curSeg.length > 0) { segments.push({ color: curColor, pts: curSeg }); curSeg = [curSeg[curSeg.length-1]]; }
+      curColor = c;
+    }
+    curSeg.push(pt);
+  }
+  if (curSeg.length) segments.push({ color: curColor, pts: curSeg });
+
+  const segLines = segments.map(seg => {
+    const ptStr = seg.pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+    return `<polyline points="${ptStr}" fill="none" stroke="${seg.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }).join('');
+
   const last = ptsk[ptsk.length-1];
   const lx = xOf(last.t.getTime()), ly = yOf(last.v);
+  const lc = visColor(last.v);
+  const fmtV = v => v >= 10 ? v.toFixed(0) : v.toFixed(1);
   return `<div>
-    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:10px">
       <span style="color:#0891b2">— Sichtweite</span>
+      <span style="color:#ca8a04">— &lt;2 km</span>
+      <span style="color:#dc2626">— &lt;1 km</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
-      <defs>
-        <linearGradient id="vgrd" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="#0891b2" stop-opacity=".25"/>
-          <stop offset="100%" stop-color="#0891b2" stop-opacity="0"/>
-        </linearGradient>
-      </defs>
-      ${gridLines}${yLabels}${xLabels}
-      <polygon points="${fillPts}" fill="url(#vgrd)"/>
-      <polyline points="${linePts}" fill="none" stroke="#0891b2" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
-      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.5" fill="#0891b2"/>
-      <text x="${Math.min(lx+6,W-padR-32).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="10" font-weight="700" fill="#0891b2">${last.v >= 10 ? last.v.toFixed(0) : last.v.toFixed(1)} km</text>
+      ${gridLines}${yLabels}${refLines}${xLabels}
+      ${segLines}
+      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.5" fill="${lc}"/>
+      <text x="${Math.min(lx+6,W-padR-32).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="10" font-weight="700" fill="${lc}">${fmtV(last.v)} km</text>
     </svg>
   </div>`;
 }
@@ -3904,6 +3928,119 @@ function goImportExport() {
   renderImportExport();
 }
 
+function goWetter() {
+  currentView = 'wetter';
+  setNavActive('nav-wetter');
+  document.getElementById('new-btn').style.display = 'none';
+  renderWetterPage();
+}
+
+function renderWetterPage() {
+  const btnStyle = 'padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit';
+  document.getElementById('app-main').innerHTML = `
+    <div style="max-width:960px;margin:0 auto">
+      <div class="fd-card" id="ar-wind-card">
+        <div class="fd-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span>🌬️ Aktueller Wind</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button onclick="fetchWindData()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);display:flex;align-items:center;gap:4px" id="ar-wind-refresh-btn">↻ Aktualisieren</button>
+            <button onclick="exportWetterPDF()" style="padding:3px 10px;font-size:11px;border:1px solid var(--blue);border-radius:var(--r-sm);background:var(--blue);cursor:pointer;color:#fff;display:flex;align-items:center;gap:4px">↓ PDF Export</button>
+          </div>
+        </div>
+        <div id="ar-wind-inner" class="wind-grid">
+          <div class="wind-err">Winddaten werden geladen…</div>
+        </div>
+        <div id="ar-wind-meta" style="text-align:right;font-size:9px;color:#94a3b8;margin-top:6px"></div>
+        <!-- Astronomie & Umwelt -->
+        <div id="ar-astro-grid" class="astro-grid"></div>
+        <!-- Verlaufskurven -->
+        <div id="ar-pressure-card" style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Verlaufskurven · Cuxhaven</div>
+            <div style="display:flex;gap:6px">
+              <button onclick="fetchPressureHistory(6)"  id="pbtn-6"  style="${btnStyle}">6h</button>
+              <button onclick="fetchPressureHistory(12)" id="pbtn-12" style="${btnStyle}">12h</button>
+              <button onclick="fetchPressureHistory(24)" id="pbtn-24" style="${btnStyle.replace('background:var(--bg)','background:var(--blue)')};color:#fff;border-color:var(--blue)">24h</button>
+              <button onclick="fetchPressureHistory(48)" id="pbtn-48" style="${btnStyle}">48h</button>
+              <button onclick="fetchPressureHistory(72)" id="pbtn-72" style="${btnStyle}">72h</button>
+            </div>
+          </div>
+          <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
+        </div>
+      </div>
+    </div>`;
+  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
+  setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
+}
+
+function exportWetterPDF() {
+  const now = new Date();
+  const fmtDt = d => d.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  // Capture current rendered wind cards
+  const windInner  = document.getElementById('ar-wind-inner')?.innerHTML || '';
+  const astroInner = document.getElementById('ar-astro-grid')?.innerHTML || '';
+  const pressInner = document.getElementById('ar-pressure-inner')?.innerHTML || '';
+  const windMeta   = document.getElementById('ar-wind-meta')?.innerHTML || '';
+
+  // Time range buttons — replicate active state
+  const activeH = _pressureHours;
+  const timeRangeBtns = [6,12,24,48,72].map(h =>
+    `<span style="padding:2px 9px;font-size:10px;border:1px solid ${h===activeH?'#2a6495':'#cbd5e1'};border-radius:20px;background:${h===activeH?'#2a6495':'#fff'};color:${h===activeH?'#fff':'#64748b'}">${h}h</span>`
+  ).join(' ');
+
+  // Collect CSS variables & wind-specific styles
+  const styles = [...document.styleSheets].flatMap(ss => {
+    try { return [...ss.cssRules].map(r => r.cssText); } catch { return []; }
+  }).join('\n');
+
+  const html = `<!DOCTYPE html><html lang="de"><head>
+  <meta charset="UTF-8">
+  <title>Wetter-Report ${fmtDt(now)}</title>
+  <style>
+    @page { size: A4 landscape; margin: 8mm 10mm; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 9px; margin: 0; color: #1e293b; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+    h2 { font-size: 13px; margin: 0 0 8px; color: #1b3d5f; }
+    .meta { font-size: 8px; color: #64748b; margin-bottom: 10px; }
+    .wind-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+    .astro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+    .wind-station { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; min-width: 0; }
+    .wind-station-name { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; margin-bottom: 6px; }
+    .wind-kn { font-size: 22px; font-weight: 800; color: #1b3d5f; line-height: 1; }
+    .wind-ms { font-size: 10px; color: #64748b; margin-top: 2px; }
+    .wind-dir { font-size: 11px; color: #334155; font-weight: 600; margin-top: 4px; }
+    .wind-badge { display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 10px; background: #f1f5f9; color: #475569; margin-top: 3px; }
+    .astro-card { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; }
+    .astro-card-title { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; margin-bottom: 6px; }
+    .pressure-section { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; }
+    .tidal-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    svg text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    ${styles}
+  </style>
+</head><body>
+  <h2>☁️ Wetter-Report · Cuxhaven/Elbe</h2>
+  <div class="meta">Erstellt: ${fmtDt(now)} Uhr · Seelotsen-Fahrtenbuch</div>
+  <div class="wind-grid">${windInner}</div>
+  <div class="meta" style="text-align:right">${windMeta}</div>
+  <div class="astro-grid">${astroInner}</div>
+  <div class="pressure-section">
+    <div class="section-header">
+      <span class="section-title">📈 Verlaufskurven · Cuxhaven</span>
+      <span>${timeRangeBtns}</span>
+    </div>
+    <div>${pressInner}</div>
+  </div>
+  <script>window.onload=()=>window.print();<\/script>
+</body></html>`;
+
+  const blob = new Blob([html], { type: 'text/html' });
+  const url  = URL.createObjectURL(blob);
+  const win  = window.open(url, '_blank');
+  if (win) win.onload = () => URL.revokeObjectURL(url);
+}
+
 function goAktuelleReiseWith(id) {
   aktuelleReiseId = id;
   arManuelleV = '';
@@ -5292,34 +5429,6 @@ function renderFahrtDashboard(entry) {
           </div>
         </div>
 
-        <!-- Wind Widget -->
-        <div class="fd-card" id="ar-wind-card">
-          <div class="fd-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-            <span>🌬️ Aktueller Wind</span>
-            <button onclick="fetchWindData()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);display:flex;align-items:center;gap:4px" id="ar-wind-refresh-btn">↻ Aktualisieren</button>
-          </div>
-          <div id="ar-wind-inner" class="wind-grid">
-            <div class="wind-err">Winddaten werden geladen…</div>
-          </div>
-          <div id="ar-wind-meta" style="text-align:right;font-size:9px;color:#94a3b8;margin-top:6px"></div>
-          <!-- Astronomie & Umwelt -->
-          <div id="ar-astro-grid" class="astro-grid"></div>
-          <!-- Luftdruckverlauf -->
-          <div id="ar-pressure-card" style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📈 Verlaufskurven · Cuxhaven</div>
-              <div style="display:flex;gap:6px">
-                <button onclick="fetchPressureHistory(6)"  id="pbtn-6"  style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">6h</button>
-                <button onclick="fetchPressureHistory(12)" id="pbtn-12" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">12h</button>
-                <button onclick="fetchPressureHistory(24)" id="pbtn-24" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit">24h</button>
-                <button onclick="fetchPressureHistory(48)" id="pbtn-48" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">48h</button>
-                <button onclick="fetchPressureHistory(72)" id="pbtn-72" style="padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit">72h</button>
-              </div>
-            </div>
-            <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
-          </div>
-        </div>
-
         <!-- ETA Wegpunkte -->
         ${etaCardHtml}
 
@@ -5335,9 +5444,6 @@ function renderFahrtDashboard(entry) {
       </div>
     </div>`;
 
-  // Winddaten + Astronomie + Luftdruck asynchron nachladen
-  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
-  setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
 }
 
 /* ════════════════════════════════════════════
