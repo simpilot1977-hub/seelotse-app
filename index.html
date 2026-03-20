@@ -4238,6 +4238,7 @@ function _aisUpdateBadge() {
 function _aisRenderTable() {
   const container = document.getElementById('ais-table-container');
   if (!container) { aisDisconnect(); return; }   // Seite verlassen
+  if (!_aisProxyUrl()) { _aisShowSetup(); return; }  // kein Proxy → Setup anzeigen
 
   const now    = Date.now();
   const ships  = [..._aisShips.values()].filter(s => s.lat !== null && s.lon !== null);
