@@ -4929,6 +4929,7 @@ let _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, sch
 let _kartePegelMarkers = [];
 let _karteWindMarkers = [];
 let _karteShipMarkers = {};   // mmsi → { dot: HTMLEl, marker: maplibregl.Marker }
+let _karteTideMarkers = [];   // maplibregl.Marker[]
 let _karteShipTimer   = null;
 let _karteVectorMinutes = 10;
 let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle zeigen)
@@ -4979,7 +4980,7 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false };
 
   document.getElementById('app-main').innerHTML = `
     <div style="position:relative;height:calc(100vh - 56px)">
@@ -4999,6 +5000,9 @@ function goKarte() {
         </label>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-wind" onchange="karteToggleOverlay('wind',this.checked)"> Wind
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-tide" onchange="karteToggleOverlay('tide',this.checked)"> Hoch-/Niedrigwasser
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
@@ -5035,6 +5039,7 @@ function goKarte() {
     _karteWindMarkers.forEach(m => m.remove()); _karteWindMarkers = [];
     if (_karteShipTimer) { clearInterval(_karteShipTimer); _karteShipTimer = null; }
     _karteShipMarkers = {};
+    _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = [];
 
     // ── Nautisches Flat-Design (demotiles) ────────────────────────────
     const styleResp = await fetch('https://demotiles.maplibre.org/style.json').then(r => r.json());
@@ -5265,6 +5270,9 @@ function karteToggleOverlay(type, visible) {
   } else if (type === 'wind') {
     if (visible) _karteLoadWind();
     else { _karteWindMarkers.forEach(m => m.remove()); _karteWindMarkers = []; }
+  } else if (type === 'tide') {
+    if (visible) _karteLoadTides();
+    else { _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = []; }
   } else if (type === 'schiffe') {
     const panel = document.getElementById('karte-schiffe-panel');
     if (panel) panel.style.display = visible ? 'block' : 'none';
@@ -5371,6 +5379,105 @@ async function _karteLoadWind() {
         .setLngLat([st.lon, st.lat]).addTo(_karteMap);
       _karteWindMarkers.push(marker);
     } catch(e) { console.warn('Wind karte', st.label, e); }
+  }));
+}
+
+// ── Hoch-/Niedrigwasser Overlay ────────────────────────────────────
+// Stationen: die 3 Pegelonline-Stationen mit bekannten Positionen
+const KARTE_TIDE_STATIONS = [
+  { key:'cux', label:'Cuxhaven',    lat:53.8689, lon:8.7097 },
+  { key:'brb', label:'Brunsbüttel', lat:53.8917, lon:9.1523 },
+  { key:'hh',  label:'Hamburg',     lat:53.5440, lon:9.9636 },
+];
+
+// Einfacher Gezeitenscheitel-Detektor (lokale Extrema mit Mindestabstand ~4h)
+function _karteFindTides(pts) {
+  if (pts.length < 30) return [];
+  // Glätten: 15-Punkt-Mittelwert (~15 min)
+  const sm = pts.map((_, i) => {
+    const s = Math.max(0, i - 7), e = Math.min(pts.length - 1, i + 7);
+    const avg = pts.slice(s, e + 1).reduce((a, p) => a + p.v, 0) / (e - s + 1);
+    return { t: pts[i].t, v: avg, raw: pts[i].v };
+  });
+
+  const results = [];
+  const minGapMs = 3.5 * 3600 * 1000; // mind. 3,5h zwischen zwei Ereignissen
+  let lastT = 0;
+
+  for (let i = 10; i < sm.length - 10; i++) {
+    const v = sm[i].v;
+    const prev10 = sm.slice(i - 10, i);
+    const next10 = sm.slice(i + 1, i + 11);
+    const isHW = prev10.every(p => p.v <= v) && next10.every(p => p.v <= v);
+    const isNW = prev10.every(p => p.v >= v) && next10.every(p => p.v >= v);
+    if ((isHW || isNW) && (sm[i].t - lastT) >= minGapMs) {
+      results.push({ t: sm[i].t, v: sm[i].raw, type: isHW ? 'HW' : 'NW' });
+      lastT = sm[i].t;
+    }
+  }
+  return results;
+}
+
+async function _karteLoadTides() {
+  if (!_karteMap) return;
+  _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = [];
+
+  // Daten holen: entweder aus _pegelData (schon geladen) oder frisch abrufen
+  const BASE_PO = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+  await Promise.allSettled(KARTE_TIDE_STATIONS.map(async st => {
+    try {
+      let pts = _pegelData[st.key] || [];
+      if (pts.length < 30) {
+        // Frisch laden: 48h für mind. 4 Tidenzyklen
+        const station = PEGEL_STATIONS.find(s => s.key === st.key);
+        if (!station) return;
+        const raw = await fetch(`${BASE_PO}/${station.uuid}/W/measurements.json?start=P2D`).then(r => r.json());
+        pts = (Array.isArray(raw) ? raw : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
+        _pegelData[st.key] = pts; // cachen
+      }
+
+      const tides = _karteFindTides(pts);
+      if (!tides.length) return;
+
+      const now = Date.now();
+      const fmtT = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+      const fmtDate = d => {
+        const today = new Date(); const tom = new Date(today); tom.setDate(tom.getDate() + 1);
+        if (d.toDateString() === today.toDateString()) return 'heute';
+        if (d.toDateString() === tom.toDateString()) return 'morgen';
+        return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+      };
+
+      // Vergangene (letzte 2) + zukünftige (nächste 4) Ereignisse
+      const past   = tides.filter(e => e.t.getTime() <= now).slice(-2);
+      const future = tides.filter(e => e.t.getTime() >  now).slice(0, 4);
+      const display = [...past, ...future];
+      if (!display.length) return;
+
+      const rows = display.map(e => {
+        const isPast = e.t.getTime() <= now;
+        const isHW   = e.type === 'HW';
+        const col    = isHW ? '#1d4ed8' : '#059669';
+        const arrow  = isHW ? '↑' : '↓';
+        const opacity = isPast ? '0.45' : '1';
+        return `<div style="display:flex;justify-content:space-between;gap:10px;opacity:${opacity};margin-bottom:2px">
+          <span style="color:${col};font-weight:700">${arrow} ${e.type}</span>
+          <span style="color:#374151">${fmtDate(e.t)} ${fmtT(e.t)}</span>
+          <span style="color:${col};font-weight:600;min-width:48px;text-align:right">${Math.round(e.v)} cm</span>
+        </div>`;
+      }).join('');
+
+      const el = document.createElement('div');
+      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid #1b3d5f;border-radius:6px;padding:6px 9px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);min-width:200px;pointer-events:none';
+      el.innerHTML = `
+        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:4px">🌊 ${st.label}</div>
+        ${rows}
+        <div style="font-size:8px;color:#94a3b8;margin-top:3px">Pegelonline WSV · automatische Extremwerterkennung</div>`;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left' })
+        .setLngLat([st.lon, st.lat]).addTo(_karteMap);
+      _karteTideMarkers.push(marker);
+    } catch(e) { console.warn('Tide', st.label, e); }
   }));
 }
 
