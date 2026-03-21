@@ -4312,36 +4312,78 @@ function _aisEtaMs(s, wpKey) {
   if (s.sog < 0.3) return Infinity;   // steht → ganz hinten
   return rem / s.sog * 3600000;
 }
+// ── Filter-Persistenz ─────────────────────────────────────────────
+const _AIS_FILTER_KEY = 'ais_filter_v2';
+function _aisSaveFilters() {
+  try {
+    localStorage.setItem(_AIS_FILTER_KEY, JSON.stringify({
+      shownTypes:  [..._aisFilter.shownTypes],
+      minLen:      _aisFilter.minLen,
+      minSog:      _aisFilter.minSog,
+      maxAge:      _aisFilter.maxAge,
+      maxElbeDist: _aisFilter.maxElbeDist,
+      hideAnc:     _aisFilter.hideAnc,
+      sortIn:      _aisFilter.sortIn,
+      sortOut:     _aisFilter.sortOut,
+      kmFrom:      _aisFilter.kmFrom,
+      kmTo:        _aisFilter.kmTo,
+      customKm:    _aisCustomKm,
+      collapsed:   _aisCollapsed,
+    }));
+  } catch {}
+}
+function _aisLoadFilters() {
+  try {
+    const raw = localStorage.getItem(_AIS_FILTER_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    _aisFilter = {
+      shownTypes:  new Set(d.shownTypes  || []),
+      minLen:      d.minLen      ?? 0,
+      minSog:      d.minSog      ?? 0,
+      maxAge:      d.maxAge      ?? 30,
+      maxElbeDist: d.maxElbeDist ?? 6,
+      hideAnc:     d.hideAnc     ?? false,
+      sortIn:      d.sortIn      ?? null,
+      sortOut:     d.sortOut     ?? null,
+      kmFrom:      d.kmFrom      ?? null,
+      kmTo:        d.kmTo        ?? null,
+    };
+    _aisCustomKm  = d.customKm  ?? null;
+    _aisCollapsed = d.collapsed ?? { in: false, out: false };
+  } catch {}
+}
+
 function _aisFToggle(type) {
   if (_aisFilter.shownTypes.has(type)) _aisFilter.shownTypes.delete(type);
   else _aisFilter.shownTypes.add(type);
-  _aisRenderTable();
+  _aisSaveFilters(); _aisRenderTable();
 }
 function _aisSetMinLen(v) {
   _aisFilter.minLen = parseInt(v) || 0;
-  _aisRenderTable();
+  _aisSaveFilters(); _aisRenderTable();
 }
 function _aisSetMinSog(v) {
   _aisFilter.minSog = parseFloat(v) || 0;
-  _aisRenderTable();
+  _aisSaveFilters(); _aisRenderTable();
 }
 function _aisToggleAnc() {
   _aisFilter.hideAnc = !_aisFilter.hideAnc;
-  _aisRenderTable();
+  _aisSaveFilters(); _aisRenderTable();
 }
 function _aisSetCustomKm(v) {
   const n = parseInt(v);
   _aisCustomKm = (!v || isNaN(n)) ? null : Math.max(620, Math.min(760, n));
-  _aisRenderTable();
+  _aisSaveFilters(); _aisRenderTable();
 }
-function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
-function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
-function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisRenderTable(); }
-function _aisSetMaxAge(v)      { _aisFilter.maxAge      = parseInt(v)   || 0; _aisRenderTable(); }
-function _aisSetMaxElbeDist(v) { _aisFilter.maxElbeDist = parseFloat(v) || 0; _aisRenderTable(); }
-function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
-function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
-function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _aisRenderTable(); }
+function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisSaveFilters(); _aisRenderTable(); }
+function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetMaxAge(v)      { _aisFilter.maxAge      = parseInt(v)   || 0; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetMaxElbeDist(v) { _aisFilter.maxElbeDist = parseFloat(v) || 0; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
+function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _aisSaveFilters(); _aisRenderTable(); }
 
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
@@ -4639,9 +4681,11 @@ function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
   _aisInitialLoaded = false;
+  // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
   _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
+  _aisLoadFilters();
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
