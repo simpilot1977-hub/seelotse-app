@@ -1735,7 +1735,14 @@ function renderAstroDashboard() {
         <div><div class="astro-sub">Luftdruck</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtHpa(_arMeteo?.pressure)}</div></div>
         <div><div class="astro-sub">Sichtweite</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtVis(_arMeteo?.visibility)}</div></div>
       </div>
-      ${_arMeteo ? '' : '<div class="astro-sub" style="margin-top:6px">Wird geladen…</div>'}
+      ${_arMeteo?.ts ? (() => {
+        const tsDate = new Date(_arMeteo.ts);
+        const ageMs = Date.now() - tsDate.getTime();
+        const ageH = ageMs / 3600000;
+        const tsStr = tsDate.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+        const color = ageH > 3 ? 'var(--danger)' : 'var(--text-muted)';
+        return `<div class="astro-sub" style="margin-top:6px;color:${color}">Stand: ${tsStr}${ageH > 3 ? ' ⚠️' : ''}</div>`;
+      })() : (_arMeteo ? '' : '<div class="astro-sub" style="margin-top:6px">Wird geladen…</div>')}
     </div>`;
 }
 
