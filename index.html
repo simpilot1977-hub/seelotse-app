@@ -4936,6 +4936,15 @@ let _karteSeamarkBbox = '';
 let _karteSeamarkAnimStyle = null;
 let _karteRangeLineRAF = null;
 let _karteRangeLineLayers = []; // [{layerId, sourceId, char_, period, group}]
+let _karteDarkMode = false;
+let _karteLandLayerIds = [];  // demotiles layer IDs that got land color
+let _karteWaterLayerIds = []; // demotiles layer IDs that got water color
+let _karteBgLayerId = null;   // background layer ID
+
+const KARTE_COLORS = {
+  light: { bg: '#e8ddc8', land: '#e8ddc8', water: '#9cc4d8', coast: '#4d8aaa', grid: 'rgba(0,60,100,0.3)', fairway: '#1b4f8c' },
+  dark:  { bg: '#101820', land: '#1c2a38', water: '#0c2d48', coast: '#1a5070', grid: 'rgba(120,200,255,0.25)', fairway: '#4ea3e8' },
+};
 let _karteShipTimer   = null;
 let _karteVectorMinutes = 10;
 let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle zeigen)
@@ -4987,14 +4996,20 @@ function goKarte() {
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
   _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, seezeichen: false };
+  _karteDarkMode = false;
 
   document.getElementById('app-main').innerHTML = `
     <div style="position:relative;height:calc(100vh - 56px)">
       <div id="karte-map" style="width:100%;height:100%"></div>
 
       <!-- Overlay-Steuerung -->
-      <div style="position:absolute;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,0.96);border:1px solid #b8ccd8;border-radius:8px;padding:10px 14px;font-size:12px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.15);min-width:170px">
-        <div style="font-weight:700;margin-bottom:8px;color:#1b3d5f;font-size:13px">⚙ Überlagerungen</div>
+      <div id="karte-overlay-panel" style="position:absolute;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,0.96);border:1px solid #b8ccd8;border-radius:8px;padding:10px 14px;font-size:12px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.15);min-width:170px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-weight:700;color:#1b3d5f;font-size:13px">⚙ Überlagerungen</span>
+          <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:#637485" title="Dark Mode">
+            🌙 <input type="checkbox" id="karte-dark-toggle" onchange="karteToggleDark(this.checked)" style="margin:0">
+          </label>
+        </div>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-grid" checked onchange="karteToggleOverlay('grid',this.checked)"> Koordinatengitter
         </label>
@@ -5055,23 +5070,27 @@ function goKarte() {
     _karteRangeLineLayers = [];
 
     // ── Nautisches Flat-Design (demotiles) ────────────────────────────
+    _karteLandLayerIds = []; _karteWaterLayerIds = []; _karteBgLayerId = null;
     const styleResp = await fetch('https://demotiles.maplibre.org/style.json').then(r => r.json());
     styleResp.layers.forEach(l => {
       if (!l.paint) return;
       const fc = l.paint['fill-color'];
       if (l.type === 'background') {
         l.paint['background-color'] = '#e8ddc8';
+        _karteBgLayerId = l.id;
       } else if (fc && (l.id.includes('water') || l.id.includes('ocean') || l.id.includes('sea') || l.id.includes('lake') || l.id.includes('river'))) {
         l.paint['fill-color'] = '#9cc4d8';
+        _karteWaterLayerIds.push(l.id);
       } else if (fc && (l.id.includes('land') || l.id.includes('earth') || l.id.includes('country') || l.id.includes('admin'))) {
         l.paint['fill-color'] = '#e8ddc8';
+        _karteLandLayerIds.push(l.id);
       }
       if (l.paint['line-color'] && l.id.includes('water')) l.paint['line-color'] = '#5a8fa8';
       if (l.type === 'symbol' && !l.id.includes('water')) { l.layout = l.layout || {}; l.layout.visibility = 'none'; }
       if (['road','building','bridge','tunnel','rail'].some(k => l.id.includes(k))) { l.layout = l.layout || {}; l.layout.visibility = 'none'; }
     });
     const bgLayer = styleResp.layers.find(l => l.type === 'background');
-    if (bgLayer) bgLayer.paint = { 'background-color': '#e8ddc8' };
+    if (bgLayer) { bgLayer.paint = { 'background-color': '#e8ddc8' }; _karteBgLayerId = bgLayer.id; }
 
     _karteMap = new maplibregl.Map({
       container: 'karte-map',
@@ -5308,6 +5327,46 @@ function karteToggleOverlay(type, visible) {
       });
       _karteRangeLineLayers = [];
     }
+  }
+}
+
+// ── Dark Mode ──────────────────────────────────────────────────────
+function karteToggleDark(dark) {
+  _karteDarkMode = dark;
+  const C = dark ? KARTE_COLORS.dark : KARTE_COLORS.light;
+
+  if (_karteMap) {
+    // Background
+    if (_karteBgLayerId && _karteMap.getLayer(_karteBgLayerId))
+      _karteMap.setPaintProperty(_karteBgLayerId, 'background-color', C.bg);
+    // Land layers (demotiles)
+    _karteLandLayerIds.forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.land);
+    });
+    // Water layers (demotiles)
+    _karteWaterLayerIds.forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.water);
+    });
+    // OSM Shortbread water
+    ['water-ocean', 'water-poly'].forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.water);
+    });
+    if (_karteMap.getLayer('water-line')) _karteMap.setPaintProperty('water-line', 'line-color', C.coast);
+    // Grid
+    if (_karteMap.getLayer('grid-lines-layer')) _karteMap.setPaintProperty('grid-lines-layer', 'line-color', C.grid);
+    // Fairway
+    if (_karteMap.getLayer('fairway-layer')) _karteMap.setPaintProperty('fairway-layer', 'line-color', C.fairway);
+  }
+
+  // Overlay panel
+  const panel = document.getElementById('karte-overlay-panel');
+  if (panel) {
+    panel.style.background = dark ? 'rgba(16,24,34,0.96)' : 'rgba(255,255,255,0.96)';
+    panel.style.color = dark ? '#c8dff0' : '#1a2332';
+    panel.style.borderColor = dark ? '#2a4a6a' : '#b8ccd8';
+    // Update heading color
+    const heading = panel.querySelector('span');
+    if (heading) heading.style.color = dark ? '#7ec8e3' : '#1b3d5f';
   }
 }
 
