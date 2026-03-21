@@ -4093,8 +4093,11 @@ function _elbeNm(lat, lon) { return _elbeProject(lat, lon).trackNm; }
 
 // Fahrtrichtung aus Position + COG
 function _elbeDir(lat, lon, cog, sog, navStatus) {
+  // Ankern, Vertäut, Aufgelaufen → stationary
   if (navStatus === 1 || navStatus === 5 || navStatus === 6) return 'stationary';
-  if (sog < 0.3) return 'stationary';
+  // Sehr niedrige Fahrt → stationary, AUSSER Schlepper (navStatus 3 = eingeschr. Manövr.)
+  // die auch bei SOG < 0.3 noch eine Richtung per COG melden
+  if (sog < 0.3 && navStatus !== 3) return 'stationary';
   let best = Infinity, bestBrg = 90;
   for (let i = 0; i < ELBE_TRACK.length-1; i++) {
     const A = ELBE_TRACK[i], B = ELBE_TRACK[i+1];
@@ -4349,7 +4352,7 @@ function _aisRenderTable() {
   const now    = Date.now();
 
   // Alle Typen die aktuell vorkommen (für Filter-Bar)
-  const allTypes = ['Frachter','Tanker','Fahrgast','Yacht','Schlepper','Fischer','Dienst','Sonstige'];
+  const allTypes = ['Frachter','Tanker','Fahrgast','Yacht','Schlepper','Fischer','Dienst','Sonstige','—'];
 
   // Filter anwenden
   function applyFilter(list) {
@@ -4384,18 +4387,22 @@ function _aisRenderTable() {
 
   // Sortierung einkommend
   let inList = applyFilter(inRaw);
-  if (_aisFilter.sortIn) {
+  if (_aisFilter.sortIn === 'position') {
+    inList.sort((a,b) => b.trackNm - a.trackNm);   // Hamburg-nah zuerst
+  } else if (_aisFilter.sortIn) {
     inList.sort((a,b) => _aisEtaMs(a, _aisFilter.sortIn) - _aisEtaMs(b, _aisFilter.sortIn));
   } else {
-    inList.sort((a,b) => a.trackNm - b.trackNm);
+    inList.sort((a,b) => a.trackNm - b.trackNm);   // Racon-nah zuerst (Standard)
   }
 
   // Sortierung ausgehend
   let outList = applyFilter(outRaw);
-  if (_aisFilter.sortOut) {
+  if (_aisFilter.sortOut === 'position') {
+    outList.sort((a,b) => a.trackNm - b.trackNm);  // Racon-nah zuerst (am weitesten vorn)
+  } else if (_aisFilter.sortOut) {
     outList.sort((a,b) => _aisEtaMs(a, _aisFilter.sortOut) - _aisEtaMs(b, _aisFilter.sortOut));
   } else {
-    outList.sort((a,b) => b.trackNm - a.trackNm);
+    outList.sort((a,b) => b.trackNm - a.trackNm);  // Hamburg-nah zuerst (Standard)
   }
 
   function wpEtaCells(s, wps) {
@@ -4555,12 +4562,15 @@ function _aisRenderTable() {
     if (!inList.length) {
       html += `<div class="ais-empty">Keine einkommenden Schiffe erkannt<br><small>Racon → Cuxhaven → Brunsbüttel → Hamburg</small></div>`;
     } else {
+      const siP = _aisFilter.sortIn==='position'     ? ' sort-active' : '';
       const siC = _aisFilter.sortIn==='cuxhaven'     ? ' sort-active' : '';
       const siB = _aisFilter.sortIn==='brunsbuettel' ? ' sort-active' : '';
       const siH = _aisFilter.sortIn==='hamburg'      ? ' sort-active' : '';
       const siX = _aisFilter.sortIn==='custom'       ? ' sort-active' : '';
       html += `<table class="ais-table"><thead><tr>
-        <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
+        <th>Schiff</th><th>L / Tg</th>
+        <th class="sortable${siP}" onclick="_aisSortIn('position')" title="Nach Position sortieren (HH-nah zuerst)">Position${siP?' ▼':' ⇅'}</th>
+        <th>SOG</th>
         <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
         <th class="sortable${siB}" onclick="_aisSortIn('brunsbuettel')">ETA Brb${siB?' ▲':' ⇅'}</th>
         <th class="sortable${siH}" onclick="_aisSortIn('hamburg')">ETA HH${siH?' ▲':' ⇅'}</th>
@@ -4582,12 +4592,15 @@ function _aisRenderTable() {
     if (!outList.length) {
       html += `<div class="ais-empty">Keine ausgehenden Schiffe erkannt<br><small>Hamburg → Brunsbüttel → Cuxhaven → Elbe-Racon</small></div>`;
     } else {
+      const soP = _aisFilter.sortOut==='position'     ? ' sort-active' : '';
       const soB = _aisFilter.sortOut==='brunsbuettel' ? ' sort-active' : '';
       const soC = _aisFilter.sortOut==='cuxhaven'     ? ' sort-active' : '';
       const soR = _aisFilter.sortOut==='racon'        ? ' sort-active' : '';
       const soX = _aisFilter.sortOut==='custom'       ? ' sort-active' : '';
       html += `<table class="ais-table"><thead><tr>
-        <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
+        <th>Schiff</th><th>L / Tg</th>
+        <th class="sortable${soP}" onclick="_aisSortOut('position')" title="Nach Position sortieren (Racon-nah zuerst)">Position${soP?' ▼':' ⇅'}</th>
+        <th>SOG</th>
         <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
         <th class="sortable${soC}" onclick="_aisSortOut('cuxhaven')">ETA Cux${soC?' ▲':' ⇅'}</th>
         <th class="sortable${soR}" onclick="_aisSortOut('racon')">ETA Racon${soR?' ▲':' ⇅'}</th>
