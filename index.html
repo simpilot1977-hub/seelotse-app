@@ -5385,10 +5385,44 @@ async function _karteLoadWind() {
 // ── Hoch-/Niedrigwasser Overlay ────────────────────────────────────
 // Stationen: die 3 Pegelonline-Stationen mit bekannten Positionen
 const KARTE_TIDE_STATIONS = [
-  { key:'cux', label:'Cuxhaven',    lat:53.8689, lon:8.7097 },
-  { key:'brb', label:'Brunsbüttel', lat:53.8917, lon:9.1523 },
-  { key:'hh',  label:'Hamburg',     lat:53.5440, lon:9.9636 },
+  // labelLat/Lon: Label-Position abseits des Fahrwassers; anchor: MapLibre Marker-Ankerpunkt
+  { key:'cux', label:'Cuxhaven',    lat:53.8689, lon:8.7097, labelLat:53.820, labelLon:8.600, anchor:'top-left'    },
+  { key:'brb', label:'Brunsbüttel', lat:53.8917, lon:9.1523, labelLat:53.950, labelLon:9.070, anchor:'bottom-left' },
+  { key:'hh',  label:'Hamburg',     lat:53.5440, lon:9.9636, labelLat:53.500, labelLon:9.870, anchor:'top-left'    },
 ];
+
+// Nächste N Gezeiten: aus Daten + Extrapolation per halbem Tidenzyklus
+function _karteNextTides(detected, count) {
+  const now = Date.now();
+  // Zuerst zukünftige Ereignisse aus Rohdaten
+  const future = detected.filter(e => e.t.getTime() > now);
+  if (future.length >= count) return future.slice(0, count);
+
+  const result = [...future];
+  // Extrapolieren aus den letzten erkannten Ereignissen
+  const recent = detected.slice(-4);
+  if (recent.length < 2) return result;
+
+  // Mittlere Halbperiode aus letzten Paaren berechnen
+  let totalGap = 0, n = 0;
+  for (let i = 1; i < recent.length; i++) {
+    totalGap += recent[i].t.getTime() - recent[i-1].t.getTime();
+    n++;
+  }
+  const halfPeriod = n > 0 ? totalGap / n : 6 * 3600000 + 12.5 * 60000;
+
+  let last = recent[recent.length - 1];
+  while (result.length < count) {
+    const nextType = last.type === 'HW' ? 'NW' : 'HW';
+    const nextT    = new Date(last.t.getTime() + halfPeriod);
+    // Schätzwert: Durchschnitt der gleichartigen bekannten Ereignisse
+    const similar  = detected.filter(e => e.type === nextType);
+    const estV     = similar.length ? similar.reduce((s, e) => s + e.v, 0) / similar.length : last.v;
+    last = { t: nextT, v: Math.round(estV), type: nextType, estimated: true };
+    if (nextT.getTime() > now) result.push(last);
+  }
+  return result.slice(0, count);
+}
 
 // Einfacher Gezeitenscheitel-Detektor (lokale Extrema mit Mindestabstand ~4h)
 function _karteFindTides(pts) {
@@ -5448,22 +5482,19 @@ async function _karteLoadTides() {
         return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
       };
 
-      // Vergangene (letzte 2) + zukünftige (nächste 4) Ereignisse
-      const past   = tides.filter(e => e.t.getTime() <= now).slice(-2);
-      const future = tides.filter(e => e.t.getTime() >  now).slice(0, 4);
-      const display = [...past, ...future];
+      // Nächste 2 Ereignisse (aus Daten oder extrapoliert)
+      const display = _karteNextTides(tides, 2);
       if (!display.length) return;
 
       const rows = display.map(e => {
-        const isPast = e.t.getTime() <= now;
-        const isHW   = e.type === 'HW';
-        const col    = isHW ? '#1d4ed8' : '#059669';
-        const arrow  = isHW ? '↑' : '↓';
-        const opacity = isPast ? '0.45' : '1';
-        return `<div style="display:flex;justify-content:space-between;gap:10px;opacity:${opacity};margin-bottom:2px">
+        const isHW  = e.type === 'HW';
+        const col   = isHW ? '#1d4ed8' : '#059669';
+        const arrow = isHW ? '↑' : '↓';
+        const vStr  = e.estimated ? `~${Math.round(e.v)} cm` : `${Math.round(e.v)} cm`;
+        return `<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:2px">
           <span style="color:${col};font-weight:700">${arrow} ${e.type}</span>
           <span style="color:#374151">${fmtDate(e.t)} ${fmtT(e.t)}</span>
-          <span style="color:${col};font-weight:600;min-width:48px;text-align:right">${Math.round(e.v)} cm</span>
+          <span style="color:${col};font-weight:600;min-width:52px;text-align:right">${vStr}</span>
         </div>`;
       }).join('');
 
@@ -5472,10 +5503,11 @@ async function _karteLoadTides() {
       el.innerHTML = `
         <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:4px">🌊 ${st.label}</div>
         ${rows}
-        <div style="font-size:8px;color:#94a3b8;margin-top:3px">Pegelonline WSV · automatische Extremwerterkennung</div>`;
+        <div style="font-size:8px;color:#94a3b8;margin-top:3px">Pegelonline WSV</div>`;
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left' })
-        .setLngLat([st.lon, st.lat]).addTo(_karteMap);
+      // Label-Position abseits des Fahrwassers (per Station konfiguriert)
+      const marker = new maplibregl.Marker({ element: el, anchor: st.anchor })
+        .setLngLat([st.labelLon, st.labelLat]).addTo(_karteMap);
       _karteTideMarkers.push(marker);
     } catch(e) { console.warn('Tide', st.label, e); }
   }));
