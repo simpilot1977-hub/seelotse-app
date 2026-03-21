@@ -13,6 +13,10 @@
   <title>⚓ Seelotsen-Fahrtenbuch</title>
   <script src="xlsx.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/suncalc/1.9.0/suncalc.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css"/>
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
   <style>
     :root {
       --navy:       #1b3d5f;
@@ -1233,6 +1237,8 @@
       .epp-grid, .epp-grid-3, .epp-grid-4 { grid-template-columns: 1fr; }
       .epp-speed-highlight { flex-wrap: wrap; }
     }
+    .karte-wp-label { background: rgba(255,255,255,0.9); border: 1px solid #2a6495; border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; color: #1b3d5f; white-space: nowrap; box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+    .karte-wp-label::before { display: none; }
   </style>
   <style>
     /* ── PIN-Schutz ── */
@@ -1272,6 +1278,20 @@
       40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)}
     }
     .pin-dots.shake { animation: pinShake 0.35s ease; }
+
+    /* Karte – pulsierende Schiffsmarkierung */
+    @keyframes karteShipRipple {
+      0%   { box-shadow: 0 0 0 0   rgba(220,38,38,0.9); }
+      70%  { box-shadow: 0 0 0 10px rgba(220,38,38,0); }
+      100% { box-shadow: 0 0 0 0   rgba(220,38,38,0); }
+    }
+    .karte-ship-dot {
+      width:12px; height:12px; background:#dc2626; border:2px solid #fff;
+      border-radius:50%; cursor:pointer;
+      animation: karteShipRipple 1.4s ease-out infinite;
+      box-shadow: 0 0 0 0 rgba(220,38,38,0.9);
+    }
+    .karte-ship-dot.selected { background:#f97316; border-color:#1b3d5f; width:16px; height:16px; }
   </style>
 </head>
 <body>
@@ -1338,6 +1358,10 @@
       <button class="nav-btn" id="nav-verkehr" onclick="goVerkehr()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l4-8 4 4 4-6 4 10"/><path d="M3 21h18"/></svg>
         Verkehr
+      </button>
+      <button class="nav-btn" id="nav-karte" onclick="goKarte()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>
+        Karte
       </button>
       <button class="nav-btn" id="nav-ie" onclick="goImportExport()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
@@ -1471,7 +1495,8 @@ function getElbeCurrent(ataDt, waypointKey) {
 
 // ── Wind Widget ──────────────────────────────────────────────────────────────
 
-let _windRefreshTimer = null;
+let _windRefreshTimer     = null;
+let _pressureRefreshTimer = null;
 let _arMeteo = null; // Letzte Wetterdaten von Cuxhaven für das Umwelt-Dashboard
 
 function _msToKn(ms) { return ms * 1.94384; }
@@ -1605,8 +1630,13 @@ async function fetchWindData() {
 
   const fmtTs = ts => {
     if (!ts) return '';
-    try { const d = new Date(ts); return d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr'; }
-    catch { return ''; }
+    try {
+      const d = new Date(ts);
+      const now = new Date();
+      const sameDay = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      const timeStr = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr';
+      return sameDay ? timeStr : d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}) + ' ' + timeStr;
+    } catch { return ''; }
   };
 
   const brbBadge = (results.brb?.obsType === 'synop') ? 'SYNOP' : 'Modell';
@@ -1830,6 +1860,9 @@ async function fetchPressureHistory(hours) {
       (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>') +
       _renderPegelChartWithHeader(tRange);
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
+  // Auto-refresh alle 10 Minuten
+  if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
+  _pressureRefreshTimer = setTimeout(() => { if (document.getElementById('ar-pressure-inner')) fetchPressureHistory(); }, 10 * 60 * 1000);
 }
 
 function _renderPegelChartWithHeader(tRange) {
@@ -2134,7 +2167,7 @@ function getElbeCurrentFromDb(ataDt, wpKey) {
 
 // Iterative ETA-Berechnung mit Strömungskorrektur
 function arCalcETAs(entry, veff) {
-  const isEinkommend = entry.einkommend && !entry.anspleissen;
+  const isEinkommend = !!entry.einkommend;
   const startKey = AR_VON_KEY[entry.streckeVon]  || 'ElbeRacon';
   const endKey   = AR_NACH_KEY[entry.streckeNach] || 'Hamburg';
   const startNm  = AR_WAYPOINTS.find(w=>w.key===startKey)?.nm ?? 0;
@@ -4279,7 +4312,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.5, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.25, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
@@ -4500,7 +4533,7 @@ function _aisLoadFilters() {
   } catch {}
 }
 function _aisResetAllFilters() {
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.5, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.25, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisSaveFilters(); _aisRenderTable();
@@ -4553,6 +4586,8 @@ function _aisRenderTable() {
   // Zone bestimmen (Fahrwasser / Reede)
   function shipZone(s) {
     if (s.elbeDistNm == null) return 'reede';
+    // SOG-Heuristik: fahrende Schiffe können nicht auf Reede liegen
+    if (s.sog != null && s.sog > 3) return 'fahrwasser';
     return s.elbeDistNm <= _aisFilter.fahrwasserNm ? 'fahrwasser' : 'reede';
   }
 
@@ -4859,7 +4894,7 @@ function goVerkehr() {
   _aisShips.clear();
   _aisInitialLoaded = false;
   // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.5, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, maxElbeDist: 6, fahrwasserNm: 0.25, zoneFilter: 'all', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisLoadFilters();
@@ -4886,6 +4921,586 @@ function goVerkehr() {
     </div>`;
   aisConnect();  // zeigt Setup-Guide wenn kein Proxy konfiguriert
   _aisRenderTimer = setInterval(_aisRenderTable, 30000);
+}
+
+// ── Karte ─────────────────────────────────────────────────────────
+let _karteMap = null;
+let _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false };
+let _kartePegelMarkers = [];
+let _karteWindMarkers = [];
+let _karteShipMarkers = {};   // mmsi → { dot: HTMLEl, marker: maplibregl.Marker }
+let _karteShipTimer   = null;
+let _karteVectorMinutes = 10;
+let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle zeigen)
+let _karteWaterFetching = false;
+let _karteWaterBbox     = '';
+
+// Wegpunkte mit korrekten Koordinaten (OSM/WSA Elbe-Nordsee, baken-net.de)
+const KARTE_WP = [
+  { key:'LVElbe',       label:'LV Elbe',        lat:53.9993, lon:8.1085 },
+  { key:'Tonne7',       label:'Tonne 7',         lat:53.9846, lon:8.3576 },
+  { key:'Cuxhaven',     label:'Cuxhaven',        lat:53.8689, lon:8.7097 },
+  { key:'Glameyer',     label:'Glameyer Stack',  lat:53.8341, lon:8.8346 },
+  { key:'Brunsbuettel', label:'Brunsbüttel',     lat:53.8917, lon:9.1523 },
+  { key:'Stade',        label:'Stade',           lat:53.6075, lon:9.4799 },
+  { key:'Hamburg',      label:'Hamburg',         lat:53.5440, lon:9.9636 },
+];
+
+// Äußere Elbe: LV Elbe → Cuxhaven (Tonnen-Positionen aus OSM, WSA Elbe-Nordsee)
+// Linie bleibt auf ~53.97–53.99°N und biegt erst nahe Cuxhaven nach S ab
+const OUTER_ELBE_COORDS = [
+  [8.1085, 53.9993],  // LV Elbe (safe water buoy)
+  [8.2201, 53.9871],  // Tonne 1
+  [8.2683, 53.9880],  // Tonne 3
+  [8.3087, 53.9906],  // Tonne 5
+  [8.3576, 53.9846],  // Tonne 7
+  [8.3993, 53.9808],  // Tonne 9
+  [8.4340, 53.9776],  // Tonne 11
+  [8.4693, 53.9738],  // Tonne 13
+  [8.4825, 53.9850],  // Tonne 14
+  [8.5500, 53.9620],  // Neuwerk Passage
+  [8.6129, 53.9848],  // Außenelbe (OSM nav line start)
+  [8.6872, 53.8918],  // Kugelbake Cuxhaven approach
+  [8.7097, 53.8689],  // Cuxhaven
+];
+
+const KARTE_PEGEL_STATIONS = [
+  { label:'Cuxhaven',    lat:53.8689, lon:8.7097, uuid:'aad49293-242a-43ad-a8b1-e91d7792c4b2' },
+  { label:'Brunsbüttel', lat:53.8917, lon:9.1523, uuid:'d4f5f719-8c52-4f8d-945d-1c31404cc628' },
+  { label:'Stadersand',  lat:53.6075, lon:9.4799, uuid:'80f0fc4d-9fc7-449d-9d68-ee89333f0eff' },
+  { label:'Hamburg',     lat:53.5440, lon:9.9636, uuid:'d488c5cc-4de9-4631-8ce1-0db0e700b546' },
+];
+
+function goKarte() {
+  // AIS NICHT trennen – damit Schiffsdaten für das Karte-Overlay verfügbar bleiben
+  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
+  if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
+  currentView = 'karte';
+  setNavActive('nav-karte');
+  document.getElementById('new-btn').style.display = 'none';
+  // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false };
+
+  document.getElementById('app-main').innerHTML = `
+    <div style="position:relative;height:calc(100vh - 56px)">
+      <div id="karte-map" style="width:100%;height:100%"></div>
+
+      <!-- Overlay-Steuerung -->
+      <div style="position:absolute;top:12px;right:12px;z-index:1000;background:rgba(255,255,255,0.96);border:1px solid #b8ccd8;border-radius:8px;padding:10px 14px;font-size:12px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.15);min-width:170px">
+        <div style="font-weight:700;margin-bottom:8px;color:#1b3d5f;font-size:13px">⚙ Überlagerungen</div>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-grid" checked onchange="karteToggleOverlay('grid',this.checked)"> Koordinatengitter
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-seemap" onchange="karteToggleOverlay('seemap',this.checked)"> Seekarte (OpenSeaMap)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-pegel" onchange="karteToggleOverlay('pegel',this.checked)"> Pegelstände
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-wind" onchange="karteToggleOverlay('wind',this.checked)"> Wind
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
+        </label>
+        <div id="karte-schiffe-panel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
+          <div style="font-size:11px;color:#637485;margin-bottom:3px">Schiff auswählen:</div>
+          <select id="karte-ship-select" onchange="karteShipSelect(this.value)" style="width:100%;font-size:11px;border:1px solid #c8d6e2;border-radius:4px;padding:3px 4px;margin-bottom:6px;background:#fff">
+            <option value="">— Alle Elbe-Schiffe —</option>
+          </select>
+          <div style="font-size:11px;color:#637485;margin-bottom:3px">Vektor-Zeitraum:</div>
+          <select id="karte-vector-time" onchange="karteVectorTimeChange(this.value)" style="width:100%;font-size:11px;border:1px solid #c8d6e2;border-radius:4px;padding:3px 4px;background:#fff">
+            <option value="5">5 Minuten</option>
+            <option value="10" selected>10 Minuten</option>
+            <option value="30">30 Minuten</option>
+            <option value="60">1 Stunde</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Legende -->
+      <div style="position:absolute;bottom:28px;left:12px;z-index:1000;background:rgba(255,255,255,0.93);border:1px solid #b8ccd8;border-radius:8px;padding:8px 12px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12)">
+        <div style="font-weight:700;margin-bottom:5px;color:#1b3d5f;font-size:12px">⚓ Elbe · LV Elbe → Hamburg</div>
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:24px;border-top:2px dashed #1b3d5f"></span><span>Fahrwasser-Mittellinie (WSV)</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#c9a227;border:2px solid #1b3d5f;border-radius:50%"></span><span>Wegpunkte</span></div>
+        </div>
+        <div style="margin-top:6px;font-size:9px;color:#94a3b8">OpenSeaMap · WSV BWaStr-Locator · Pegelonline</div>
+      </div>
+    </div>`;
+
+  setTimeout(async () => {
+    if (_karteMap) { _karteMap.remove(); _karteMap = null; }
+    _kartePegelMarkers.forEach(m => m.remove()); _kartePegelMarkers = [];
+    _karteWindMarkers.forEach(m => m.remove()); _karteWindMarkers = [];
+    if (_karteShipTimer) { clearInterval(_karteShipTimer); _karteShipTimer = null; }
+    _karteShipMarkers = {};
+
+    // ── Nautisches Flat-Design (demotiles) ────────────────────────────
+    const styleResp = await fetch('https://demotiles.maplibre.org/style.json').then(r => r.json());
+    styleResp.layers.forEach(l => {
+      if (!l.paint) return;
+      const fc = l.paint['fill-color'];
+      if (l.type === 'background') {
+        l.paint['background-color'] = '#e8ddc8';
+      } else if (fc && (l.id.includes('water') || l.id.includes('ocean') || l.id.includes('sea') || l.id.includes('lake') || l.id.includes('river'))) {
+        l.paint['fill-color'] = '#9cc4d8';
+      } else if (fc && (l.id.includes('land') || l.id.includes('earth') || l.id.includes('country') || l.id.includes('admin'))) {
+        l.paint['fill-color'] = '#e8ddc8';
+      }
+      if (l.paint['line-color'] && l.id.includes('water')) l.paint['line-color'] = '#5a8fa8';
+      if (l.type === 'symbol' && !l.id.includes('water')) { l.layout = l.layout || {}; l.layout.visibility = 'none'; }
+      if (['road','building','bridge','tunnel','rail'].some(k => l.id.includes(k))) { l.layout = l.layout || {}; l.layout.visibility = 'none'; }
+    });
+    const bgLayer = styleResp.layers.find(l => l.type === 'background');
+    if (bgLayer) bgLayer.paint = { 'background-color': '#e8ddc8' };
+
+    _karteMap = new maplibregl.Map({
+      container: 'karte-map',
+      center: [9.05, 53.78],
+      zoom: 8,
+      style: styleResp,
+      attributionControl: { compact: true },
+    });
+
+    _karteMap.on('load', async () => {
+
+      // ── Detaillierte Küste & Gewässer (OSM Shortbread Vector Tiles) ──
+      // CORS: access-control-allow-origin: * ✓
+      _karteMap.addSource('osm-water', {
+        type: 'vector',
+        tiles: ['https://vector.openstreetmap.org/shortbread_v1/{z}/{x}/{y}.mvt'],
+        minzoom: 0, maxzoom: 15,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      });
+      // Ozean-Füllung (very early, below everything)
+      _karteMap.addLayer({
+        id: 'water-ocean', type: 'fill', source: 'osm-water', 'source-layer': 'ocean',
+        paint: { 'fill-color': '#9cc4d8' }
+      });
+      // Alle Wasserflächen (Flüsse, Seen, Küstengewässer)
+      _karteMap.addLayer({
+        id: 'water-poly', type: 'fill', source: 'osm-water', 'source-layer': 'water_polygons',
+        paint: { 'fill-color': '#9cc4d8' }
+      });
+      // Küstenlinie & Uferlinie als präzise Linie
+      _karteMap.addLayer({
+        id: 'water-line', type: 'line', source: 'osm-water', 'source-layer': 'water_polygons',
+        paint: { 'line-color': '#4d8aaa', 'line-width': ['interpolate',['linear'],['zoom'],8,0.8,12,1.5,15,2] }
+      });
+
+      // ── OpenSeaMap Overlay (Hafen-Details, Seezeichen, Hamburg-Hafen) ─
+      _karteMap.addSource('openseamap', {
+        type: 'raster',
+        tiles: ['https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '© <a href="https://www.openseamap.org" target="_blank">OpenSeaMap</a>',
+      });
+      _karteMap.addLayer({
+        id: 'openseamap-layer', type: 'raster', source: 'openseamap',
+        minzoom: 8,
+        layout: { visibility: _karteOverlays.seemap ? 'visible' : 'none' },
+        paint: { 'raster-opacity': 0.85 }
+      });
+
+      // ── Koordinatengitter ────────────────────────────────────────────
+      _karteMap.addSource('grid-lines', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      _karteMap.addLayer({
+        id: 'grid-lines-layer', type: 'line', source: 'grid-lines',
+        layout: { visibility: _karteOverlays.grid ? 'visible' : 'none' },
+        paint: { 'line-color': '#7a9aaa', 'line-width': 0.5, 'line-dasharray': [4, 4] }
+      });
+      _karteMap.addSource('grid-labels', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      _karteMap.addLayer({
+        id: 'grid-labels-layer', type: 'symbol', source: 'grid-labels',
+        layout: {
+          visibility: _karteOverlays.grid ? 'visible' : 'none',
+          'text-field': ['get', 'label'],
+          'text-size': 10, 'text-anchor': 'center',
+          'text-font': ['Noto Sans Regular'],
+          'text-allow-overlap': true,
+        },
+        paint: { 'text-color': '#4a6a80', 'text-halo-color': 'rgba(232,221,200,0.85)', 'text-halo-width': 1.5 }
+      });
+      _karteUpdateGrid();
+      _karteMap.on('moveend', _karteUpdateGrid);
+      _karteMap.on('zoomend', _karteUpdateGrid);
+
+      // ── Fahrwasserlinie: äußere Elbe + WSV BWaStr-Locator (innen) ────
+      // Richtung: LV Elbe → Cuxhaven (Außenelbe, korrekte Tonne-Positionen)
+      //           + Cuxhaven → Hamburg (WSV km 727→640, umgekehrt)
+      let fairwayCoords = OUTER_ELBE_COORDS.slice();
+      try {
+        const BASE = 'https://via.bund.de/wsv/bwastr-locator/rest/geokodierung/query?bwastrid=0701&wkid=4326&f=json';
+        const resp = await fetch(BASE + '&km_von=640&km_bis=727').then(r => r.json());
+        const g = resp?.result?.[0]?.geometry || resp?.features?.[0]?.geometry;
+        if (g) {
+          const raw = g.type === 'MultiLineString' ? g.coordinates.flat() : (g.coordinates || []);
+          if (raw.length > 5) {
+            // raw[0] ≈ km 640 (Hamburg, lon ~9.9), raw[-1] ≈ km 727 (Cuxhaven, lon ~8.7)
+            // Umkehren: Cuxhaven → Hamburg, erstes Element überspringen (bereits in outerElbe)
+            const innerReversed = raw.slice().reverse();
+            fairwayCoords = [...OUTER_ELBE_COORDS, ...innerReversed.slice(1)];
+          }
+        }
+      } catch(e) {
+        console.warn('BWaStr-Locator:', e);
+        // Fallback über KARTE_WP
+        fairwayCoords = [...OUTER_ELBE_COORDS, ...KARTE_WP.slice(2).map(wp => [wp.lon, wp.lat])];
+      }
+
+      _karteMap.addSource('fairway', {
+        type: 'geojson',
+        data: { type: 'Feature', geometry: { type: 'LineString', coordinates: fairwayCoords } }
+      });
+      _karteMap.addLayer({
+        id: 'fairway-line', type: 'line', source: 'fairway',
+        paint: { 'line-color': '#1b3d5f', 'line-width': 2.5, 'line-dasharray': [6, 3] }
+      });
+
+      // ── Wegpunkte ────────────────────────────────────────────────────
+      _karteMap.addSource('waypoints', {
+        type: 'geojson',
+        data: {
+          type: 'FeatureCollection',
+          features: KARTE_WP.map(wp => ({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [wp.lon, wp.lat] },
+            properties: { label: wp.label }
+          }))
+        }
+      });
+      _karteMap.addLayer({
+        id: 'wp-circles', type: 'circle', source: 'waypoints',
+        paint: { 'circle-radius': 5, 'circle-color': '#c9a227', 'circle-stroke-width': 2, 'circle-stroke-color': '#1b3d5f' }
+      });
+      _karteMap.addLayer({
+        id: 'wp-labels', type: 'symbol', source: 'waypoints',
+        layout: {
+          'text-field': ['get', 'label'],
+          'text-size': 11, 'text-anchor': 'left', 'text-offset': [0.8, 0],
+          'text-font': ['Noto Sans Bold'],
+        },
+        paint: { 'text-color': '#1b3d5f', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 2 }
+      });
+
+      // ── Schiffe: COG-Vektor-Layer (GeoJSON LineStrings) ──────────────
+      _karteMap.addSource('karte-cog', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      _karteMap.addLayer({
+        id: 'karte-cog-line', type: 'line', source: 'karte-cog',
+        paint: { 'line-color': ['get', 'color'], 'line-width': 2, 'line-dasharray': [4, 2] }
+      });
+      _karteMap.addLayer({
+        id: 'karte-cog-arrow', type: 'circle', source: 'karte-cog',
+        filter: ['==', ['get', 'isEnd'], true],
+        paint: { 'circle-radius': 4, 'circle-color': ['get', 'color'], 'circle-opacity': 0.8 }
+      });
+
+      // Pegel/Wind laden falls bereits aktiviert
+      if (_karteOverlays.pegel) _karteLoadPegel();
+      if (_karteOverlays.wind) _karteLoadWind();
+      if (_karteOverlays.schiffe) _karteStartShips();
+
+    }); // end map.on('load')
+  }, 100);
+}
+
+// ── Koordinatengitter ──────────────────────────────────────────────
+function _karteFmtDeg(deg, isLat) {
+  const abs = Math.abs(deg);
+  const d = Math.floor(abs);
+  const m = ((abs - d) * 60).toFixed(1);
+  const dir = isLat ? (deg >= 0 ? 'N' : 'S') : (deg >= 0 ? 'E' : 'W');
+  return `${d}°${m}'${dir}`;
+}
+
+function _karteGetGridStep(zoom) {
+  if (zoom >= 13) return 1/60;      // 1'
+  if (zoom >= 11) return 5/60;      // 5'
+  if (zoom >= 10) return 10/60;     // 10'
+  if (zoom >= 8)  return 0.5;       // 30'
+  if (zoom >= 6)  return 1.0;       // 1°
+  return 2.0;
+}
+
+function _karteUpdateGrid() {
+  if (!_karteMap || !_karteMap.getSource('grid-lines')) return;
+  const zoom = _karteMap.getZoom();
+  const step = _karteGetGridStep(zoom);
+  const b = _karteMap.getBounds();
+  const W = b.getWest(), E = b.getEast(), S = b.getSouth(), N = b.getNorth();
+  const pad = step * 2;
+
+  const lineFeats = [], labelFeats = [];
+  const snap = v => Math.round(v / step) * step;
+
+  // Meridiane (Längengrade)
+  for (let lon = snap(W - pad); lon <= E + pad; lon = snap(lon + step)) {
+    lineFeats.push({ type:'Feature', geometry:{ type:'LineString', coordinates:[[lon, S-pad],[lon, N+pad]] }, properties:{} });
+    labelFeats.push({ type:'Feature', geometry:{ type:'Point', coordinates:[lon, S + (N-S)*0.04] }, properties:{ label: _karteFmtDeg(lon, false) } });
+  }
+  // Breitengrade (Parallelen)
+  for (let lat = snap(S - pad); lat <= N + pad; lat = snap(lat + step)) {
+    lineFeats.push({ type:'Feature', geometry:{ type:'LineString', coordinates:[[W-pad, lat],[E+pad, lat]] }, properties:{} });
+    labelFeats.push({ type:'Feature', geometry:{ type:'Point', coordinates:[W + (E-W)*0.03, lat] }, properties:{ label: _karteFmtDeg(lat, true) } });
+  }
+
+  _karteMap.getSource('grid-lines').setData({ type:'FeatureCollection', features: lineFeats });
+  _karteMap.getSource('grid-labels').setData({ type:'FeatureCollection', features: labelFeats });
+}
+
+// ── Overlay-Toggle ─────────────────────────────────────────────────
+function karteToggleOverlay(type, visible) {
+  _karteOverlays[type] = visible;
+  if (!_karteMap) return;
+  if (type === 'grid') {
+    ['grid-lines-layer','grid-labels-layer'].forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+    });
+  } else if (type === 'seemap') {
+    if (_karteMap.getLayer('openseamap-layer')) _karteMap.setLayoutProperty('openseamap-layer', 'visibility', visible ? 'visible' : 'none');
+  } else if (type === 'pegel') {
+    if (visible) _karteLoadPegel();
+    else { _kartePegelMarkers.forEach(m => m.remove()); _kartePegelMarkers = []; }
+  } else if (type === 'wind') {
+    if (visible) _karteLoadWind();
+    else { _karteWindMarkers.forEach(m => m.remove()); _karteWindMarkers = []; }
+  } else if (type === 'schiffe') {
+    const panel = document.getElementById('karte-schiffe-panel');
+    if (panel) panel.style.display = visible ? 'block' : 'none';
+    if (visible) _karteStartShips();
+    else _karteStopShips();
+  }
+}
+
+// ── Pegelstände auf Karte ──────────────────────────────────────────
+async function _karteLoadPegel() {
+  if (!_karteMap) return;
+  _kartePegelMarkers.forEach(m => m.remove()); _kartePegelMarkers = [];
+
+  await Promise.allSettled(KARTE_PEGEL_STATIONS.map(async st => {
+    try {
+      const [currR, histR] = await Promise.allSettled([
+        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/currentmeasurement.json`).then(r => r.json()),
+        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/measurements.json?start=P1D`).then(r => r.json()),
+      ]);
+      const curr = currR.status === 'fulfilled' ? currR.value : null;
+      const hist = histR.status === 'fulfilled' && Array.isArray(histR.value) ? histR.value : [];
+
+      const currentCm = curr?.value ?? null;
+      const valText = currentCm !== null ? `${Math.round(currentCm)} cm` : '–';
+
+      // Mini-Tidekurve als SVG
+      let svgHtml = '<div style="color:#94a3b8;font-size:9px;margin:3px 0">Keine Verlaufsdaten</div>';
+      if (hist.length > 5) {
+        const vals = hist.map(p => p.value);
+        const times = hist.map(p => new Date(p.timestamp).getTime());
+        const vMin = Math.min(...vals), vMax = Math.max(...vals);
+        const tMin = Math.min(...times), tMax = Math.max(...times);
+        const PW = 140, PH = 40;
+        const ptStr = hist.map((p, i) => {
+          const x = ((times[i] - tMin) / (tMax - tMin || 1)) * PW;
+          const y = PH - ((vals[i] - vMin) / (vMax - vMin || 1)) * PH;
+          return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        let dotSvg = '';
+        if (currentCm !== null) {
+          const dotX = PW;
+          const dotY = PH - ((currentCm - vMin) / (vMax - vMin || 1)) * PH;
+          dotSvg = `<circle cx="${dotX.toFixed(1)}" cy="${Math.max(2, Math.min(PH-2, dotY)).toFixed(1)}" r="3" fill="#c9a227" stroke="#1b3d5f" stroke-width="1"/>`;
+        }
+        svgHtml = `<svg width="${PW}" height="${PH}" style="display:block;overflow:visible;margin:3px 0">
+          <path d="${ptStr}" fill="none" stroke="#1b3d5f" stroke-width="1.5" stroke-linejoin="round"/>
+          ${dotSvg}
+        </svg>`;
+      }
+
+      const el = document.createElement('div');
+      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid #1b3d5f;border-radius:6px;padding:5px 8px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);min-width:160px;pointer-events:none';
+      el.innerHTML = `
+        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:2px">📊 ${st.label}</div>
+        <div style="font-size:15px;font-weight:700;color:#0c4a6e;margin-bottom:2px">${valText}</div>
+        ${svgHtml}
+        <div style="font-size:8px;color:#94a3b8">Pegelonline WSV · 24h</div>`;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'top-left' })
+        .setLngLat([st.lon, st.lat]).addTo(_karteMap);
+      _kartePegelMarkers.push(marker);
+    } catch(e) { console.warn('Pegel', st.label, e); }
+  }));
+}
+
+// ── Wind auf Karte ─────────────────────────────────────────────────
+async function _karteLoadWind() {
+  if (!_karteMap) return;
+  _karteWindMarkers.forEach(m => m.remove()); _karteWindMarkers = [];
+
+  const stations = [
+    { label:'Helgoland',   lat:54.1745, lon:7.8887,  url:'https://api.brightsky.dev/current_weather?lat=54.1745&lon=7.8887' },
+    { label:'Cuxhaven',    lat:53.8689, lon:8.7097,  url:'https://api.brightsky.dev/current_weather?dwd_station_id=00891' },
+    { label:'Brunsbüttel', lat:53.8917, lon:9.1523,  url:'https://api.brightsky.dev/current_weather?lat=53.9196&lon=9.1417' },
+    { label:'Stade',       lat:53.6075, lon:9.4799,  url:'https://api.brightsky.dev/current_weather?lat=53.6075&lon=9.4799' },
+    { label:'Hamburg',     lat:53.5440, lon:9.9636,  url:'https://api.brightsky.dev/current_weather?lat=53.545&lon=9.966' },
+  ];
+
+  await Promise.allSettled(stations.map(async st => {
+    try {
+      const d = await fetch(st.url).then(r => r.json());
+      const w = d?.weather;
+      if (!w) return;
+      const ms = (w.wind_speed_10 ?? w.wind_speed ?? 0) / 3.6;
+      const dir = w.wind_direction_10 ?? w.wind_direction ?? 0;
+      const gustMs = w.wind_gust_speed_10 != null ? w.wind_gust_speed_10 / 3.6 : null;
+      const bft = _msToBeaufort(ms);
+      const col = _bftColor(bft);
+      const comp = _degToCompass(dir);
+      const svg = _makeWindCompassSVG(dir, bft);
+      const kn = _msToKn(ms);
+      const gustStr = gustMs != null ? `· Böen ${_msToKn(gustMs).toFixed(0)} kn` : '';
+
+      const el = document.createElement('div');
+      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid ' + col + ';border-radius:6px;padding:5px 8px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);pointer-events:none;text-align:center';
+      el.innerHTML = `
+        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:2px">🌬 ${st.label}</div>
+        ${svg}
+        <div style="font-size:14px;font-weight:700;color:${col};margin:2px 0">${kn.toFixed(0)} kn <span style="font-size:11px">(${bft} Bft)</span></div>
+        <div style="font-size:9px;color:#555">aus ${comp} (${Math.round(dir)}°) ${gustStr}</div>
+        <div style="font-size:8px;color:#94a3b8;margin-top:2px">Bright Sky DWD</div>`;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'top-left' })
+        .setLngLat([st.lon, st.lat]).addTo(_karteMap);
+      _karteWindMarkers.push(marker);
+    } catch(e) { console.warn('Wind karte', st.label, e); }
+  }));
+}
+
+// ── Schiffs-Tracking ───────────────────────────────────────────────
+function _karteCOGEndpoint(lat, lon, cogDeg, sogKn, timeMin) {
+  const distNm = sogKn * (timeMin / 60);
+  const rad = cogDeg * Math.PI / 180;
+  const newLat = lat + (distNm * Math.cos(rad)) / 60;
+  const newLon = lon + (distNm * Math.sin(rad)) / (60 * Math.cos(lat * Math.PI / 180));
+  return [newLon, newLat];
+}
+
+function _karteStartShips() {
+  if (!_karteMap) return;
+  if (!_aisShips || _aisShips.size === 0) {
+    // AIS verbinden falls noch nicht aktiv
+    aisConnect();
+  }
+  _karteUpdateShips();
+  if (_karteShipTimer) clearInterval(_karteShipTimer);
+  _karteShipTimer = setInterval(_karteUpdateShips, 20000);
+}
+
+function _karteStopShips() {
+  if (_karteShipTimer) { clearInterval(_karteShipTimer); _karteShipTimer = null; }
+  Object.values(_karteShipMarkers).forEach(({ marker }) => marker.remove());
+  _karteShipMarkers = {};
+  if (_karteMap && _karteMap.getSource('karte-cog')) {
+    _karteMap.getSource('karte-cog').setData({ type: 'FeatureCollection', features: [] });
+  }
+  const sel = document.getElementById('karte-ship-select');
+  if (sel) sel.innerHTML = '<option value="">— Alle Elbe-Schiffe —</option>';
+}
+
+function _karteUpdateShips() {
+  if (!_karteMap || !_karteOverlays.schiffe) return;
+
+  // Elbe-Begrenzungsbox (LV Elbe bis Hamburg)
+  const ELBE_BOX = { W:7.9, E:10.2, S:53.3, N:54.3 };
+  const ships = [...(_aisShips?.values() || [])].filter(s =>
+    s.lat !== null && s.lon !== null &&
+    s.lon >= ELBE_BOX.W && s.lon <= ELBE_BOX.E &&
+    s.lat >= ELBE_BOX.S && s.lat <= ELBE_BOX.N
+  );
+
+  // Dropdown aktualisieren
+  const sel = document.getElementById('karte-ship-select');
+  if (sel) {
+    const curVal = sel.value;
+    sel.innerHTML = '<option value="">— Alle Elbe-Schiffe —</option>' +
+      ships.sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(s =>
+        `<option value="${s.mmsi}" ${s.mmsi == _karteSelectedMMSI ? 'selected' : ''}>${s.name || s.mmsi} (${_msToKn(s.sog).toFixed(0)} kn)</option>`
+      ).join('');
+  }
+
+  const targetShips = _karteSelectedMMSI
+    ? ships.filter(s => s.mmsi == _karteSelectedMMSI)
+    : ships;
+
+  // Alte Marker entfernen die nicht mehr da sind
+  const activeMMSIs = new Set(targetShips.map(s => String(s.mmsi)));
+  Object.keys(_karteShipMarkers).forEach(mmsi => {
+    if (!activeMMSIs.has(mmsi)) {
+      _karteShipMarkers[mmsi].marker.remove();
+      delete _karteShipMarkers[mmsi];
+    }
+  });
+
+  // Marker erstellen/aktualisieren
+  const cogFeatures = [];
+  for (const s of targetShips) {
+    const mmsiStr = String(s.mmsi);
+    const isSelected = mmsiStr === _karteSelectedMMSI || _karteSelectedMMSI === '';
+    const dotColor = mmsiStr === _karteSelectedMMSI ? '#f97316' : '#dc2626';
+
+    if (_karteShipMarkers[mmsiStr]) {
+      // Position aktualisieren
+      _karteShipMarkers[mmsiStr].marker.setLngLat([s.lon, s.lat]);
+    } else {
+      // Neuen Marker erstellen
+      const el = document.createElement('div');
+      el.className = 'karte-ship-dot' + (mmsiStr === _karteSelectedMMSI ? ' selected' : '');
+      el.title = `${s.name || s.mmsi}\n${_msToKn(s.sog).toFixed(0)} kn · COG ${Math.round(s.cog)}°`;
+      el.onclick = () => {
+        _karteSelectedMMSI = _karteSelectedMMSI === mmsiStr ? '' : mmsiStr;
+        const sel2 = document.getElementById('karte-ship-select');
+        if (sel2) sel2.value = _karteSelectedMMSI;
+        _karteUpdateShips();
+      };
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([s.lon, s.lat])
+        .addTo(_karteMap);
+      _karteShipMarkers[mmsiStr] = { dot: el, marker };
+    }
+
+    // COG-Vektor: nur wenn SOG > 0.5 kn
+    if (s.sog >= 0.5) {
+      const endPt = _karteCOGEndpoint(s.lat, s.lon, s.cog, _msToKn(s.sog), _karteVectorMinutes);
+      cogFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [[s.lon, s.lat], endPt] },
+        properties: { color: dotColor, isEnd: false, mmsi: mmsiStr }
+      });
+      // Endpunkt als Kreis
+      cogFeatures.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: endPt },
+        properties: { color: dotColor, isEnd: true, mmsi: mmsiStr }
+      });
+    }
+  }
+
+  if (_karteMap.getSource('karte-cog')) {
+    _karteMap.getSource('karte-cog').setData({ type: 'FeatureCollection', features: cogFeatures });
+  }
+}
+
+function karteShipSelect(val) {
+  _karteSelectedMMSI = val;
+  _karteUpdateShips();
+  // Karte auf das Schiff zentrieren wenn ausgewählt
+  if (val && _aisShips?.has(Number(val))) {
+    const s = _aisShips.get(Number(val));
+    if (s?.lat && s?.lon) _karteMap.easeTo({ center: [s.lon, s.lat], zoom: Math.max(_karteMap.getZoom(), 11) });
+  }
+}
+
+function karteVectorTimeChange(val) {
+  _karteVectorMinutes = Number(val);
+  _karteUpdateShips();
 }
 
 function renderWetterPage() {
@@ -4936,6 +5551,7 @@ function renderWetterPage() {
   const title = document.getElementById('pchart-title');
   if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
+  if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
   setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
 }
 
