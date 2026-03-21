@@ -4131,6 +4131,7 @@ let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
 let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
 let _aisCustomKm        = null;
+let _aisCollapsed       = { in: false, out: false };
 
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
@@ -4260,10 +4261,12 @@ function _aisMsgIn(msg) {
     if (sv) {
       const n = (sv.Name || meta.ShipName || '').trim();
       if (n) s.name = n;
-      s.shipType   = sv.Type ?? s.shipType;
-      s.draught    = sv.MaximumStaticDraught ?? s.draught;
-      s.length     = (sv.Dimension?.A ?? 0) + (sv.Dimension?.B ?? 0);
-      s.destination = (sv.Destination ?? '').trim().replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ');
+      s.shipType   = sv.Type    ?? s.shipType;
+      if (sv.MaximumStaticDraught > 0) s.draught = sv.MaximumStaticDraught;
+      const newLen = (sv.Dimension?.A ?? 0) + (sv.Dimension?.B ?? 0);
+      if (newLen > 0) s.length = newLen;
+      const dest = (sv.Destination ?? '').trim().replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ');
+      if (dest) s.destination = dest;
     }
   }
   if (!s.name && meta.ShipName) s.name = meta.ShipName.trim();
@@ -4289,7 +4292,10 @@ function _aisUpdateBadge() {
 
 // ── Filter & Sort ─────────────────────────────────────────────────
 function _aisEtaMs(s, wpKey) {
-  const wpNm = _etCum[ELBE_WP_IDX[wpKey]];
+  const wpNm = wpKey === 'custom'
+    ? (_aisCustomKm !== null ? _elbKmToNm(_aisCustomKm) : null)
+    : _etCum[ELBE_WP_IDX[wpKey]];
+  if (wpNm === null) return Infinity;
   const rem  = s.dir === 'in' ? wpNm - s.trackNm : s.trackNm - wpNm;
   if (rem < -2) return -1;             // passiert → ganz vorne
   if (s.sog < 0.3) return Infinity;   // steht → ganz hinten
@@ -4315,6 +4321,7 @@ function _aisSetCustomKm(v) {
 }
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
+function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisRenderTable(); }
 
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
@@ -4392,11 +4399,10 @@ function _aisRenderTable() {
     return `<td class="ais-eta${rem < 3 ? ' soon' : ''}">${str}</td>`;
   }
 
-  const customKmVal = _aisCustomKm !== null ? _aisCustomKm : '';
-  const customThInput = `<input type="number" min="620" max="755" placeholder="km" value="${customKmVal}"
-    oninput="_aisSetCustomKm(this.value)"
-    onclick="event.stopPropagation()"
-    style="width:44px;font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);font-family:inherit;text-align:center">`;
+  const customDdOpts = `<option value="">— Ort —</option>` +
+    ELBE_KM_MARKS.map(m => `<option value="${m.km}"${_aisCustomKm===m.km?' selected':''}>${m.n} (km ${m.km})</option>`).join('');
+  const customThInput = `<select onchange="_aisSetCustomKm(this.value)" onclick="event.stopPropagation()"
+    style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);font-family:inherit;max-width:130px">${customDdOpts}</select>`;
 
   function shipRow(s, wps) {
     const { l: tL, e: tE } = _aisShipType(s.shipType);
@@ -4444,40 +4450,56 @@ function _aisRenderTable() {
   </div>`;
 
   // ── Einkommend ──
+  const inCollapsed = _aisCollapsed.in;
   html += `<div class="ais-section">
-    <div class="ais-section-title"><span style="color:#16a34a;font-size:14px">▶</span> Einkommend · ${inList.length} Schiffe (Richtung Hamburg)</div>`;
-  if (!inList.length) {
-    html += `<div class="ais-empty">Keine einkommenden Schiffe erkannt<br><small>Racon → Cuxhaven → Brunsbüttel → Hamburg</small></div>`;
-  } else {
-    const siC = _aisFilter.sortIn==='cuxhaven'      ? ' sort-active' : '';
-    const siB = _aisFilter.sortIn==='brunsbuettel'  ? ' sort-active' : '';
-    const siH = _aisFilter.sortIn==='hamburg'        ? ' sort-active' : '';
-    html += `<table class="ais-table"><thead><tr>
-      <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
-      <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
-      <th class="sortable${siB}" onclick="_aisSortIn('brunsbuettel')">ETA Brb${siB?' ▲':' ⇅'}</th>
-      <th class="sortable${siH}" onclick="_aisSortIn('hamburg')">ETA HH${siH?' ▲':' ⇅'}</th>
-      <th style="white-space:nowrap">ETA ${customThInput}</th>
-    </tr></thead><tbody>${inList.map(s => shipRow(s, inWps)).join('')}</tbody></table>`;
+    <div class="ais-section-title" onclick="_aisToggleSection('in')" style="cursor:pointer;user-select:none">
+      <span style="color:#16a34a;font-size:14px">${inCollapsed?'▶':'▼'}</span>
+      Einkommend · ${inList.length} Schiffe (Richtung Hamburg)
+      <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">${inCollapsed?'(eingeklappt)':''}</span>
+    </div>`;
+  if (!inCollapsed) {
+    if (!inList.length) {
+      html += `<div class="ais-empty">Keine einkommenden Schiffe erkannt<br><small>Racon → Cuxhaven → Brunsbüttel → Hamburg</small></div>`;
+    } else {
+      const siC = _aisFilter.sortIn==='cuxhaven'     ? ' sort-active' : '';
+      const siB = _aisFilter.sortIn==='brunsbuettel' ? ' sort-active' : '';
+      const siH = _aisFilter.sortIn==='hamburg'      ? ' sort-active' : '';
+      const siX = _aisFilter.sortIn==='custom'       ? ' sort-active' : '';
+      html += `<table class="ais-table"><thead><tr>
+        <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
+        <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
+        <th class="sortable${siB}" onclick="_aisSortIn('brunsbuettel')">ETA Brb${siB?' ▲':' ⇅'}</th>
+        <th class="sortable${siH}" onclick="_aisSortIn('hamburg')">ETA HH${siH?' ▲':' ⇅'}</th>
+        <th class="sortable${siX}" onclick="_aisSortIn('custom')" style="white-space:nowrap">ETA${siX?' ▲':' ⇅'} ${customThInput}</th>
+      </tr></thead><tbody>${inList.map(s => shipRow(s, inWps)).join('')}</tbody></table>`;
+    }
   }
   html += '</div>';
 
   // ── Ausgehend ──
+  const outCollapsed = _aisCollapsed.out;
   html += `<div class="ais-section">
-    <div class="ais-section-title"><span style="color:#2a6495;font-size:14px">◀</span> Ausgehend · ${outList.length} Schiffe (Richtung See)</div>`;
-  if (!outList.length) {
-    html += `<div class="ais-empty">Keine ausgehenden Schiffe erkannt<br><small>Hamburg → Brunsbüttel → Cuxhaven → Elbe-Racon</small></div>`;
-  } else {
-    const soB = _aisFilter.sortOut==='brunsbuettel' ? ' sort-active' : '';
-    const soC = _aisFilter.sortOut==='cuxhaven'     ? ' sort-active' : '';
-    const soR = _aisFilter.sortOut==='racon'         ? ' sort-active' : '';
-    html += `<table class="ais-table"><thead><tr>
-      <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
-      <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
-      <th class="sortable${soC}" onclick="_aisSortOut('cuxhaven')">ETA Cux${soC?' ▲':' ⇅'}</th>
-      <th class="sortable${soR}" onclick="_aisSortOut('racon')">ETA Racon${soR?' ▲':' ⇅'}</th>
-      <th style="white-space:nowrap">ETA ${customThInput}</th>
-    </tr></thead><tbody>${outList.map(s => shipRow(s, outWps)).join('')}</tbody></table>`;
+    <div class="ais-section-title" onclick="_aisToggleSection('out')" style="cursor:pointer;user-select:none">
+      <span style="color:#2a6495;font-size:14px">${outCollapsed?'◀':'▼'}</span>
+      Ausgehend · ${outList.length} Schiffe (Richtung See)
+      <span style="font-size:11px;color:var(--text-muted);font-weight:400;margin-left:6px">${outCollapsed?'(eingeklappt)':''}</span>
+    </div>`;
+  if (!outCollapsed) {
+    if (!outList.length) {
+      html += `<div class="ais-empty">Keine ausgehenden Schiffe erkannt<br><small>Hamburg → Brunsbüttel → Cuxhaven → Elbe-Racon</small></div>`;
+    } else {
+      const soB = _aisFilter.sortOut==='brunsbuettel' ? ' sort-active' : '';
+      const soC = _aisFilter.sortOut==='cuxhaven'     ? ' sort-active' : '';
+      const soR = _aisFilter.sortOut==='racon'        ? ' sort-active' : '';
+      const soX = _aisFilter.sortOut==='custom'       ? ' sort-active' : '';
+      html += `<table class="ais-table"><thead><tr>
+        <th>Schiff</th><th>L / Tg</th><th>Position</th><th>SOG</th>
+        <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
+        <th class="sortable${soC}" onclick="_aisSortOut('cuxhaven')">ETA Cux${soC?' ▲':' ⇅'}</th>
+        <th class="sortable${soR}" onclick="_aisSortOut('racon')">ETA Racon${soR?' ▲':' ⇅'}</th>
+        <th class="sortable${soX}" onclick="_aisSortOut('custom')" style="white-space:nowrap">ETA${soX?' ▲':' ⇅'} ${customThInput}</th>
+      </tr></thead><tbody>${outList.map(s => shipRow(s, outWps)).join('')}</tbody></table>`;
+    }
   }
   html += '</div>';
 
@@ -4512,6 +4534,7 @@ function goVerkehr() {
   _aisInitialLoaded = false;
   _aisFilter = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
   _aisCustomKm = null;
+  _aisCollapsed = { in: false, out: false };
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
