@@ -5308,13 +5308,48 @@ async function _karteLoadPegel() {
 
   await Promise.allSettled(KARTE_PEGEL_STATIONS.map(async st => {
     try {
-      const currR = await fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/currentmeasurement.json`).then(r => r.json()).catch(() => null);
-      const currentCm = currR?.value ?? null;
+      const [currR, histR] = await Promise.allSettled([
+        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/currentmeasurement.json`).then(r => r.json()),
+        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/measurements.json?start=P1D`).then(r => r.json()),
+      ]);
+      const curr = currR.status === 'fulfilled' ? currR.value : null;
+      const hist = histR.status === 'fulfilled' && Array.isArray(histR.value) ? histR.value : [];
+      const currentCm = curr?.value ?? null;
       const valText = currentCm !== null ? `${Math.round(currentCm)} cm` : '–';
 
+      // Mini-Tidekurve als SVG (kompakt)
+      let svgHtml = '';
+      if (hist.length > 5) {
+        const vals = hist.map(p => p.value);
+        const times = hist.map(p => new Date(p.timestamp).getTime());
+        const vMin = Math.min(...vals), vMax = Math.max(...vals);
+        const tMin = Math.min(...times), tMax = Math.max(...times);
+        const PW = 120, PH = 32;
+        const ptStr = hist.map((p, i) => {
+          const x = ((times[i] - tMin) / (tMax - tMin || 1)) * PW;
+          const y = PH - ((vals[i] - vMin) / (vMax - vMin || 1)) * PH;
+          return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+        }).join(' ');
+        let dotSvg = '';
+        if (currentCm !== null) {
+          const dotX = PW;
+          const dotY = PH - ((currentCm - vMin) / (vMax - vMin || 1)) * PH;
+          dotSvg = `<circle cx="${dotX.toFixed(1)}" cy="${Math.max(2,Math.min(PH-2,dotY)).toFixed(1)}" r="2.5" fill="#c9a227" stroke="#1b3d5f" stroke-width="1"/>`;
+        }
+        svgHtml = `<svg width="${PW}" height="${PH}" style="display:block;overflow:visible;margin:2px 0">
+          <path d="${ptStr}" fill="none" stroke="#1b3d5f" stroke-width="1.5" stroke-linejoin="round"/>
+          ${dotSvg}
+        </svg>`;
+      }
+
       const el = document.createElement('div');
-      el.style.cssText = 'background:rgba(255,255,255,0.95);border:1.5px solid #1b3d5f;border-radius:20px;padding:3px 9px 3px 6px;font-size:10px;color:#1a2332;box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;pointer-events:none;display:flex;align-items:center;gap:5px';
-      el.innerHTML = `<span style="font-size:9px">📊</span><span style="font-weight:700;color:#1b3d5f;font-size:10px">${st.label.toUpperCase().substring(0,3)}</span><span style="font-size:11px;font-weight:700;color:#0c4a6e">${valText}</span>`;
+      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid #1b3d5f;border-radius:6px;padding:4px 7px;font-size:10px;color:#1a2332;box-shadow:0 1px 5px rgba(0,0,0,0.15);min-width:140px;pointer-events:none';
+      el.innerHTML = `
+        <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:1px">
+          <span style="font-weight:700;font-size:10px;color:#1b3d5f">📊 ${st.label}</span>
+          <span style="font-size:12px;font-weight:700;color:#0c4a6e">${valText}</span>
+        </div>
+        ${svgHtml}`;
 
       const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left', offset: [0, -2] })
         .setLngLat([st.lon, st.lat]).addTo(_karteMap);
@@ -5683,7 +5718,7 @@ async function _karteLoadSeamarks() {
   _karteSeamarkBbox = bbox;
 
   try {
-    const query = `[out:json][timeout:20];node[seamark:type](${bbox});out;`;
+    const query = `[out:json][timeout:20];node["seamark:type"](${bbox});out;`;
     const resp = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       body: 'data=' + encodeURIComponent(query),
@@ -5748,7 +5783,7 @@ async function _karteLoadSeamarks() {
     _karteSeamarkAnimStyle.textContent = styleText;
   } catch(e) {
     console.warn('Seamark', e);
-    _karteSeamarkBbox = ''; // allow retry
+    // Don't reset bbox — prevents immediate retry storm; retry on next map move
   } finally {
     _karteSeamarkFetching = false;
   }
