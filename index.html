@@ -4943,7 +4943,7 @@ let _karteBgLayerId = null;   // background layer ID
 
 const KARTE_COLORS = {
   light: { bg: '#e8ddc8', land: '#e8ddc8', water: '#9cc4d8', coast: '#4d8aaa', grid: 'rgba(0,60,100,0.3)', fairway: '#1b4f8c' },
-  dark:  { bg: '#101820', land: '#1c2a38', water: '#0c2d48', coast: '#1a5070', grid: 'rgba(120,200,255,0.25)', fairway: '#4ea3e8' },
+  dark:  { bg: '#0d1a26', land: '#2a3f55', water: '#091e35', coast: '#1a4a68', grid: 'rgba(120,200,255,0.22)', fairway: '#4ea3e8' },
 };
 let _karteShipTimer   = null;
 let _karteVectorMinutes = 10;
@@ -5337,17 +5337,20 @@ function karteToggleDark(dark) {
 
   if (_karteMap) {
     // Background
-    if (_karteBgLayerId && _karteMap.getLayer(_karteBgLayerId))
-      _karteMap.setPaintProperty(_karteBgLayerId, 'background-color', C.bg);
-    // Land layers (demotiles)
+    if (_karteMap.getLayer('background'))
+      _karteMap.setPaintProperty('background', 'background-color', C.bg);
+    // Land: demotiles layers (countries-fill uses complex match expr — override with flat color)
+    ['countries-fill', 'crimea-fill'].forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.land);
+    });
+    // Also any land-like layers tracked during init
     _karteLandLayerIds.forEach(id => {
       if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.land);
     });
-    // Water layers (demotiles)
+    // Water: demotiles + OSM Shortbread
     _karteWaterLayerIds.forEach(id => {
       if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.water);
     });
-    // OSM Shortbread water
     ['water-ocean', 'water-poly'].forEach(id => {
       if (_karteMap.getLayer(id)) _karteMap.setPaintProperty(id, 'fill-color', C.water);
     });
@@ -5936,15 +5939,38 @@ async function _karteLoadSeamarks() {
     }
 
     // ── Range lines: fallback — pair Richtfeuer nodes by name ─────────
+    // Richtfeuer (range lights): Ober = rear (land), Unter = front (toward water)
+    // The leading line extends FROM the front light (Unter) OUTWARD into the fairway,
+    // in the same direction as the Ober→Unter bearing.
     for (const [baseName, items] of Object.entries(richtfeuerByBase)) {
       if (items.length !== 2) continue;
-      const [a, b] = items;
-      const char_ = a.char_, period = a.period, group = a.group;
+      // Identify which is Ober (rear) and which is Unter (front/toward water)
+      const ober  = items.find(i => /ober/i.test(i.node.tags?.name || '')) || items[0];
+      const unter = items.find(i => /unter/i.test(i.node.tags?.name || '')) || items[1];
+      const char_ = unter.char_, period = unter.period, group = unter.group;
+
+      // Bearing from Ober → Unter (the steering course toward the ship)
+      const lat1 = ober.node.lat  * Math.PI / 180;
+      const lat2 = unter.node.lat * Math.PI / 180;
+      const dLon = (unter.node.lon - ober.node.lon) * Math.PI / 180;
+      const sinBrg = Math.sin(dLon) * Math.cos(lat2);
+      const cosBrg = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+      const bearing = Math.atan2(sinBrg, cosBrg);
+
+      // Extend 12 km from Unter outward into the fairway
+      const R = 6371, d = 12 / R;
+      const lat3 = Math.asin(Math.sin(lat2) * Math.cos(d) + Math.cos(lat2) * Math.sin(d) * Math.cos(bearing));
+      const lon3 = unter.node.lon * Math.PI / 180 + Math.atan2(
+        Math.sin(bearing) * Math.sin(d) * Math.cos(lat2),
+        Math.cos(d) - Math.sin(lat2) * Math.sin(lat3)
+      );
+      const extPt = [lon3 * 180 / Math.PI, lat3 * 180 / Math.PI];
+
       const key = `${char_}-${period}-${group}`;
       if (!rangeLineFeatures[key]) rangeLineFeatures[key] = { features: [], char_, period, group };
       rangeLineFeatures[key].features.push({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [[a.node.lon, a.node.lat], [b.node.lon, b.node.lat]] },
+        geometry: { type: 'LineString', coordinates: [[unter.node.lon, unter.node.lat], extPt] },
         properties: {}
       });
     }
