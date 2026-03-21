@@ -1203,8 +1203,9 @@
     .ais-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-muted); margin-bottom: 10px; flex-wrap: wrap; }
     .ais-legend span { display: flex; align-items: center; gap: 4px; }
     .ais-filter-bar { background: var(--blue-pale); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px 12px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .ais-type-btn { font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--card-bg); cursor: pointer; font-family: inherit; color: var(--text); transition: background .15s; white-space: nowrap; }
-    .ais-type-btn.off { background: var(--bg); color: var(--text-muted); text-decoration: line-through; border-color: transparent; }
+    .ais-type-btn { font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--card-bg); cursor: pointer; font-family: inherit; color: var(--text); transition: background .15s, border-color .15s; white-space: nowrap; }
+    .ais-type-btn.off { background: var(--bg); color: var(--text-muted); opacity: .5; border-color: transparent; }
+    .ais-type-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); font-weight: 700; }
     .ais-table th.sortable { cursor: pointer; user-select: none; }
     .ais-table th.sortable:hover { color: var(--blue); }
     .ais-table th.sort-active { color: var(--blue); }
@@ -4129,7 +4130,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
@@ -4302,12 +4303,16 @@ function _aisEtaMs(s, wpKey) {
   return rem / s.sog * 3600000;
 }
 function _aisFToggle(type) {
-  if (_aisFilter.hiddenTypes.has(type)) _aisFilter.hiddenTypes.delete(type);
-  else _aisFilter.hiddenTypes.add(type);
+  if (_aisFilter.shownTypes.has(type)) _aisFilter.shownTypes.delete(type);
+  else _aisFilter.shownTypes.add(type);
   _aisRenderTable();
 }
 function _aisSetMinLen(v) {
   _aisFilter.minLen = parseInt(v) || 0;
+  _aisRenderTable();
+}
+function _aisSetMinSog(v) {
+  _aisFilter.minSog = parseFloat(v) || 0;
   _aisRenderTable();
 }
 function _aisToggleAnc() {
@@ -4322,6 +4327,9 @@ function _aisSetCustomKm(v) {
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
 function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisRenderTable(); }
+function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
+function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
+function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _aisRenderTable(); }
 
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
@@ -4338,8 +4346,17 @@ function _aisRenderTable() {
   function applyFilter(list) {
     return list.filter(s => {
       const tL = _aisShipType(s.shipType).l;
-      if (_aisFilter.hiddenTypes.has(tL)) return false;
+      // Typ-Filter: wenn mind. ein Typ gewählt → nur diese anzeigen; sonst alle
+      if (_aisFilter.shownTypes.size > 0 && !_aisFilter.shownTypes.has(tL)) return false;
       if (_aisFilter.minLen > 0 && s.length < _aisFilter.minLen) return false;
+      if (_aisFilter.minSog > 0 && s.sog < _aisFilter.minSog) return false;
+      if (_aisFilter.kmFrom !== null || _aisFilter.kmTo !== null) {
+        const km = _elbKm(s.trackNm);
+        // Elbe-km zählt abwärts (755 Racon → 620 Hamburg)
+        const lo = _aisFilter.kmTo   !== null ? _aisFilter.kmTo   : 620;
+        const hi = _aisFilter.kmFrom !== null ? _aisFilter.kmFrom : 755;
+        if (km < lo || km > hi) return false;
+      }
       return true;
     });
   }
@@ -4427,22 +4444,68 @@ function _aisRenderTable() {
 
   // ── Filter-Bar ──
   const typeBtns = allTypes.map(t => {
-    const off = _aisFilter.hiddenTypes.has(t) ? ' off' : '';
-    return `<button class="ais-type-btn${off}" onclick="_aisFToggle('${t}')">${t}</button>`;
+    // Einschluss-Logik: gewählt = aktiv (hervorgehoben), nicht gewählt = gedimmt wenn mind. einer aktiv
+    const active = _aisFilter.shownTypes.has(t);
+    const dimmed = anyTypeSelected && !active;
+    const cls = active ? ' active' : (dimmed ? ' off' : '');
+    return `<button class="ais-type-btn${cls}" onclick="_aisFToggle('${t}')">${t}</button>`;
   }).join('');
   const ancOff = _aisFilter.hideAnc ? ' off' : '';
   const lenVal = _aisFilter.minLen > 0 ? _aisFilter.minLen : '';
+  const sogVal = _aisFilter.minSog > 0 ? _aisFilter.minSog : '';
+  const anyTypeSelected = _aisFilter.shownTypes.size > 0;
+
+  // Bereichs-Filter Dropdowns
+  const kmFromSel = _aisFilter.kmFrom;
+  const kmToSel   = _aisFilter.kmTo;
+  const rangeActive = kmFromSel !== null || kmToSel !== null;
+  // Von-Dropdown: absteigend (Racon oben, Hamburg unten)
+  const rangeFromOpts = `<option value="">Von …</option>` +
+    ELBE_KM_MARKS.slice().reverse().map(m =>
+      `<option value="${m.km}"${kmFromSel===m.km?' selected':''}>${m.n} (km ${m.km})</option>`
+    ).join('');
+  // Bis-Dropdown: aufsteigend nach km-Wert (Hamburg oben, Racon unten)
+  const rangeToOpts = `<option value="">… bis</option>` +
+    ELBE_KM_MARKS.map(m =>
+      `<option value="${m.km}"${kmToSel===m.km?' selected':''}>${m.n} (km ${m.km})</option>`
+    ).join('');
+  const rangeClearBtn = rangeActive
+    ? `<button onclick="_aisResetRange()" style="font-size:10px;padding:1px 7px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--danger);font-family:inherit">✕</button>`
+    : '';
+  const rangeLabel = rangeActive
+    ? `<span style="font-size:10px;color:var(--blue);font-weight:600;white-space:nowrap">km ${kmFromSel??755} – ${kmToSel??620}</span>`
+    : '';
+  const selStyle = (active) => `font-size:11px;padding:2px 4px;border:1.5px solid ${active?'var(--blue)':'var(--border)'};border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;max-width:148px`;
+
   let html = `<div class="ais-filter-bar">
-    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">Ausblenden:</span>
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">Typ anzeigen:</span>
     ${typeBtns}
     <button class="ais-type-btn${ancOff}" onclick="_aisToggleAnc()">⚓ Liegende</button>
-    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;margin-left:8px">Mindestlänge:</span>
+    ${anyTypeSelected ? `<button onclick="_aisFilter.shownTypes.clear();_aisRenderTable()" style="font-size:10px;padding:1px 7px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--danger);font-family:inherit">✕ Alle</button>` : ''}
+  </div>
+  <div class="ais-filter-bar" style="gap:8px">
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">Mindestlänge:</span>
     <div style="display:flex;align-items:center;gap:4px">
       <input type="number" min="0" step="10" placeholder="0" value="${lenVal}"
         oninput="_aisSetMinLen(this.value)"
         style="font-size:11px;width:58px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
       <span style="font-size:11px;color:var(--text-muted)">m</span>
     </div>
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;margin-left:8px">Mindestgeschw.:</span>
+    <div style="display:flex;align-items:center;gap:4px">
+      <input type="number" min="0" step="0.5" placeholder="0" value="${sogVal}"
+        oninput="_aisSetMinSog(this.value)"
+        style="font-size:11px;width:52px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
+      <span style="font-size:11px;color:var(--text-muted)">kn</span>
+    </div>
+  </div>
+  <div class="ais-filter-bar" style="gap:6px">
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">📍 Bereich:</span>
+    <select onchange="_aisSetKmFrom(this.value)" style="${selStyle(rangeActive)}">${rangeFromOpts}</select>
+    <span style="font-size:12px;color:var(--text-muted)">→</span>
+    <select onchange="_aisSetKmTo(this.value)" style="${selStyle(rangeActive)}">${rangeToOpts}</select>
+    ${rangeLabel}
+    ${rangeClearBtn}
   </div>`;
   html += `<div class="ais-legend">
     <span>● Live-Update</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
@@ -4532,7 +4595,7 @@ function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
   _aisInitialLoaded = false;
-  _aisFilter = { hiddenTypes: new Set(), minLen: 0, hideAnc: false, sortIn: null, sortOut: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   currentView = 'verkehr';
