@@ -5029,7 +5029,7 @@ function goKarte() {
           <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 11)</span>
+          <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 9)</span>
         </label>
         <div id="karte-schiffe-panel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
           <div style="font-size:11px;color:#637485;margin-bottom:3px">Schiff auswählen:</div>
@@ -5811,8 +5811,8 @@ async function _karteLoadSeamarks() {
   if (!_karteMap) return;
   const zoom = _karteMap.getZoom();
 
-  // Only show at zoom >= 11
-  if (zoom < 11) {
+  // Only show at zoom >= 9
+  if (zoom < 9) {
     _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
     _karteSeamarkBbox = '';
     return;
@@ -5943,10 +5943,10 @@ async function _karteLoadSeamarks() {
     // The leading line extends FROM the front light (Unter) OUTWARD into the fairway,
     // in the same direction as the Ober→Unter bearing.
     for (const [baseName, items] of Object.entries(richtfeuerByBase)) {
-      if (items.length !== 2) continue;
-      // Identify which is Ober (rear) and which is Unter (front/toward water)
-      const ober  = items.find(i => /ober/i.test(i.node.tags?.name || '')) || items[0];
-      const unter = items.find(i => /unter/i.test(i.node.tags?.name || '')) || items[1];
+      // Robust: find first Ober and first Unter even if duplicates exist
+      const ober  = items.find(i => /ober/i.test(i.node.tags?.name || ''));
+      const unter = items.find(i => /unter/i.test(i.node.tags?.name || ''));
+      if (!ober || !unter) continue; // skip if pair is incomplete
       const char_ = unter.char_, period = unter.period, group = unter.group;
 
       // Bearing from Ober → Unter (the steering course toward the ship)
