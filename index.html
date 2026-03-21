@@ -4934,6 +4934,8 @@ let _karteSeamarkMarkers = [];
 let _karteSeamarkFetching = false;
 let _karteSeamarkBbox = '';
 let _karteSeamarkAnimStyle = null;
+let _karteRangeLineRAF = null;
+let _karteRangeLineLayers = []; // [{layerId, sourceId, char_, period, group}]
 let _karteShipTimer   = null;
 let _karteVectorMinutes = 10;
 let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle zeigen)
@@ -5049,6 +5051,8 @@ function goKarte() {
     _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = [];
     _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
     _karteSeamarkBbox = '';
+    if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
+    _karteRangeLineLayers = [];
 
     // ── Nautisches Flat-Design (demotiles) ────────────────────────────
     const styleResp = await fetch('https://demotiles.maplibre.org/style.json').then(r => r.json());
@@ -5297,6 +5301,12 @@ function karteToggleOverlay(type, visible) {
       _karteSeamarkBbox = '';
       _karteMap.off('moveend', _karteSeamarkOnMove);
       _karteMap.off('zoomend', _karteSeamarkOnMove);
+      if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
+      _karteRangeLineLayers.forEach(({ layerId, sourceId }) => {
+        if (_karteMap.getLayer(layerId)) _karteMap.removeLayer(layerId);
+        if (_karteMap.getSource(sourceId)) _karteMap.removeSource(sourceId);
+      });
+      _karteRangeLineLayers = [];
     }
   }
 }
@@ -5700,6 +5710,41 @@ function _karteSeamarkKeyframes(name, char_, group, period) {
   return `@keyframes ${name} { ${stops.join(' ')} } `;
 }
 
+// Opacity at a given phase (seconds within period) for a light characteristic
+function _karteSeamarkPhase(char_, group, period, phase) {
+  if (char_ === 'F' || period <= 0) return 1;
+  if (char_ === 'Iso') return phase < period / 2 ? 1 : 0.05;
+  if (char_ === 'Q' || char_ === 'VQ') return phase < period / 2 ? 1 : 0.05;
+  if (char_ === 'Oc') return phase < period * 0.3 ? 0.05 : 1;
+  // Fl(n)
+  const flashOn = 0.5, flashOff = 0.5;
+  let t = 0;
+  for (let i = 0; i < group; i++) {
+    if (phase >= t && phase < t + flashOn) return 1;
+    t += flashOn;
+    if (i < group - 1) {
+      if (phase >= t && phase < t + flashOff) return 0.05;
+      t += flashOff;
+    }
+  }
+  return 0.05;
+}
+
+function _karteAnimateRangeLines(ts) {
+  if (!_karteMap || !_karteOverlays.seezeichen || !_karteRangeLineLayers.length) {
+    _karteRangeLineRAF = null;
+    return;
+  }
+  const nowSec = (ts || performance.now()) / 1000;
+  for (const { layerId, char_, period, group } of _karteRangeLineLayers) {
+    if (!_karteMap.getLayer(layerId)) continue;
+    const phase = period > 0 ? nowSec % period : 0;
+    const opacity = _karteSeamarkPhase(char_, group, period, phase);
+    _karteMap.setPaintProperty(layerId, 'line-opacity', opacity);
+  }
+  _karteRangeLineRAF = requestAnimationFrame(_karteAnimateRangeLines);
+}
+
 async function _karteLoadSeamarks() {
   if (!_karteMap) return;
   const zoom = _karteMap.getZoom();
@@ -5718,7 +5763,8 @@ async function _karteLoadSeamarks() {
   _karteSeamarkBbox = bbox;
 
   try {
-    const query = `[out:json][timeout:20];node["seamark:type"](${bbox});out;`;
+    // Fetch nodes + leading_line ways together
+    const query = `[out:json][timeout:25];(node["seamark:type"](${bbox});way["seamark:type"="leading_line"](${bbox}););out geom;`;
     const resp = await fetch('https://overpass-api.de/api/interpreter', {
       method: 'POST',
       body: 'data=' + encodeURIComponent(query),
@@ -5727,6 +5773,14 @@ async function _karteLoadSeamarks() {
 
     _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
 
+    // Clean up old range line layers
+    if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
+    _karteRangeLineLayers.forEach(({ layerId, sourceId }) => {
+      if (_karteMap.getLayer(layerId)) _karteMap.removeLayer(layerId);
+      if (_karteMap.getSource(sourceId)) _karteMap.removeSource(sourceId);
+    });
+    _karteRangeLineLayers = [];
+
     if (!_karteSeamarkAnimStyle) {
       _karteSeamarkAnimStyle = document.createElement('style');
       document.head.appendChild(_karteSeamarkAnimStyle);
@@ -5734,27 +5788,32 @@ async function _karteLoadSeamarks() {
     const animDefs = new Set();
     let styleText = _karteSeamarkAnimStyle.textContent || '';
 
-    for (const node of data.elements || []) {
+    // Collect Richtfeuer nodes for name-based pairing (fallback for unpaired nodes)
+    const richtfeuerByBase = {};
+
+    const nodes = (data.elements || []).filter(e => e.type === 'node');
+    const ways  = (data.elements || []).filter(e => e.type === 'way');
+
+    // ── Process nodes (dots) ──────────────────────────────────────────
+    for (const node of nodes) {
       const t = node.tags || {};
       const smType = t['seamark:type'];
       if (!smType) continue;
 
-      let color, size = 7, isLighthouse = false;
-
+      let color, size = 7;
       if (smType === 'buoy_lateral' || smType === 'beacon_lateral') {
         const col = (t['seamark:buoy_lateral:colour'] || t['seamark:beacon_lateral:colour'] || '').toLowerCase();
         if (col.includes('red')) color = '#dc2626';
         else if (col.includes('green')) color = '#16a34a';
         else continue;
       } else if (smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse' || smType === 'light_vessel') {
-        color = '#f59e0b'; size = 9; isLighthouse = true;
+        color = '#f59e0b'; size = 9;
       } else if (smType === 'buoy_cardinal' || smType === 'beacon_cardinal') {
         color = '#1d1d1b'; size = 7;
       } else {
         continue;
       }
 
-      // Parse light characteristic
       const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
       const period = parseFloat(t['seamark:light:period'] || '0');
       const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
@@ -5769,18 +5828,96 @@ async function _karteLoadSeamarks() {
         }
       }
 
-      const label = t.name || t['seamark:name'] || t['ref'] || '';
+      // Tooltip: Name + Kennung
+      const name = t.name || t['seamark:name'] || t['ref'] || '';
+      const kennung = char_ !== 'F' && period > 0
+        ? `${char_}${group > 1 ? `(${group})` : ''} ${period}s`
+        : char_ === 'F' ? 'Festfeuer' : char_;
+      const tooltip = [name, kennung].filter(Boolean).join(' · ');
+
       const el = document.createElement('div');
-      el.style.cssText = `width:${size}px;height:${size}px;background:${color};border:1.5px solid rgba(255,255,255,0.8);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4)`;
-      if (label) el.title = label;
+      el.style.cssText = `width:${size}px;height:${size}px;background:${color};border:1.5px solid rgba(255,255,255,0.8);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4);cursor:help`;
+      if (tooltip) el.title = tooltip;
       if (animName) el.style.animation = `${animName} ${animDur} linear infinite`;
 
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([node.lon, node.lat]).addTo(_karteMap);
       _karteSeamarkMarkers.push(marker);
+
+      // Collect Richtfeuer nodes for pairing
+      if (smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse') {
+        const baseName = name.replace(/\b(Ober|Unter|oberes?|unteres?|Ober-Feuer|Unter-Feuer|Oberfeuer|Unterfeuer)\b/gi, '').replace(/\s+/g, ' ').trim();
+        if (baseName) {
+          if (!richtfeuerByBase[baseName]) richtfeuerByBase[baseName] = [];
+          richtfeuerByBase[baseName].push({ node, char_, period, group });
+        }
+      }
     }
 
     _karteSeamarkAnimStyle.textContent = styleText;
+
+    // ── Range lines: from OSM leading_line ways ───────────────────────
+    const rangeLineFeatures = {}; // key → {features, char_, period, group}
+
+    for (const way of ways) {
+      const t = way.tags || {};
+      if (t['seamark:type'] !== 'leading_line') continue;
+      const coords = (way.geometry || []).map(g => [g.lon, g.lat]);
+      if (coords.length < 2) continue;
+      const char_ = (t['seamark:light:character'] || 'F').replace(/\s/g, '');
+      const period = parseFloat(t['seamark:light:period'] || '0');
+      const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
+      const key = `${char_}-${period}-${group}`;
+      if (!rangeLineFeatures[key]) rangeLineFeatures[key] = { features: [], char_, period, group };
+      rangeLineFeatures[key].features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: coords },
+        properties: {}
+      });
+    }
+
+    // ── Range lines: fallback — pair Richtfeuer nodes by name ─────────
+    for (const [baseName, items] of Object.entries(richtfeuerByBase)) {
+      if (items.length !== 2) continue;
+      const [a, b] = items;
+      const char_ = a.char_, period = a.period, group = a.group;
+      const key = `${char_}-${period}-${group}`;
+      if (!rangeLineFeatures[key]) rangeLineFeatures[key] = { features: [], char_, period, group };
+      rangeLineFeatures[key].features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [[a.node.lon, a.node.lat], [b.node.lon, b.node.lat]] },
+        properties: {}
+      });
+    }
+
+    // ── Create one MapLibre layer per unique (char, period, group) ────
+    let layerIdx = 0;
+    for (const [key, grp] of Object.entries(rangeLineFeatures)) {
+      if (!grp.features.length) continue;
+      const sourceId = `karte-rl-src-${layerIdx}`;
+      const layerId  = `karte-rl-lyr-${layerIdx}`;
+      _karteMap.addSource(sourceId, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: grp.features }
+      });
+      _karteMap.addLayer({
+        id: layerId, type: 'line', source: sourceId,
+        paint: {
+          'line-color': '#f59e0b',
+          'line-width': 1.5,
+          'line-dasharray': [5, 3],
+          'line-opacity': 1
+        }
+      });
+      _karteRangeLineLayers.push({ layerId, sourceId, char_: grp.char_, period: grp.period, group: grp.group });
+      layerIdx++;
+    }
+
+    // Start rAF animation for range lines
+    if (_karteRangeLineLayers.length) {
+      _karteRangeLineRAF = requestAnimationFrame(_karteAnimateRangeLines);
+    }
+
   } catch(e) {
     console.warn('Seamark', e);
     // Don't reset bbox — prevents immediate retry storm; retry on next map move
