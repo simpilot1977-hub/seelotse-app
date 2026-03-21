@@ -1810,14 +1810,42 @@ async function fetchPressureHistory(hours) {
     const ptsVis      = allPts.filter(w => w.vis != null);
     if (!ptsPressure.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
     const tRange = { min: from.getTime(), max: now.getTime() };
+
+    // Pegel parallel laden
+    const pegelPeriod = _pressureHours <= 72 ? `PT${_pressureHours}H` : 'P3D';
+    const BASE_PO = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+    await Promise.all(PEGEL_STATIONS.map(async st => {
+      try {
+        const pd = await fetch(`${BASE_PO}/${st.uuid}/W/measurements.json?start=${pegelPeriod}`).then(r => r.json());
+        _pegelData[st.key] = (Array.isArray(pd) ? pd : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
+      } catch { _pegelData[st.key] = []; }
+    }));
+
     el.style.display = 'grid';
     el.style.gridTemplateColumns = 'repeat(2, 1fr)';
     el.style.gap = '16px';
     el.innerHTML =
       _renderPressureChart(ptsPressure, tRange) +
       (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '<div></div>') +
-      (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>');
+      (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>') +
+      _renderPegelChartWithHeader(tRange);
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
+}
+
+function _renderPegelChartWithHeader(tRange) {
+  const currentRow = PEGEL_STATIONS.map(st => {
+    const pts = _pegelData[st.key] || [];
+    const last = pts[pts.length - 1];
+    const val = last?.v;
+    return `<span style="color:${st.color};font-weight:700">${st.label}: <span style="color:var(--navy)">${val != null ? val.toFixed(0) : '–'} cm</span></span>`;
+  }).join('<span style="color:var(--border)"> · </span>');
+  return `<div>
+    <div style="font-size:10px;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+      ${currentRow}
+      <span style="font-size:9px;color:var(--text-muted);margin-left:auto">ü. PN</span>
+    </div>
+    ${_renderPegelChart(tRange)}
+  </div>`;
 }
 
 // Generate evenly-spaced x-axis time labels across the full requested range
@@ -2036,7 +2064,7 @@ function _renderPegelCurrent() {
     return `<div style="border:1.5px solid var(--border);border-radius:var(--r-md);padding:8px 12px;flex:1;min-width:0">
       <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${st.color};margin-bottom:2px">${st.label} <span style="font-weight:400;color:var(--text-muted)">km ${st.km}</span></div>
       <div style="font-size:22px;font-weight:800;color:var(--navy);line-height:1.2">${val != null ? val.toFixed(0) : '–'}</div>
-      <div style="font-size:10px;color:var(--text-muted)">cm ü. SKN</div>
+      <div style="font-size:10px;color:var(--text-muted)">cm ü. PN (Pegelnull)</div>
       ${ts ? `<div style="font-size:9px;color:var(--text-muted);margin-top:3px">${ts}</div>` : ''}
     </div>`;
   }).join('');
@@ -2074,7 +2102,7 @@ function _renderPegelChart(tRange) {
   return `<div>
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:12px;flex-wrap:wrap">
       ${legend}
-      <span style="font-weight:400;margin-left:auto">cm ü. SKN (Pegelnullpunkt ≈ Seekartennull)</span>
+      <span style="font-weight:400;margin-left:auto">cm ü. PN (Pegelnullpunkt) · SKN ≈ PN − 20…50 cm</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
       ${gridLines}${yLabels}${xLabels}${lines}
@@ -4900,20 +4928,6 @@ function renderWetterPage() {
           </div>
           <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
         </div>
-        <!-- Pegelstände -->
-        <div id="ar-pegel-card" style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">🌊 Pegelstände Elbe</div>
-            <div style="display:flex;gap:6px">
-              <button onclick="fetchPegelData(6)"  id="pgbtn-6"  style="${btnStyle}">6h</button>
-              <button onclick="fetchPegelData(12)" id="pgbtn-12" style="${btnStyle}">12h</button>
-              <button onclick="fetchPegelData(24)" id="pgbtn-24" style="${btnStyle.replace('background:var(--bg)','background:var(--blue)')};color:#fff;border-color:var(--blue)">24h</button>
-              <button onclick="fetchPegelData(48)" id="pgbtn-48" style="${btnStyle}">48h</button>
-            </div>
-          </div>
-          <div id="ar-pegel-current" style="display:flex;gap:8px;margin-bottom:12px"></div>
-          <div id="ar-pegel-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
-        </div>
       </div>
     </div>`;
   // Sync dropdown to current station state
@@ -4922,7 +4936,7 @@ function renderWetterPage() {
   const title = document.getElementById('pchart-title');
   if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
-  setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); fetchPegelData(_pegelHours); }, 0);
+  setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
 }
 
 function exportWetterPDF() {
