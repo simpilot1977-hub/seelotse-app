@@ -4130,7 +4130,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
@@ -4327,6 +4327,7 @@ function _aisSetCustomKm(v) {
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisRenderTable(); }
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisRenderTable(); }
 function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisRenderTable(); }
+function _aisSetMaxAge(v)  { _aisFilter.maxAge  = parseInt(v) || 0; _aisRenderTable(); }
 function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
 function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisRenderTable(); }
 function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _aisRenderTable(); }
@@ -4350,6 +4351,10 @@ function _aisRenderTable() {
       if (_aisFilter.shownTypes.size > 0 && !_aisFilter.shownTypes.has(tL)) return false;
       if (_aisFilter.minLen > 0 && s.length < _aisFilter.minLen) return false;
       if (_aisFilter.minSog > 0 && s.sog < _aisFilter.minSog) return false;
+      if (_aisFilter.maxAge > 0 && s.lastUpdate) {
+        const ageMin = (now - s.lastUpdate.getTime()) / 60000;
+        if (ageMin > _aisFilter.maxAge) return false;
+      }
       if (_aisFilter.kmFrom !== null || _aisFilter.kmTo !== null) {
         const km = _elbKm(s.trackNm);
         // Elbe-km zählt abwärts (755 Racon → 620 Hamburg)
@@ -4424,7 +4429,10 @@ function _aisRenderTable() {
   function shipRow(s, wps) {
     const { l: tL, e: tE } = _aisShipType(s.shipType);
     const age = s.lastUpdate ? Math.round((now - s.lastUpdate.getTime())/60000) : 99;
-    const dot = age < 3 ? '<span class="ais-status-dot"></span>' : `<span style="color:#94a3b8;font-size:10px">${age}m&nbsp;</span>`;
+    const dotColor = age < 5 ? '#22c55e' : age < 15 ? '#f59e0b' : '#ef4444';
+    const dot = age < 3
+      ? '<span class="ais-status-dot"></span>'
+      : `<span style="color:${dotColor};font-size:10px;font-weight:600" title="Signal vor ${age} min">${age}m&nbsp;</span>`;
     const dest = s.destination ? `<span style="font-size:10px;color:var(--text-muted)"> → ${s.destination.substring(0,14)}</span>` : '';
     const len  = s.length  > 0 ? `${s.length}m`              : '—';
     const drg  = s.draught > 0 ? `${s.draught.toFixed(1)}m`  : '—';
@@ -4443,6 +4451,7 @@ function _aisRenderTable() {
   const outWps = [['brunsbuettel','Brunsbüttel'],['cuxhaven','Cuxhaven'],['racon','Elbe-Racon']];
 
   // ── Filter-Bar ──
+  const anyTypeSelected = _aisFilter.shownTypes.size > 0;
   const typeBtns = allTypes.map(t => {
     // Einschluss-Logik: gewählt = aktiv (hervorgehoben), nicht gewählt = gedimmt wenn mind. einer aktiv
     const active = _aisFilter.shownTypes.has(t);
@@ -4453,7 +4462,6 @@ function _aisRenderTable() {
   const ancOff = _aisFilter.hideAnc ? ' off' : '';
   const lenVal = _aisFilter.minLen > 0 ? _aisFilter.minLen : '';
   const sogVal = _aisFilter.minSog > 0 ? _aisFilter.minSog : '';
-  const anyTypeSelected = _aisFilter.shownTypes.size > 0;
 
   // Bereichs-Filter Dropdowns
   const kmFromSel = _aisFilter.kmFrom;
@@ -4498,6 +4506,13 @@ function _aisRenderTable() {
         style="font-size:11px;width:52px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
       <span style="font-size:11px;color:var(--text-muted)">kn</span>
     </div>
+    <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap;margin-left:8px">Max. Alter Signal:</span>
+    <div style="display:flex;align-items:center;gap:4px">
+      <input type="number" min="0" step="5" value="${_aisFilter.maxAge || ''}"
+        oninput="_aisSetMaxAge(this.value)" placeholder="∞"
+        style="font-size:11px;width:52px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
+      <span style="font-size:11px;color:var(--text-muted)">min</span>
+    </div>
   </div>
   <div class="ais-filter-bar" style="gap:6px">
     <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">📍 Bereich:</span>
@@ -4508,8 +4523,8 @@ function _aisRenderTable() {
     ${rangeClearBtn}
   </div>`;
   html += `<div class="ais-legend">
-    <span>● Live-Update</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
-    <span style="margin-left:auto;color:#94a3b8">Gesamt: ${ships.length} Schiffe · ${inList.length + outList.length + ancList.length} angezeigt</span>
+    <span>● &lt;3 min</span><span style="color:#f59e0b">● 5–15 min</span><span style="color:#ef4444">● &gt;15 min</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
+    <span style="margin-left:auto;color:#94a3b8">Gesamt: ${ships.length} · ${inList.length + outList.length + ancList.length} angezeigt</span>
   </div>`;
 
   // ── Einkommend ──
@@ -4595,7 +4610,7 @@ function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
   _aisInitialLoaded = false;
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   currentView = 'verkehr';
