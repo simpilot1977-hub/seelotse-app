@@ -4925,11 +4925,15 @@ function goVerkehr() {
 
 // ── Karte ─────────────────────────────────────────────────────────
 let _karteMap = null;
-let _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false };
+let _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, seezeichen: false };
 let _kartePegelMarkers = [];
 let _karteWindMarkers = [];
 let _karteShipMarkers = {};   // mmsi → { dot: HTMLEl, marker: maplibregl.Marker }
 let _karteTideMarkers = [];   // maplibregl.Marker[]
+let _karteSeamarkMarkers = [];
+let _karteSeamarkFetching = false;
+let _karteSeamarkBbox = '';
+let _karteSeamarkAnimStyle = null;
 let _karteShipTimer   = null;
 let _karteVectorMinutes = 10;
 let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle zeigen)
@@ -4980,7 +4984,7 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, seezeichen: false };
 
   document.getElementById('app-main').innerHTML = `
     <div style="position:relative;height:calc(100vh - 56px)">
@@ -5004,8 +5008,11 @@ function goKarte() {
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-tide" onchange="karteToggleOverlay('tide',this.checked)"> Hoch-/Niedrigwasser
         </label>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 11)</span>
         </label>
         <div id="karte-schiffe-panel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
           <div style="font-size:11px;color:#637485;margin-bottom:3px">Schiff auswählen:</div>
@@ -5040,6 +5047,8 @@ function goKarte() {
     if (_karteShipTimer) { clearInterval(_karteShipTimer); _karteShipTimer = null; }
     _karteShipMarkers = {};
     _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = [];
+    _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
+    _karteSeamarkBbox = '';
 
     // ── Nautisches Flat-Design (demotiles) ────────────────────────────
     const styleResp = await fetch('https://demotiles.maplibre.org/style.json').then(r => r.json());
@@ -5278,6 +5287,17 @@ function karteToggleOverlay(type, visible) {
     if (panel) panel.style.display = visible ? 'block' : 'none';
     if (visible) _karteStartShips();
     else _karteStopShips();
+  } else if (type === 'seezeichen') {
+    if (visible) {
+      _karteLoadSeamarks();
+      _karteMap.on('moveend', _karteSeamarkOnMove);
+      _karteMap.on('zoomend', _karteSeamarkOnMove);
+    } else {
+      _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
+      _karteSeamarkBbox = '';
+      _karteMap.off('moveend', _karteSeamarkOnMove);
+      _karteMap.off('zoomend', _karteSeamarkOnMove);
+    }
   }
 }
 
@@ -5288,50 +5308,15 @@ async function _karteLoadPegel() {
 
   await Promise.allSettled(KARTE_PEGEL_STATIONS.map(async st => {
     try {
-      const [currR, histR] = await Promise.allSettled([
-        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/currentmeasurement.json`).then(r => r.json()),
-        fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/measurements.json?start=P1D`).then(r => r.json()),
-      ]);
-      const curr = currR.status === 'fulfilled' ? currR.value : null;
-      const hist = histR.status === 'fulfilled' && Array.isArray(histR.value) ? histR.value : [];
-
-      const currentCm = curr?.value ?? null;
+      const currR = await fetch(`https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations/${st.uuid}/W/currentmeasurement.json`).then(r => r.json()).catch(() => null);
+      const currentCm = currR?.value ?? null;
       const valText = currentCm !== null ? `${Math.round(currentCm)} cm` : '–';
 
-      // Mini-Tidekurve als SVG
-      let svgHtml = '<div style="color:#94a3b8;font-size:9px;margin:3px 0">Keine Verlaufsdaten</div>';
-      if (hist.length > 5) {
-        const vals = hist.map(p => p.value);
-        const times = hist.map(p => new Date(p.timestamp).getTime());
-        const vMin = Math.min(...vals), vMax = Math.max(...vals);
-        const tMin = Math.min(...times), tMax = Math.max(...times);
-        const PW = 140, PH = 40;
-        const ptStr = hist.map((p, i) => {
-          const x = ((times[i] - tMin) / (tMax - tMin || 1)) * PW;
-          const y = PH - ((vals[i] - vMin) / (vMax - vMin || 1)) * PH;
-          return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        let dotSvg = '';
-        if (currentCm !== null) {
-          const dotX = PW;
-          const dotY = PH - ((currentCm - vMin) / (vMax - vMin || 1)) * PH;
-          dotSvg = `<circle cx="${dotX.toFixed(1)}" cy="${Math.max(2, Math.min(PH-2, dotY)).toFixed(1)}" r="3" fill="#c9a227" stroke="#1b3d5f" stroke-width="1"/>`;
-        }
-        svgHtml = `<svg width="${PW}" height="${PH}" style="display:block;overflow:visible;margin:3px 0">
-          <path d="${ptStr}" fill="none" stroke="#1b3d5f" stroke-width="1.5" stroke-linejoin="round"/>
-          ${dotSvg}
-        </svg>`;
-      }
-
       const el = document.createElement('div');
-      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid #1b3d5f;border-radius:6px;padding:5px 8px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);min-width:160px;pointer-events:none';
-      el.innerHTML = `
-        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:2px">📊 ${st.label}</div>
-        <div style="font-size:15px;font-weight:700;color:#0c4a6e;margin-bottom:2px">${valText}</div>
-        ${svgHtml}
-        <div style="font-size:8px;color:#94a3b8">Pegelonline WSV · 24h</div>`;
+      el.style.cssText = 'background:rgba(255,255,255,0.95);border:1.5px solid #1b3d5f;border-radius:20px;padding:3px 9px 3px 6px;font-size:10px;color:#1a2332;box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;pointer-events:none;display:flex;align-items:center;gap:5px';
+      el.innerHTML = `<span style="font-size:9px">📊</span><span style="font-weight:700;color:#1b3d5f;font-size:10px">${st.label.toUpperCase().substring(0,3)}</span><span style="font-size:11px;font-weight:700;color:#0c4a6e">${valText}</span>`;
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'top-left' })
+      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom-left', offset: [0, -2] })
         .setLngLat([st.lon, st.lat]).addTo(_karteMap);
       _kartePegelMarkers.push(marker);
     } catch(e) { console.warn('Pegel', st.label, e); }
@@ -5362,20 +5347,17 @@ async function _karteLoadWind() {
       const bft = _msToBeaufort(ms);
       const col = _bftColor(bft);
       const comp = _degToCompass(dir);
-      const svg = _makeWindCompassSVG(dir, bft);
       const kn = _msToKn(ms);
-      const gustStr = gustMs != null ? `· Böen ${_msToKn(gustMs).toFixed(0)} kn` : '';
+      const gustStr = gustMs != null ? ` · Böen ${_msToKn(gustMs).toFixed(0)}kn` : '';
+      // Wind arrow (simple unicode rotation)
+      const arrowStyle = `display:inline-block;transform:rotate(${dir}deg);font-size:11px`;
 
       const el = document.createElement('div');
-      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid ' + col + ';border-radius:6px;padding:5px 8px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);pointer-events:none;text-align:center';
-      el.innerHTML = `
-        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:2px">🌬 ${st.label}</div>
-        ${svg}
-        <div style="font-size:14px;font-weight:700;color:${col};margin:2px 0">${kn.toFixed(0)} kn <span style="font-size:11px">(${bft} Bft)</span></div>
-        <div style="font-size:9px;color:#555">aus ${comp} (${Math.round(dir)}°) ${gustStr}</div>
-        <div style="font-size:8px;color:#94a3b8;margin-top:2px">Bright Sky DWD</div>`;
+      el.style.cssText = 'background:rgba(255,255,255,0.95);border:1.5px solid ' + col + ';border-radius:20px;padding:3px 9px 3px 6px;font-size:10px;color:#1a2332;box-shadow:0 1px 4px rgba(0,0,0,0.18);white-space:nowrap;pointer-events:none;display:flex;align-items:center;gap:5px';
+      el.innerHTML = `<span style="${arrowStyle}">↑</span><span style="font-weight:700;color:#1b3d5f;font-size:10px">${st.label.toUpperCase().substring(0,3)}</span><span style="font-size:11px;font-weight:700;color:${col}">${kn.toFixed(0)}kn</span><span style="font-size:10px;color:#555">${bft}Bft ${comp}${gustStr}</span>`;
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'top-left' })
+      // Offset below pegel marker (30px) to avoid overlap
+      const marker = new maplibregl.Marker({ element: el, anchor: 'top-left', offset: [0, 30] })
         .setLngLat([st.lon, st.lat]).addTo(_karteMap);
       _karteWindMarkers.push(marker);
     } catch(e) { console.warn('Wind karte', st.label, e); }
@@ -5490,20 +5472,19 @@ async function _karteLoadTides() {
         const isHW  = e.type === 'HW';
         const col   = isHW ? '#1d4ed8' : '#059669';
         const arrow = isHW ? '↑' : '↓';
-        const vStr  = e.estimated ? `~${Math.round(e.v)} cm` : `${Math.round(e.v)} cm`;
-        return `<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:2px">
-          <span style="color:${col};font-weight:700">${arrow} ${e.type}</span>
-          <span style="color:#374151">${fmtDate(e.t)} ${fmtT(e.t)}</span>
-          <span style="color:${col};font-weight:600;min-width:52px;text-align:right">${vStr}</span>
+        const vStr  = e.estimated ? `~${Math.round(e.v)}cm` : `${Math.round(e.v)}cm`;
+        return `<div style="display:flex;align-items:center;gap:5px;line-height:1.4">
+          <span style="color:${col};font-weight:700;font-size:10px">${arrow}${e.type}</span>
+          <span style="color:#374151;font-size:10px">${fmtDate(e.t)} ${fmtT(e.t)}</span>
+          <span style="color:${col};font-weight:600;font-size:10px">${vStr}</span>
         </div>`;
       }).join('');
 
       const el = document.createElement('div');
-      el.style.cssText = 'background:rgba(255,255,255,0.96);border:1.5px solid #1b3d5f;border-radius:6px;padding:6px 9px;font-size:10px;color:#1a2332;box-shadow:0 2px 6px rgba(0,0,0,0.15);min-width:200px;pointer-events:none';
+      el.style.cssText = 'background:rgba(255,255,255,0.95);border:1.5px solid #1b3d5f;border-radius:8px;padding:4px 8px;font-size:10px;color:#1a2332;box-shadow:0 1px 4px rgba(0,0,0,0.15);pointer-events:none';
       el.innerHTML = `
-        <div style="font-weight:700;font-size:11px;color:#1b3d5f;margin-bottom:4px">🌊 ${st.label}</div>
-        ${rows}
-        <div style="font-size:8px;color:#94a3b8;margin-top:3px">Pegelonline WSV</div>`;
+        <div style="font-weight:700;font-size:10px;color:#1b3d5f;margin-bottom:2px">🌊 ${st.label}</div>
+        ${rows}`;
 
       // Label-Position abseits des Fahrwassers (per Station konfiguriert)
       const marker = new maplibregl.Marker({ element: el, anchor: st.anchor })
@@ -5640,6 +5621,137 @@ function karteShipSelect(val) {
 function karteVectorTimeChange(val) {
   _karteVectorMinutes = Number(val);
   _karteUpdateShips();
+}
+
+// ── Seezeichen-Overlay (Tonnen + Leuchttürme) ──────────────────────
+function _karteSeamarkOnMove() {
+  if (_karteOverlays.seezeichen) _karteLoadSeamarks();
+}
+
+function _karteSeamarkKeyframes(name, char_, group, period) {
+  const T = period;
+  const stops = [];
+  const add = (pct, op) => stops.push(`${Math.min(pct, 99.99).toFixed(2)}% { opacity:${op} }`);
+
+  if (char_ === 'Iso') {
+    add(0, 1); add(49.99, 1); add(50, 0.08); add(99.99, 0.08);
+  } else if (char_ === 'Q' || char_ === 'VQ') {
+    add(0, 1); add(49.99, 1); add(50, 0.08); add(99.99, 0.08);
+  } else if (char_ === 'Oc') {
+    const offPct = Math.min(30, (0.5 / T) * 100 * 2);
+    add(0, 0.08); add(offPct - 0.01, 0.08); add(offPct, 1); add(99.99, 1);
+  } else {
+    // Fl or Fl(n): n flashes of 0.5s each with 0.5s gap, then dark
+    const flashOn = 0.5, flashOff = 0.5;
+    const groupDur = group * flashOn + Math.max(0, group - 1) * flashOff;
+    if (groupDur >= T) {
+      add(0, 1); add(10, 1); add(10.01, 0.08); add(99.99, 0.08);
+    } else {
+      let t = 0;
+      for (let i = 0; i < group; i++) {
+        add((t / T) * 100, 1);
+        add(((t + flashOn) / T) * 100 - 0.01, 1);
+        add(((t + flashOn) / T) * 100, 0.08);
+        t += flashOn;
+        if (i < group - 1) {
+          add(((t + flashOff) / T) * 100 - 0.01, 0.08);
+          add(((t + flashOff) / T) * 100, 1);
+          t += flashOff;
+        }
+      }
+      add(99.99, 0.08);
+    }
+  }
+  return `@keyframes ${name} { ${stops.join(' ')} } `;
+}
+
+async function _karteLoadSeamarks() {
+  if (!_karteMap) return;
+  const zoom = _karteMap.getZoom();
+
+  // Only show at zoom >= 11
+  if (zoom < 11) {
+    _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
+    _karteSeamarkBbox = '';
+    return;
+  }
+
+  const b = _karteMap.getBounds();
+  const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
+  if (bbox === _karteSeamarkBbox || _karteSeamarkFetching) return;
+  _karteSeamarkFetching = true;
+  _karteSeamarkBbox = bbox;
+
+  try {
+    const query = `[out:json][timeout:20];node[seamark:type](${bbox});out;`;
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query),
+    });
+    const data = await resp.json();
+
+    _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
+
+    if (!_karteSeamarkAnimStyle) {
+      _karteSeamarkAnimStyle = document.createElement('style');
+      document.head.appendChild(_karteSeamarkAnimStyle);
+    }
+    const animDefs = new Set();
+    let styleText = _karteSeamarkAnimStyle.textContent || '';
+
+    for (const node of data.elements || []) {
+      const t = node.tags || {};
+      const smType = t['seamark:type'];
+      if (!smType) continue;
+
+      let color, size = 7, isLighthouse = false;
+
+      if (smType === 'buoy_lateral' || smType === 'beacon_lateral') {
+        const col = (t['seamark:buoy_lateral:colour'] || t['seamark:beacon_lateral:colour'] || '').toLowerCase();
+        if (col.includes('red')) color = '#dc2626';
+        else if (col.includes('green')) color = '#16a34a';
+        else continue;
+      } else if (smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse' || smType === 'light_vessel') {
+        color = '#f59e0b'; size = 9; isLighthouse = true;
+      } else if (smType === 'buoy_cardinal' || smType === 'beacon_cardinal') {
+        color = '#1d1d1b'; size = 7;
+      } else {
+        continue;
+      }
+
+      // Parse light characteristic
+      const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
+      const period = parseFloat(t['seamark:light:period'] || '0');
+      const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
+
+      let animName = '', animDur = '';
+      if (period > 0.1 && char_ !== 'F') {
+        animName = `sm${char_.replace(/[^a-z0-9]/gi, '')}g${group}p${Math.round(period * 10)}`;
+        animDur  = `${period}s`;
+        if (!animDefs.has(animName)) {
+          animDefs.add(animName);
+          styleText += _karteSeamarkKeyframes(animName, char_, group, period);
+        }
+      }
+
+      const label = t.name || t['seamark:name'] || t['ref'] || '';
+      const el = document.createElement('div');
+      el.style.cssText = `width:${size}px;height:${size}px;background:${color};border:1.5px solid rgba(255,255,255,0.8);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4)`;
+      if (label) el.title = label;
+      if (animName) el.style.animation = `${animName} ${animDur} linear infinite`;
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat([node.lon, node.lat]).addTo(_karteMap);
+      _karteSeamarkMarkers.push(marker);
+    }
+
+    _karteSeamarkAnimStyle.textContent = styleText;
+  } catch(e) {
+    console.warn('Seamark', e);
+    _karteSeamarkBbox = ''; // allow retry
+  } finally {
+    _karteSeamarkFetching = false;
+  }
 }
 
 function renderWetterPage() {
