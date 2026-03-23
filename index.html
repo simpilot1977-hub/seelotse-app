@@ -2643,6 +2643,9 @@ function importTideDb(stationKey, input) {
       const label = stationKey === 'Brunsbuettel' ? 'Brunsbüttel' : stationKey;
       showToast(`✓ ${entries.length} Gezeiten für ${label} geladen.`, 'success');
       renderImportExport();
+      // Karten-Overlays aktualisieren falls aktiv
+      if (_karteOverlays.tide) _karteLoadTides();
+      if (_karteOverlays.stroem) _karteLoadStroem();
     } catch(err) {
       showToast(`Fehler beim Import: ${err.message}`, 'error');
     }
@@ -2657,6 +2660,8 @@ function clearTideDb(stationKey) {
   renderImportExport();
   const label = stationKey === 'Brunsbuettel' ? 'Brunsbüttel' : stationKey;
   showToast(`Gezeiten-Datenbank für ${label} gelöscht.`, 'success');
+  if (_karteOverlays.tide) _karteLoadTides();
+  if (_karteOverlays.stroem) _karteLoadStroem();
 }
 
 function setStichtagNow() {
