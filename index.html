@@ -5282,15 +5282,13 @@ function goKarte() {
       <div id="stroem-legend" style="display:none;position:absolute;bottom:28px;left:220px;z-index:1000;background:rgba(255,255,255,0.93);border:1px solid #b8ccd8;border-radius:8px;padding:8px 12px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12)">
         <div style="font-weight:700;margin-bottom:6px;color:#1b3d5f;font-size:12px">〰 Strömung</div>
         <div style="display:flex;flex-direction:column;gap:3px">
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#1e1b4b;border-radius:2px"></span><span>&gt; 2.5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#2563eb;border-radius:2px"></span><span>1.5–2.5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#60a5fa;border-radius:2px"></span><span>0.5–1.5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#bae6fd;border-radius:2px"></span><span>0–0.5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#94a3b8;border-radius:2px"></span><span>Stauwasser</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#fde68a;border-radius:2px"></span><span>0–0.5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#fb923c;border-radius:2px"></span><span>0.5–1.5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#dc2626;border-radius:2px"></span><span>1.5–2.5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#7f1d1d;border-radius:2px"></span><span>&gt; 2.5 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#004400;border-radius:2px"></span><span>&gt; 2 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#009900;border-radius:2px"></span><span>1–2 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#00ee00;border-radius:2px"></span><span>0–1 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#ffff00;border-radius:2px;border:1px solid #ccc"></span><span style="font-weight:600">⊙ Stauwasser</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#ff6600;border-radius:2px"></span><span>0–1 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#ff0000;border-radius:2px"></span><span>1–2 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#990000;border-radius:2px"></span><span>&gt; 2 kn Ebbe</span></div>
         </div>
         <div style="margin-top:5px;font-size:9px;color:#94a3b8">WSA Elbe-Nordsee · Pegelonline HW</div>
       </div>
@@ -5600,12 +5598,18 @@ function _lerpColor(c1, c2, t) {
 }
 
 function _stroemColorV2(strom_kn, phase) {
-  // Konvertiert Strömungswert in Farbe; Flut = positiv (blau), Ebbe = negativ (rot)
+  // Ebbe = Rot, Stauwasser = Gelb, Flut = Grün (knallig)
   const s = phase === 'F' ? strom_kn : phase === 'E' ? -strom_kn : 0;
   const stops = [
-    [-3.0, '#7f1d1d'], [-2.5, '#dc2626'], [-1.5, '#fb923c'],
-    [-0.5, '#fde68a'], [ 0.0, '#94a3b8'],
-    [ 0.5, '#bae6fd'], [ 1.5, '#60a5fa'], [ 2.5, '#2563eb'], [3.0, '#1e1b4b'],
+    [-3.0, '#990000'], // starke Ebbe → dunkelrot
+    [-2.0, '#ff0000'], // Ebbe → knallrot
+    [-1.0, '#ff6600'], // schwache Ebbe → orange
+    [-0.2, '#ffdd00'], // fast Stau → gelborange
+    [ 0.0, '#ffff00'], // Stauwasser → knallgelb
+    [ 0.2, '#ccff00'], // fast Flut → gelbgrün
+    [ 1.0, '#00ee00'], // schwache Flut → grün
+    [ 2.0, '#009900'], // Flut → dunkelgrün
+    [ 3.0, '#004400'], // starke Flut → sehr dunkelgrün
   ];
   for (let i = 0; i < stops.length - 1; i++) {
     if (s >= stops[i][0] && s <= stops[i+1][0]) {
@@ -5625,18 +5629,53 @@ function _stromdatenLookup(tableIdx, dtHW) {
 }
 
 async function _fetchHWOffset(uuid) {
-  // Gibt Stunden seit letztem HW zurück (positiv = HW war in der Vergangenheit), null bei Fehler
+  // Gibt dtHW zurück: Stunden relativ zum nächsten oder letzten HW
+  // Negativ = vor HW, Positiv = nach HW, Bereich ca. -6.5h bis +6.0h
   try {
     const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
     const pts = await fetch(`${BASE}/${uuid}/W/measurements.json?start=PT14H`).then(r => r.json());
-    if (!Array.isArray(pts) || pts.length < 3) return null;
-    let hwIdx = 0;
-    for (let i = 1; i < pts.length; i++) {
-      if (pts[i].value > pts[hwIdx].value) hwIdx = i;
+    if (!Array.isArray(pts) || pts.length < 6) return null;
+
+    // Letztes lokales Maximum (HW) suchen — von hinten, Fenster ±4 Messpunkte (≈±20 min)
+    const WIN = 4;
+    let hwIdx = -1;
+    for (let i = pts.length - 1 - WIN; i >= WIN; i--) {
+      let isMax = true;
+      for (let j = i - WIN; j <= i + WIN; j++) {
+        if (j !== i && pts[j].value >= pts[i].value) { isMax = false; break; }
+      }
+      if (isMax) { hwIdx = i; break; }
     }
+    if (hwIdx < 0) {
+      hwIdx = 0;
+      for (let i = 1; i < pts.length; i++) {
+        if (pts[i].value > pts[hwIdx].value) hwIdx = i;
+      }
+    }
+
     const hwTime = new Date(pts[hwIdx].timestamp);
-    return (Date.now() - hwTime.getTime()) / 3600000; // h seit HW
+    let dtHW = (Date.now() - hwTime.getTime()) / 3600000;
+
+    // Nach dem NW (>6h nach HW): auf nächsten HW-Zyklus beziehen (Periode M2 ≈ 12.42h)
+    // Damit sind wir wieder im negativen dtHW-Bereich (vor dem nächsten HW)
+    if (dtHW > 6.0) dtHW -= 12.42;
+
+    return dtHW;
   } catch { return null; }
+}
+
+function _fracToCoord(frac, fracs) {
+  // Konvertiert line-progress-Fraktion in geografische Koordinate [lon, lat]
+  for (let i = 1; i < KARTE_WP.length; i++) {
+    if (frac <= fracs[i] + 1e-9) {
+      const t = (frac - fracs[i-1]) / (fracs[i] - fracs[i-1]);
+      return [
+        KARTE_WP[i-1].lon + (KARTE_WP[i].lon - KARTE_WP[i-1].lon) * t,
+        KARTE_WP[i-1].lat + (KARTE_WP[i].lat - KARTE_WP[i-1].lat) * t,
+      ];
+    }
+  }
+  return [KARTE_WP[KARTE_WP.length-1].lon, KARTE_WP[KARTE_WP.length-1].lat];
 }
 
 function _elbeSegFracs() {
@@ -5654,8 +5693,8 @@ function _elbeSegFracs() {
 function _karteRemoveStroem() {
   if (_karteStroemTimer) { clearTimeout(_karteStroemTimer); _karteStroemTimer = null; }
   if (!_karteMap) return;
-  try { _karteMap.removeLayer('stroem-line'); } catch(e) {}
-  try { _karteMap.removeSource('stroem'); } catch(e) {}
+  ['stroem-stau-halo','stroem-stau-dot','stroem-line'].forEach(id => { try { _karteMap.removeLayer(id); } catch(e) {} });
+  ['stroem-stau','stroem'].forEach(id => { try { _karteMap.removeSource(id); } catch(e) {} });
   const leg = document.getElementById('stroem-legend');
   if (leg) leg.style.display = 'none';
 }
@@ -5708,6 +5747,38 @@ async function _karteLoadStroem() {
     }
   }
 
+  // === STAUWASSER-MARKER: wandernder Punkt der Kentering ===
+  // Ebbe→Flut Stauwasser-dtHW je Tabelle (aus den Tabellen-Rows abgelesen)
+  const STAU_EF = [-3.75, -4.50, -4.25, -5.25, -4.75, -5.50, -5.50];
+  const segDtsArr = [dtCux, dtBrb, dtBrb, dtGlk, dtGlk, dtStP, dtStP];
+
+  // Minuten bis zum/seit dem Ebbe→Flut-Stauwasser (negativ = Stau vorbei → Flut läuft)
+  const minToStau = STAU_EF.map((s, i) =>
+    segDtsArr[i] !== null ? (s - segDtsArr[i]) * 60 : null
+  );
+
+  // Stau-Front suchen: letztes Flut-Segment (minToStau < 0) vor erstem Ebbe-Segment (minToStau > 0)
+  let stauPoint = null;
+  for (let i = 1; i < STAU_EF.length; i++) {
+    const prev = minToStau[i-1], curr = minToStau[i];
+    if (prev === null || curr === null) continue;
+    if (prev <= 0 && curr > 0) {
+      // Stau-Front liegt in Segment i; interpoliere Position innerhalb des Segments
+      const vonWp = ELBE_STROMDATEN[i].vonWp;
+      const bisWp = ELBE_STROMDATEN[i].bisWp;
+      const pastMin = Math.abs(prev);    // wie lange läuft Flut schon im Vorgänger-Segment
+      const futureMin = curr;            // wie lange bis Stau in diesem Segment
+      const t = pastMin / (pastMin + futureMin);
+      const stauFrac = fracs[vonWp] + (fracs[bisWp] - fracs[vonWp]) * t;
+      stauPoint = _fracToCoord(stauFrac, fracs);
+      break;
+    }
+  }
+  const stauGeoJSON = {
+    type:'FeatureCollection',
+    features: stauPoint ? [{ type:'Feature', geometry:{ type:'Point', coordinates: stauPoint }, properties:{} }] : []
+  };
+
   const radarLineCoords = KARTE_WP.map(wp => [wp.lon, wp.lat]);
   try {
     _karteMap.addSource('stroem', {
@@ -5720,6 +5791,15 @@ async function _karteLoadStroem() {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-width': 6, 'line-opacity': 0.75, 'line-gradient': grad }
     }, 'radarlinie-line');
+
+    // Stauwasser-Marker (Halo + Punkt)
+    _karteMap.addSource('stroem-stau', { type:'geojson', data: stauGeoJSON });
+    _karteMap.addLayer({ id:'stroem-stau-halo', type:'circle', source:'stroem-stau',
+      paint:{ 'circle-radius':14, 'circle-color':'#ffff00', 'circle-opacity':0.3 }
+    });
+    _karteMap.addLayer({ id:'stroem-stau-dot', type:'circle', source:'stroem-stau',
+      paint:{ 'circle-radius':7, 'circle-color':'#ffff00', 'circle-stroke-width':2.5, 'circle-stroke-color':'#1a2332' }
+    });
 
     const leg = document.getElementById('stroem-legend');
     if (leg) leg.style.display = 'block';
