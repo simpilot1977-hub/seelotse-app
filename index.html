@@ -4179,63 +4179,62 @@ function _brgDeg(la1, lo1, la2, lo2) {
   return (Math.atan2(y,x)*180/Math.PI + 360) % 360;
 }
 
-// Radarlinie: Deutsche Bucht → Hamburg (53 Wegpunkte, SEAiq GPX-Route)
+// Radarlinie: E3 → Hamburg (52 Wegpunkte, SEAiq GPX-Route)
 const ELBE_TRACK = [
-  { lat: 54.50603366, lon:  6.508308   }, //  0  Deutsche Bucht
-  { lat: 54.05280253, lon:  7.90232888 }, //  1  E3
-  { lat: 53.98670152, lon:  8.10900217 }, //  2  südlich Tn.Elbe (≈ Racon)
-  { lat: 53.993125,   lon:  8.220425   }, //  3  bei Tn.1
-  { lat: 53.99313167, lon:  8.31071167 }, //  4  bei Tn.5
-  { lat: 53.96327167, lon:  8.58781667 }, //  5  5 kbl o. Tn.19
-  { lat: 53.95221667, lon:  8.6274     }, //  6  3 kbl o. Tn.23
-  { lat: 53.94288333, lon:  8.6448     }, //  7  2.STURMPOSITION
-  { lat: 53.93505,    lon:  8.65937167 }, //  8  1 kbl u. Tn.27
-  { lat: 53.8947358,  lon:  8.69714916 }, //  9  Kugelbake
-  { lat: 53.87939333, lon:  8.71150833 }, // 10  Fährhafen (≈ Cuxhaven)
-  { lat: 53.868555,   lon:  8.72633    }, // 11  Amerikahafen
-  { lat: 53.84283,    lon:  8.77672    }, // 12  4 kbl u. Tn.37
-  { lat: 53.83964167, lon:  8.79127    }, // 13  2 kbl o. Tn.37
-  { lat: 53.8383,     lon:  8.83695833 }, // 14  bei Tn.41 / Glameyer
-  { lat: 53.83968833, lon:  8.86976333 }, // 15  bei Tn.43
-  { lat: 53.850355,   lon:  8.98399667 }, // 16  5 kbl o. Tn 49
-  { lat: 53.85556667, lon:  9.01408333 }, // 17  5 kbl u. Tn 53
-  { lat: 53.87812142, lon:  9.09794126 }, // 18  3 kbl u. Tn.57
-  { lat: 53.87976667, lon:  9.13323833 }, // 19  bei Tn.57a/Reede (≈ Brunsbüttel)
-  { lat: 53.88047833, lon:  9.21621167 }, // 20  3 kbl o. Tn.61/Reede
-  { lat: 53.87651667, lon:  9.24769167 }, // 21  bei Tn.63
-  { lat: 53.863215,   lon:  9.29441    }, // 22  bei Tn.67
-  { lat: 53.83364,    lon:  9.350385   }, // 23  Hollerwettern
-  { lat: 53.82214833, lon:  9.36346667 }, // 24  vor der Stör
-  { lat: 53.814825,   lon:  9.36908333 }, // 25  1 kbl u. Tn.75
-  { lat: 53.77083333, lon:  9.39537833 }, // 26  o. Tn.81
-  { lat: 53.75468,    lon:  9.40447667 }, // 27  3 kbl u. Tn.85
-  { lat: 53.74697167, lon:  9.41226333 }, // 28  Ruthenstrom
-  { lat: 53.74066167, lon:  9.422715   }, // 29  o. Tn.85a
-  { lat: 53.730965,   lon:  9.44823167 }, // 30  u. Tn.89
-  { lat: 53.72665167, lon:  9.45696167 }, // 31  o. Tn.89
-  { lat: 53.70984833, lon:  9.485295   }, // 32  u. Tn.93
-  { lat: 53.70232833, lon:  9.49241667 }, // 33  Pagen Mitte
-  { lat: 53.69497333, lon:  9.49807833 }, // 34  o. Tn 95
-  { lat: 53.67574653, lon:  9.50660167 }, // 35  Grauerort Reede
-  { lat: 53.64913,    lon:  9.51828833 }, // 36  DOW (BF quer)
-  { lat: 53.63844667, lon:  9.52545333 }, // 37  Bützflethersand (OF quer)
-  { lat: 53.62849667, lon:  9.535135   }, // 38  Jungbrücke
-  { lat: 53.62386833, lon:  9.54112667 }, // 39  o. Tn.105/Reede (Stadersand)
-  { lat: 53.603405,   lon:  9.58550667 }, // 40  bei Tn.111 (Hetlingen)
-  { lat: 53.58736833, lon:  9.611335   }, // 41  Lühesand Süd
-  { lat: 53.58029333, lon:  9.62422333 }, // 42  o. Tn 115
-  { lat: 53.5758567,  lon:  9.63672634 }, // 43  Tn. 117
-  { lat: 53.571875,   lon:  9.64793333 }, // 44  LF Mielstack
-  { lat: 53.56871833, lon:  9.66251167 }, // 45  oberhalb Tn 119
-  { lat: 53.56752711, lon:  9.67632113 }, // 46  bei Tn.121
-  { lat: 53.56541058, lon:  9.70081721 }, // 47  Schulau
-  { lat: 53.56267312, lon:  9.732367   }, // 48  Landesgrenze
-  { lat: 53.55829333, lon:  9.78285167 }, // 49  Falkenstein
-  { lat: 53.55452859, lon:  9.80395877 }, // 50  Blankeneser Bulle
-  { lat: 53.54224454, lon:  9.87276541 }, // 51  vor dem Köhlfleet
-  { lat: 53.54204333, lon:  9.88016167 }, // 52  HAMBURG HALO (Seemannshöft)
+  { lat: 54.05280253, lon:  7.90232888 }, //  0  E3
+  { lat: 53.98670152, lon:  8.10900217 }, //  1  südlich Tn.Elbe (≈ Racon)
+  { lat: 53.993125,   lon:  8.220425   }, //  2  bei Tn.1
+  { lat: 53.99313167, lon:  8.31071167 }, //  3  bei Tn.5
+  { lat: 53.96327167, lon:  8.58781667 }, //  4  5 kbl o. Tn.19
+  { lat: 53.95221667, lon:  8.6274     }, //  5  3 kbl o. Tn.23
+  { lat: 53.94288333, lon:  8.6448     }, //  6  2.STURMPOSITION
+  { lat: 53.93505,    lon:  8.65937167 }, //  7  1 kbl u. Tn.27
+  { lat: 53.8947358,  lon:  8.69714916 }, //  8  Kugelbake
+  { lat: 53.87939333, lon:  8.71150833 }, //  9  Fährhafen (≈ Cuxhaven)
+  { lat: 53.868555,   lon:  8.72633    }, // 10  Amerikahafen
+  { lat: 53.84283,    lon:  8.77672    }, // 11  4 kbl u. Tn.37
+  { lat: 53.83964167, lon:  8.79127    }, // 12  2 kbl o. Tn.37
+  { lat: 53.8383,     lon:  8.83695833 }, // 13  bei Tn.41 / Glameyer
+  { lat: 53.83968833, lon:  8.86976333 }, // 14  bei Tn.43
+  { lat: 53.850355,   lon:  8.98399667 }, // 15  5 kbl o. Tn 49
+  { lat: 53.85556667, lon:  9.01408333 }, // 16  5 kbl u. Tn 53
+  { lat: 53.87812142, lon:  9.09794126 }, // 17  3 kbl u. Tn.57
+  { lat: 53.87976667, lon:  9.13323833 }, // 18  bei Tn.57a/Reede (≈ Brunsbüttel)
+  { lat: 53.88047833, lon:  9.21621167 }, // 19  3 kbl o. Tn.61/Reede
+  { lat: 53.87651667, lon:  9.24769167 }, // 20  bei Tn.63
+  { lat: 53.863215,   lon:  9.29441    }, // 21  bei Tn.67
+  { lat: 53.83364,    lon:  9.350385   }, // 22  Hollerwettern
+  { lat: 53.82214833, lon:  9.36346667 }, // 23  vor der Stör
+  { lat: 53.814825,   lon:  9.36908333 }, // 24  1 kbl u. Tn.75
+  { lat: 53.77083333, lon:  9.39537833 }, // 25  o. Tn.81
+  { lat: 53.75468,    lon:  9.40447667 }, // 26  3 kbl u. Tn.85
+  { lat: 53.74697167, lon:  9.41226333 }, // 27  Ruthenstrom
+  { lat: 53.74066167, lon:  9.422715   }, // 28  o. Tn.85a
+  { lat: 53.730965,   lon:  9.44823167 }, // 29  u. Tn.89
+  { lat: 53.72665167, lon:  9.45696167 }, // 30  o. Tn.89
+  { lat: 53.70984833, lon:  9.485295   }, // 31  u. Tn.93
+  { lat: 53.70232833, lon:  9.49241667 }, // 32  Pagen Mitte
+  { lat: 53.69497333, lon:  9.49807833 }, // 33  o. Tn 95
+  { lat: 53.67574653, lon:  9.50660167 }, // 34  Grauerort Reede
+  { lat: 53.64913,    lon:  9.51828833 }, // 35  DOW (BF quer)
+  { lat: 53.63844667, lon:  9.52545333 }, // 36  Bützflethersand (OF quer)
+  { lat: 53.62849667, lon:  9.535135   }, // 37  Jungbrücke
+  { lat: 53.62386833, lon:  9.54112667 }, // 38  o. Tn.105/Reede (Stadersand)
+  { lat: 53.603405,   lon:  9.58550667 }, // 39  bei Tn.111 (Hetlingen)
+  { lat: 53.58736833, lon:  9.611335   }, // 40  Lühesand Süd
+  { lat: 53.58029333, lon:  9.62422333 }, // 41  o. Tn 115
+  { lat: 53.5758567,  lon:  9.63672634 }, // 42  Tn. 117
+  { lat: 53.571875,   lon:  9.64793333 }, // 43  LF Mielstack
+  { lat: 53.56871833, lon:  9.66251167 }, // 44  oberhalb Tn 119
+  { lat: 53.56752711, lon:  9.67632113 }, // 45  bei Tn.121
+  { lat: 53.56541058, lon:  9.70081721 }, // 46  Schulau
+  { lat: 53.56267312, lon:  9.732367   }, // 47  Landesgrenze
+  { lat: 53.55829333, lon:  9.78285167 }, // 48  Falkenstein
+  { lat: 53.55452859, lon:  9.80395877 }, // 49  Blankeneser Bulle
+  { lat: 53.54224454, lon:  9.87276541 }, // 50  vor dem Köhlfleet
+  { lat: 53.54204333, lon:  9.88016167 }, // 51  HAMBURG HALO (Seemannshöft)
 ];
-const ELBE_WP_IDX = { racon: 2, cuxhaven: 10, brunsbuettel: 19, hamburg: 52 };
+const ELBE_WP_IDX = { racon: 1, cuxhaven: 9, brunsbuettel: 18, hamburg: 51 };
 const _etSeg = []; for (let i=0;i<ELBE_TRACK.length-1;i++) _etSeg.push(_hvNm(ELBE_TRACK[i].lat,ELBE_TRACK[i].lon,ELBE_TRACK[i+1].lat,ELBE_TRACK[i+1].lon));
 const _etCum = [0]; for (const d of _etSeg) _etCum.push(_etCum[_etCum.length-1]+d);
 
@@ -4980,61 +4979,60 @@ let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle z
 let _karteWaterFetching = false;
 let _karteWaterBbox     = '';
 
-// Radarlinie-Wegpunkte: Deutsche Bucht → Hamburg (SEAiq GPX-Route)
+// Radarlinie-Wegpunkte: E3 → Hamburg (SEAiq GPX-Route)
 const KARTE_WP = [
-  { key:'wp0',  label:'Deutsche Bucht',                    lat: 54.50603366, lon:  6.508308   },
-  { key:'wp1',  label:'E3',                               lat: 54.05280253, lon:  7.90232888 },
-  { key:'wp2',  label:'südlich Tn.Elbe',                  lat: 53.98670152, lon:  8.10900217 },
-  { key:'wp3',  label:'bei Tn.1',                         lat: 53.993125,   lon:  8.220425   },
-  { key:'wp4',  label:'bei Tn.5',                         lat: 53.99313167, lon:  8.31071167 },
-  { key:'wp5',  label:'5 kbl o. Tn.19',                   lat: 53.96327167, lon:  8.58781667 },
-  { key:'wp6',  label:'3 kbl o. Tn.23',                   lat: 53.95221667, lon:  8.6274     },
-  { key:'wp7',  label:'2.STURMPOSITION',                  lat: 53.94288333, lon:  8.6448     },
-  { key:'wp8',  label:'1 kbl u. Tn.27',                   lat: 53.93505,    lon:  8.65937167 },
-  { key:'wp9',  label:'Kugelbake',                        lat: 53.8947358,  lon:  8.69714916 },
-  { key:'wp10', label:'Fährhafen',                        lat: 53.87939333, lon:  8.71150833 },
-  { key:'wp11', label:'Amerikahafen',                     lat: 53.868555,   lon:  8.72633    },
-  { key:'wp12', label:'4 kbl u. Tn.37',                   lat: 53.84283,    lon:  8.77672    },
-  { key:'wp13', label:'2 kbl o. Tn.37',                   lat: 53.83964167, lon:  8.79127    },
-  { key:'wp14', label:'bei Tn.41 / Glameyer',             lat: 53.8383,     lon:  8.83695833 },
-  { key:'wp15', label:'bei Tn.43',                        lat: 53.83968833, lon:  8.86976333 },
-  { key:'wp16', label:'5 kbl o. Tn 49',                   lat: 53.850355,   lon:  8.98399667 },
-  { key:'wp17', label:'5 kbl u. Tn 53',                   lat: 53.85556667, lon:  9.01408333 },
-  { key:'wp18', label:'3 kbl u. Tn.57',                   lat: 53.87812142, lon:  9.09794126 },
-  { key:'wp19', label:'bei Tn.57a/Reede',                 lat: 53.87976667, lon:  9.13323833 },
-  { key:'wp20', label:'3 kbl o. Tn.61/Reede',             lat: 53.88047833, lon:  9.21621167 },
-  { key:'wp21', label:'bei Tn.63',                        lat: 53.87651667, lon:  9.24769167 },
-  { key:'wp22', label:'bei Tn.67',                        lat: 53.863215,   lon:  9.29441    },
-  { key:'wp23', label:'Hollerwettern',                    lat: 53.83364,    lon:  9.350385   },
-  { key:'wp24', label:'vor der Stör',                     lat: 53.82214833, lon:  9.36346667 },
-  { key:'wp25', label:'1 kbl u. Tn.75',                   lat: 53.814825,   lon:  9.36908333 },
-  { key:'wp26', label:'o. Tn.81',                         lat: 53.77083333, lon:  9.39537833 },
-  { key:'wp27', label:'3 kbl u. Tn.85',                   lat: 53.75468,    lon:  9.40447667 },
-  { key:'wp28', label:'Ruthenstrom',                      lat: 53.74697167, lon:  9.41226333 },
-  { key:'wp29', label:'o. Tn.85a',                        lat: 53.74066167, lon:  9.422715   },
-  { key:'wp30', label:'u. Tn.89',                         lat: 53.730965,   lon:  9.44823167 },
-  { key:'wp31', label:'o. Tn.89',                         lat: 53.72665167, lon:  9.45696167 },
-  { key:'wp32', label:'u. Tn.93',                         lat: 53.70984833, lon:  9.485295   },
-  { key:'wp33', label:'Pagen Mitte',                      lat: 53.70232833, lon:  9.49241667 },
-  { key:'wp34', label:'o. Tn 95',                         lat: 53.69497333, lon:  9.49807833 },
-  { key:'wp35', label:'Grauerort Reede',                  lat: 53.67574653, lon:  9.50660167 },
-  { key:'wp36', label:'DOW (BF quer)',                    lat: 53.64913,    lon:  9.51828833 },
-  { key:'wp37', label:'Bützflethersand (OF quer)',         lat: 53.63844667, lon:  9.52545333 },
-  { key:'wp38', label:'Jungbrücke',                       lat: 53.62849667, lon:  9.535135   },
-  { key:'wp39', label:'Stadersand',                       lat: 53.62386833, lon:  9.54112667 },
-  { key:'wp40', label:'bei Tn.111 (Hetlingen)',            lat: 53.603405,   lon:  9.58550667 },
-  { key:'wp41', label:'Lühesand Süd',                     lat: 53.58736833, lon:  9.611335   },
-  { key:'wp42', label:'o. Tn 115',                        lat: 53.58029333, lon:  9.62422333 },
-  { key:'wp43', label:'Tn. 117',                          lat: 53.5758567,  lon:  9.63672634 },
-  { key:'wp44', label:'LF Mielstack',                     lat: 53.571875,   lon:  9.64793333 },
-  { key:'wp45', label:'oberhalb Tn 119',                  lat: 53.56871833, lon:  9.66251167 },
-  { key:'wp46', label:'bei Tn.121',                       lat: 53.56752711, lon:  9.67632113 },
-  { key:'wp47', label:'Schulau',                          lat: 53.56541058, lon:  9.70081721 },
-  { key:'wp48', label:'Landesgrenze',                     lat: 53.56267312, lon:  9.732367   },
-  { key:'wp49', label:'Falkenstein',                      lat: 53.55829333, lon:  9.78285167 },
-  { key:'wp50', label:'Blankeneser Bulle',                lat: 53.55452859, lon:  9.80395877 },
-  { key:'wp51', label:'vor dem Köhlfleet',                lat: 53.54224454, lon:  9.87276541 },
-  { key:'wp52', label:'HAMBURG HALO',                     lat: 53.54204333, lon:  9.88016167 },
+  { key:'wp0',  label:'E3',                               lat: 54.05280253, lon:  7.90232888 },
+  { key:'wp1',  label:'südlich Tn.Elbe',                  lat: 53.98670152, lon:  8.10900217 },
+  { key:'wp2',  label:'bei Tn.1',                         lat: 53.993125,   lon:  8.220425   },
+  { key:'wp3',  label:'bei Tn.5',                         lat: 53.99313167, lon:  8.31071167 },
+  { key:'wp4',  label:'5 kbl o. Tn.19',                   lat: 53.96327167, lon:  8.58781667 },
+  { key:'wp5',  label:'3 kbl o. Tn.23',                   lat: 53.95221667, lon:  8.6274     },
+  { key:'wp6',  label:'2.STURMPOSITION',                  lat: 53.94288333, lon:  8.6448     },
+  { key:'wp7',  label:'1 kbl u. Tn.27',                   lat: 53.93505,    lon:  8.65937167 },
+  { key:'wp8',  label:'Kugelbake',                        lat: 53.8947358,  lon:  8.69714916 },
+  { key:'wp9',  label:'Fährhafen',                        lat: 53.87939333, lon:  8.71150833 },
+  { key:'wp10', label:'Amerikahafen',                     lat: 53.868555,   lon:  8.72633    },
+  { key:'wp11', label:'4 kbl u. Tn.37',                   lat: 53.84283,    lon:  8.77672    },
+  { key:'wp12', label:'2 kbl o. Tn.37',                   lat: 53.83964167, lon:  8.79127    },
+  { key:'wp13', label:'bei Tn.41 / Glameyer',             lat: 53.8383,     lon:  8.83695833 },
+  { key:'wp14', label:'bei Tn.43',                        lat: 53.83968833, lon:  8.86976333 },
+  { key:'wp15', label:'5 kbl o. Tn 49',                   lat: 53.850355,   lon:  8.98399667 },
+  { key:'wp16', label:'5 kbl u. Tn 53',                   lat: 53.85556667, lon:  9.01408333 },
+  { key:'wp17', label:'3 kbl u. Tn.57',                   lat: 53.87812142, lon:  9.09794126 },
+  { key:'wp18', label:'bei Tn.57a/Reede',                 lat: 53.87976667, lon:  9.13323833 },
+  { key:'wp19', label:'3 kbl o. Tn.61/Reede',             lat: 53.88047833, lon:  9.21621167 },
+  { key:'wp20', label:'bei Tn.63',                        lat: 53.87651667, lon:  9.24769167 },
+  { key:'wp21', label:'bei Tn.67',                        lat: 53.863215,   lon:  9.29441    },
+  { key:'wp22', label:'Hollerwettern',                    lat: 53.83364,    lon:  9.350385   },
+  { key:'wp23', label:'vor der Stör',                     lat: 53.82214833, lon:  9.36346667 },
+  { key:'wp24', label:'1 kbl u. Tn.75',                   lat: 53.814825,   lon:  9.36908333 },
+  { key:'wp25', label:'o. Tn.81',                         lat: 53.77083333, lon:  9.39537833 },
+  { key:'wp26', label:'3 kbl u. Tn.85',                   lat: 53.75468,    lon:  9.40447667 },
+  { key:'wp27', label:'Ruthenstrom',                      lat: 53.74697167, lon:  9.41226333 },
+  { key:'wp28', label:'o. Tn.85a',                        lat: 53.74066167, lon:  9.422715   },
+  { key:'wp29', label:'u. Tn.89',                         lat: 53.730965,   lon:  9.44823167 },
+  { key:'wp30', label:'o. Tn.89',                         lat: 53.72665167, lon:  9.45696167 },
+  { key:'wp31', label:'u. Tn.93',                         lat: 53.70984833, lon:  9.485295   },
+  { key:'wp32', label:'Pagen Mitte',                      lat: 53.70232833, lon:  9.49241667 },
+  { key:'wp33', label:'o. Tn 95',                         lat: 53.69497333, lon:  9.49807833 },
+  { key:'wp34', label:'Grauerort Reede',                  lat: 53.67574653, lon:  9.50660167 },
+  { key:'wp35', label:'DOW (BF quer)',                    lat: 53.64913,    lon:  9.51828833 },
+  { key:'wp36', label:'Bützflethersand (OF quer)',         lat: 53.63844667, lon:  9.52545333 },
+  { key:'wp37', label:'Jungbrücke',                       lat: 53.62849667, lon:  9.535135   },
+  { key:'wp38', label:'Stadersand',                       lat: 53.62386833, lon:  9.54112667 },
+  { key:'wp39', label:'bei Tn.111 (Hetlingen)',            lat: 53.603405,   lon:  9.58550667 },
+  { key:'wp40', label:'Lühesand Süd',                     lat: 53.58736833, lon:  9.611335   },
+  { key:'wp41', label:'o. Tn 115',                        lat: 53.58029333, lon:  9.62422333 },
+  { key:'wp42', label:'Tn. 117',                          lat: 53.5758567,  lon:  9.63672634 },
+  { key:'wp43', label:'LF Mielstack',                     lat: 53.571875,   lon:  9.64793333 },
+  { key:'wp44', label:'oberhalb Tn 119',                  lat: 53.56871833, lon:  9.66251167 },
+  { key:'wp45', label:'bei Tn.121',                       lat: 53.56752711, lon:  9.67632113 },
+  { key:'wp46', label:'Schulau',                          lat: 53.56541058, lon:  9.70081721 },
+  { key:'wp47', label:'Landesgrenze',                     lat: 53.56267312, lon:  9.732367   },
+  { key:'wp48', label:'Falkenstein',                      lat: 53.55829333, lon:  9.78285167 },
+  { key:'wp49', label:'Blankeneser Bulle',                lat: 53.55452859, lon:  9.80395877 },
+  { key:'wp50', label:'vor dem Köhlfleet',                lat: 53.54224454, lon:  9.87276541 },
+  { key:'wp51', label:'HAMBURG HALO',                     lat: 53.54204333, lon:  9.88016167 },
 ];
 
 // Äußere Elbe: LV Elbe → Cuxhaven (Tonnen-Positionen aus OSM, WSA Elbe-Nordsee)
@@ -5070,7 +5068,7 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, radarlinie: true };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, radarlinie: true, schnittpunkte: true };
   _karteDarkMode = false;
 
   document.getElementById('app-main').innerHTML = `
@@ -5106,9 +5104,14 @@ function goKarte() {
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
         </label>
-        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:3px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-radarlinie" checked onchange="karteToggleOverlay('radarlinie',this.checked)"> <span style="color:#7c3aed;font-weight:600">Radarlinie</span>
         </label>
+        <div id="karte-radarlinie-sub" style="padding-left:20px;margin-bottom:6px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+            <input type="checkbox" id="karte-toggle-schnittpunkte" checked onchange="karteToggleOverlay('schnittpunkte',this.checked)"> Schnittpunkte
+          </label>
+        </div>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 9)</span>
         </label>
@@ -5148,7 +5151,7 @@ function goKarte() {
 
       <!-- Legende -->
       <div style="position:absolute;bottom:28px;left:12px;z-index:1000;background:rgba(255,255,255,0.93);border:1px solid #b8ccd8;border-radius:8px;padding:8px 12px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12)">
-        <div style="font-weight:700;margin-bottom:5px;color:#1b3d5f;font-size:12px">⚓ Elbe · Deutsche Bucht → Hamburg</div>
+        <div style="font-weight:700;margin-bottom:5px;color:#1b3d5f;font-size:12px">⚓ Elbe · E3 → Hamburg</div>
         <div style="display:flex;flex-direction:column;gap:4px">
           <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:24px;border-top:2.5px solid #7c3aed"></span><span>Radarlinie (SEAiq)</span></div>
           <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:50%"></span><span>Wegpunkte</span></div>
@@ -5327,7 +5330,7 @@ function goKarte() {
           'text-font': ['Noto Sans Regular'],
           'text-optional': true,
         },
-        paint: { 'text-color': '#5b21b6', 'text-halo-color': 'rgba(255,255,255,0.9)', 'text-halo-width': 1.5 }
+        paint: { 'text-color': '#4c1d95' }
       });
 
       // ── Schiffe: COG-Vektor-Layer (GeoJSON LineStrings) ──────────────
@@ -5496,9 +5499,17 @@ function karteToggleOverlay(type, visible) {
     if (visible) _karteStartShips();
     else _karteStopShips();
   } else if (type === 'radarlinie') {
-    ['radarlinie-line','radarlinie-dots','radarlinie-labels'].forEach(id => {
+    ['radarlinie-line','radarlinie-dots'].forEach(id => {
       if (_karteMap.getLayer(id)) _karteMap.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
     });
+    // Labels nur zeigen wenn Radarlinie UND Schnittpunkte aktiv
+    if (_karteMap.getLayer('radarlinie-labels'))
+      _karteMap.setLayoutProperty('radarlinie-labels', 'visibility', (visible && _karteOverlays.schnittpunkte) ? 'visible' : 'none');
+    const sub = document.getElementById('karte-radarlinie-sub');
+    if (sub) sub.style.display = visible ? 'block' : 'none';
+  } else if (type === 'schnittpunkte') {
+    if (_karteMap.getLayer('radarlinie-labels'))
+      _karteMap.setLayoutProperty('radarlinie-labels', 'visibility', (visible && _karteOverlays.radarlinie) ? 'visible' : 'none');
   } else if (type === 'seezeichen') {
     const filterPanel = document.getElementById('karte-seezeichen-filter');
     if (filterPanel) {
@@ -5637,6 +5648,9 @@ function karteToggleDark(dark) {
     if (_karteMap.getLayer('grid-lines-layer')) _karteMap.setPaintProperty('grid-lines-layer', 'line-color', C.grid);
     // Fairway
     if (_karteMap.getLayer('fairway-layer')) _karteMap.setPaintProperty('fairway-layer', 'line-color', C.fairway);
+    // Radarlinie labels: dark mode = hell, light mode = dunkel
+    if (_karteMap.getLayer('radarlinie-labels'))
+      _karteMap.setPaintProperty('radarlinie-labels', 'text-color', dark ? '#c4b5fd' : '#4c1d95');
   }
 
   // Overlay panel
