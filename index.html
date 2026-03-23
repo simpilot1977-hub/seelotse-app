@@ -6273,12 +6273,17 @@ async function _karteLoadSeamarks() {
     // Richtfeuer Belum (093°):            Oberfeuer Belum 340384841 + shared Unterfeuer 854975325
     // Richtfeuer Altenbruch (261°):       Oberfeuer Altenbruch 1469421139 + shared Unterfeuer 859486671
     // Richtfeuer Wehldorf (~311°):        Wehldorf Oberfeuer 1123906848  + shared Unterfeuer 859486671
+    // Richtfeuer Scheelenkuhlen (~269°):  Scheelenkuhlen Oberfeuer 2651683813 + shared Unterfeuer 793148588
+    // Richtfeuer St. Margarethen (~131°): St. Margarethen Oberfeuer 854975631 + shared Unterfeuer 793148588
     handledNodeIds.add(339261891);
     handledNodeIds.add(854975325);
     handledNodeIds.add(340384841);
     handledNodeIds.add(859486671);
     handledNodeIds.add(1469421139);
     handledNodeIds.add(1123906848);
+    handledNodeIds.add(793148588);
+    handledNodeIds.add(854975631);
+    handledNodeIds.add(2651683813);
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6399,6 +6404,32 @@ async function _karteLoadSeamarks() {
         { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
         { node: unterNode, char_: 'Iso', period: 8, group: 1 },
         'static-wehldorf'
+      );
+    }
+    // Richtfeuer Scheelenkuhlen (~269°/089°): Scheelenkuhlen Oberfeuer (2651683813, Iso 8s)
+    // + Unterfeuer Scheelenkuhlen (793148588, Iso 8s). Unterfeuer ist geteilt mit St. Margarethen.
+    {
+      const oberNode = nodes.find(n => n.id === 2651683813)
+                     || { id: 2651683813, lat: 53.88111, lon: 9.28889, tags: {} };
+      const unterNode = nodes.find(n => n.id === 793148588)
+                      || { id: 793148588, lat: 53.88084, lon: 9.26099, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 8, group: 1 },
+        'static-scheelenkuhlen'
+      );
+    }
+    // Richtfeuer St. Margarethen (~131°/311°): St. Margarethen Oberfeuer (854975631, Iso 8s)
+    // + gemeinsames Unterfeuer Scheelenkuhlen (793148588, Iso 8s).
+    {
+      const oberNode = nodes.find(n => n.id === 854975631)
+                     || { id: 854975631, lat: 53.88722, lon: 9.24880, tags: {} };
+      const unterNode = nodes.find(n => n.id === 793148588)
+                      || { id: 793148588, lat: 53.88084, lon: 9.26099, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 8, group: 1 },
+        'static-st-margarethen'
       );
     }
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
