@@ -6113,7 +6113,8 @@ async function _karteLoadSeamarks() {
       const _isTonne = smType === 'buoy_lateral' || smType === 'beacon_lateral' || smType === 'buoy_cardinal' || smType === 'beacon_cardinal';
       const _name_ = (t.name || t['seamark:name'] || '').toLowerCase();
       const _isRichtfeuer = smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse' || smType === 'light_vessel';
-      const _isMole = _isRichtfeuer && (parseFloat(t['seamark:light:1:range'] || t['seamark:light:range'] || '99') < 5);
+      const _isMole = _isRichtfeuer && (/mole/i.test(_name_) || parseFloat(t['seamark:light:1:range'] || t['seamark:light:range'] || '99') < 5);
+      if (_isMole) continue; // Molenfeuer werden nicht angezeigt
       const _hasSectors = _isRichtfeuer && (() => {
         for (let i = 1; i <= 8; i++) { if (t[`seamark:light:${i}:sector_start`]) return true; } return false;
       })();
