@@ -6343,6 +6343,14 @@ async function _karteLoadSeamarks() {
       const unterBelum     = { node: { id: 'static-belum-unter',     lat: 53.83537, lon: 8.93575, tags: {} }, char_: 'F', period: 0, group: 1 };
       drawOberUnterLine(oberOtterndorf, unterBelum, 'static-otterndorf-belum');
     }
+    // Richtfeuer Altenbruch-Wehldorf — not in OSM; Kurs 261° (WSW ins Fahrwasser).
+    // Unterfeuer (Altenbruch, Elbufer): 53.867°N 9.057°E
+    // Oberfeuer (Wehldorf, ~3 km WSW auf Kurs 261°): 53.864°N 9.027°E
+    {
+      const oberWehldorf    = { node: { id: 'static-wehldorf-ober',   lat: 53.8640, lon: 9.0270, tags: {} }, char_: 'F', period: 0, group: 1 };
+      const unterAltenbruch = { node: { id: 'static-altenbruch-unter', lat: 53.8670, lon: 9.0570, tags: {} }, char_: 'F', period: 0, group: 1 };
+      drawOberUnterLine(oberWehldorf, unterAltenbruch, 'static-altenbruch-wehldorf');
+    }
 
     // ── Range lines: ALL lights with bearing tags (not yet handled above) ──
     // Covers all Richtfeuer with seamark:leading_light:bearing / seamark:light:bearing
