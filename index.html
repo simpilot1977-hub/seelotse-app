@@ -5336,7 +5336,7 @@ function goKarte() {
         paint: { 'text-color': '#4c1d95' }
       });
 
-      // ── Kurs & Distanz Labels (Segment-Mitten) ───────────────────────
+      // ── Kurs & Distanz Labels (Segment-Mitten, linieparallel) ────────
       const _kursFeatures = [];
       for (let i = 0; i < KARTE_WP.length - 1; i++) {
         const A = KARTE_WP[i], B = KARTE_WP[i+1];
@@ -5346,12 +5346,17 @@ function goKarte() {
         const brgIn  = (brg + 180) % 360;
         const dist   = _hvNm(A.lat, A.lon, B.lat, B.lon);
         const distStr = (dist < 1 ? dist.toFixed(2) : dist.toFixed(1)) + ' sm';
+        // text-rotate: parallel zur Linie, nie auf dem Kopf (range -90..90)
+        let rot = brg - 90;
+        if (rot > 90)  rot -= 180;
+        if (rot < -90) rot += 180;
         _kursFeatures.push({
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [midLon, midLat] },
           properties: {
-            kursOut: `▶  ${String(Math.round(brg)).padStart(3,'0')}°  ${distStr}`,
-            kursIn:  `◀  ${String(Math.round(brgIn)).padStart(3,'0')}°  ${distStr}`,
+            kursOut: `▶ ${String(Math.round(brg)).padStart(3,'0')}°  ${distStr}`,
+            kursIn:  `◀ ${String(Math.round(brgIn)).padStart(3,'0')}°  ${distStr}`,
+            rot,
           }
         });
       }
@@ -5363,7 +5368,9 @@ function goKarte() {
           'text-size': 9,
           'text-font': ['Noto Sans Regular'],
           'text-anchor': 'bottom',
-          'text-offset': [0, -0.4],
+          'text-offset': [0, -0.3],
+          'text-rotate': ['get', 'rot'],
+          'text-rotation-alignment': 'map',
           'text-optional': true,
           'text-allow-overlap': false,
         },
@@ -5376,7 +5383,9 @@ function goKarte() {
           'text-size': 9,
           'text-font': ['Noto Sans Regular'],
           'text-anchor': 'top',
-          'text-offset': [0, 0.4],
+          'text-offset': [0, 0.3],
+          'text-rotate': ['get', 'rot'],
+          'text-rotation-alignment': 'map',
           'text-optional': true,
           'text-allow-overlap': false,
         },
