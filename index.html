@@ -6290,6 +6290,12 @@ async function _karteLoadSeamarks() {
     handledNodeIds.add(1616725006);
     handledNodeIds.add(1616725002);
     handledNodeIds.add(1944307482);
+    // Richtfeuer Bützflethersand: type=landmark (never fetched), south of richtBbox 53.70°N
+    handledNodeIds.add(634830137);   // Bützflethersand Unterfeuer
+    handledNodeIds.add(854975740);   // Bützflethersand Oberfeuer
+    // Richtfeuer Lühe-Grünendeich + Somfletherwisch: both south of richtBbox 53.70°N
+    handledNodeIds.add(854975896);   // Lühe Unterfeuer (seamark:name "Grünendeich Unterfeuer")
+    handledNodeIds.add(895762768);   // Unterfeuer Somfletherwisch
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6460,6 +6466,43 @@ async function _karteLoadSeamarks() {
         { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
         { node: unterNode, char_: 'Iso', period: 4, group: 1 },
         'static-brokdorf-hollerwettern'
+      );
+    }
+    // Richtfeuer Bützflethersand: Oberfeuer (OSM 854975740, landmark, Iso 4s) + Unterfeuer (OSM 634830137, landmark, Iso 4s)
+    // Both are seamark:type=landmark (not light_minor) and south of richtBbox → always use fallback coords.
+    {
+      const oberNode = nodes.find(n => n.id === 854975740)
+                     || { id: 854975740, lat: 53.63484, lon: 9.51730, tags: {} };
+      const unterNode = nodes.find(n => n.id === 634830137)
+                      || { id: 634830137, lat: 53.63154, lon: 9.52447, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-buetzflethersand'
+      );
+    }
+    // Richtfeuer Lühe-Grünendeich (278.3°): Oberfeuer Grünendeich (B1540.1, not in OSM, Iso 4s)
+    // + Unterfeuer Lühe (OSM 854975896, seamark:name "Grünendeich Unterfeuer", Iso 4s).
+    {
+      const oberNode = { id: 0, lat: 53.57389, lon: 9.60944, tags: {} };
+      const unterNode = nodes.find(n => n.id === 854975896)
+                      || { id: 854975896, lat: 53.57183, lon: 9.63270, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-luehe-gruenendeich'
+      );
+    }
+    // Richtfeuer Somfletherwisch (136.3°): Oberfeuer Somfletherwisch (B1534.1, not in OSM, Iso 8s)
+    // + Unterfeuer Somfletherwisch (OSM 895762768, Iso 8s).
+    {
+      const oberNode = { id: 0, lat: 53.56356, lon: 9.64964, tags: {} };
+      const unterNode = nodes.find(n => n.id === 895762768)
+                      || { id: 895762768, lat: 53.56957, lon: 9.63998, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 8, group: 1 },
+        'static-somfletherwisch'
       );
     }
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
