@@ -5482,7 +5482,7 @@ function karteSeamarkKennungenAll(show) {
 
 function _karteGetKennungKey(t, smType) {
   const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || '').replace(/\s/g, '');
-  const period = parseFloat(t['seamark:light:period'] || '0');
+  const period = parseFloat(t['seamark:light:period'] || t['seamark:light:1:period'] || '0');
   const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
   if (char_ && char_ !== 'F' && period > 0) {
     return char_ + (group > 1 ? `(${group})` : '') + ' ' + period + 's';
@@ -6015,11 +6015,12 @@ async function _karteLoadSeamarks() {
   _karteSeamarkFetching = true;
   _karteSeamarkBbox = bbox;
 
-  // Slightly expanded bbox for Richtfeuer to catch Ober/Unter pairs straddling the view edge
+  // Slightly expanded bbox for Richtfeuer to catch Ober/Unter pairs straddling the view edge.
+  // Hard limits: Elbe only (south ≥ 53.70°N, west ≥ 8.40°E) to exclude Weser/Jade range lines.
   const pad = 0.15;
   const richtBbox = [
-    Math.max(b.getSouth() - pad, 53.3), Math.max(b.getWest() - pad, 7.5),
-    Math.min(b.getNorth() + pad, 54.3), Math.min(b.getEast() + pad, 11.0)
+    Math.max(b.getSouth() - pad, 53.70), Math.max(b.getWest() - pad, 8.40),
+    Math.min(b.getNorth() + pad, 54.3),  Math.min(b.getEast() + pad, 11.0)
   ].map(v => v.toFixed(4)).join(',');
 
   try {
@@ -6083,7 +6084,7 @@ async function _karteLoadSeamarks() {
       const smType = t['seamark:type'];
       if (smType !== 'light_major' && smType !== 'light_minor' && smType !== 'lighthouse') continue;
       const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
-      const period = parseFloat(t['seamark:light:period'] || '0');
+      const period = parseFloat(t['seamark:light:period'] || t['seamark:light:1:period'] || '0');
       const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
       // front/rear category lights (e.g. Balje) — paired separately by proximity
       const cat = t['seamark:light:category'] || '';
@@ -6141,7 +6142,7 @@ async function _karteLoadSeamarks() {
       }
 
       const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
-      const period = parseFloat(t['seamark:light:period'] || '0');
+      const period = parseFloat(t['seamark:light:period'] || t['seamark:light:1:period'] || '0');
       const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
 
       let animName = '', animDur = '';
@@ -6253,7 +6254,7 @@ async function _karteLoadSeamarks() {
       const coords = (way.geometry || []).map(g => [g.lon, g.lat]);
       if (coords.length < 2) continue;
       const char_ = (t['seamark:light:character'] || 'F').replace(/\s/g, '');
-      const period = parseFloat(t['seamark:light:period'] || '0');
+      const period = parseFloat(t['seamark:light:period'] || t['seamark:light:1:period'] || '0');
       const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
       const key = `${char_}-${period}-${group}`;
       if (!rangeLineFeatures[key]) rangeLineFeatures[key] = { features: [], char_, period, group };
@@ -6267,9 +6268,14 @@ async function _karteLoadSeamarks() {
     // ── Range lines: Ober/Unter pairs ──────────────────────────────────
     const handledNodeIds = new Set();
     // Pre-register static pairings so Pass 1/2/3 don't create duplicates.
-    // Richtfeuer Otterndorf/Belum: Leuchtfeuer (OSM 339261891) + Unterfeuer (OSM 854975325)
+    // Richtfeuer Otterndorf/Belum (064°): Leuchtfeuer 339261891 + Unterfeuer 854975325
+    // Richtfeuer Belum (093°):            Oberfeuer Belum 340384841 + shared Unterfeuer 854975325
+    // Richtfeuer Altenbruch (261°):       Oberfeuer Altenbruch 1469421139 + Unterfeuer 859486671
     handledNodeIds.add(339261891);
     handledNodeIds.add(854975325);
+    handledNodeIds.add(340384841);
+    handledNodeIds.add(859486671);
+    handledNodeIds.add(1469421139);
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6353,6 +6359,32 @@ async function _karteLoadSeamarks() {
         'static-otterndorf-belum'
       );
     }
+    // Richtfeuer Belum (093°/273°): Oberfeuer Belum (OSM 340384841, Iso 4s) als Ober,
+    // Otterndorf/Belum Unterfeuer (OSM 854975325, Iso 4s) als gemeinsames Unter.
+    {
+      const oberNode = nodes.find(n => n.id === 340384841)
+                     || { id: 340384841, lat: 53.83474, lon: 8.95581, tags: {} };
+      const unterNode = nodes.find(n => n.id === 854975325)
+                      || { id: 854975325, lat: 53.83537, lon: 8.93575, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-belum'
+      );
+    }
+    // Richtfeuer Altenbruch (261°/081°): Oberfeuer Altenbruch "Schlanke Anna" (OSM 1469421139, Iso 4s)
+    // + Altenbruch/Wehldorf Unterfeuer (OSM 859486671, Iso 8s).
+    {
+      const oberNode = nodes.find(n => n.id === 1469421139)
+                     || { id: 1469421139, lat: 53.83009, lon: 8.75743, tags: {} };
+      const unterNode = nodes.find(n => n.id === 859486671)
+                      || { id: 859486671, lat: 53.83364, lon: 8.79480, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 8, group: 1 },
+        'static-altenbruch'
+      );
+    }
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
     // (OSM nodes 1445813371 rear + 1460138804 front, Iso 8s) via Pass 3. No static needed.
 
@@ -6369,7 +6401,7 @@ async function _karteLoadSeamarks() {
       );
       if (isNaN(brg)) continue;
       const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
-      const period = parseFloat(t['seamark:light:period'] || '0');
+      const period = parseFloat(t['seamark:light:period'] || t['seamark:light:1:period'] || '0');
       const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
       const lat0 = node.lat * Math.PI / 180, lon0 = node.lon * Math.PI / 180;
       const brgRad = brg * Math.PI / 180;
