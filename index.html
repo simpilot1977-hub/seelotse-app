@@ -6284,6 +6284,12 @@ async function _karteLoadSeamarks() {
     handledNodeIds.add(793148588);
     handledNodeIds.add(854975631);
     handledNodeIds.add(2651683813);
+    // Richtfeuer Osterende:            Oberfeuer Osterende 1944306725 + Unterfeuer Osterende 1616725006
+    // Richtfeuer Hollerwettern/Brokdorf: Oberfeuer Brokdorf 1616725002 + Unterfeuer Hollerwettern 1944307482
+    handledNodeIds.add(1944306725);
+    handledNodeIds.add(1616725006);
+    handledNodeIds.add(1616725002);
+    handledNodeIds.add(1944307482);
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6430,6 +6436,30 @@ async function _karteLoadSeamarks() {
         { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
         { node: unterNode, char_: 'Iso', period: 8, group: 1 },
         'static-st-margarethen'
+      );
+    }
+    // Richtfeuer Osterende: Oberfeuer Osterende (1944306725, Iso 4s) + Unterfeuer Osterende (1616725006, Iso 4s)
+    {
+      const oberNode = nodes.find(n => n.id === 1944306725)
+                     || { id: 1944306725, lat: 53.84597, lon: 9.35472, tags: {} };
+      const unterNode = nodes.find(n => n.id === 1616725006)
+                      || { id: 1616725006, lat: 53.85003, lon: 9.34057, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-osterende'
+      );
+    }
+    // Richtfeuer Hollerwettern/Brokdorf: Oberfeuer Brokdorf (1616725002, Iso 4s) + Unterfeuer Hollerwettern (1944307482, Iso 4s)
+    {
+      const oberNode = nodes.find(n => n.id === 1616725002)
+                     || { id: 1616725002, lat: 53.85259, lon: 9.34647, tags: {} };
+      const unterNode = nodes.find(n => n.id === 1944307482)
+                      || { id: 1944307482, lat: 53.83940, lon: 9.35442, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-brokdorf-hollerwettern'
       );
     }
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
