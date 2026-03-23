@@ -2674,15 +2674,10 @@ function autoFillTidesFromDb() {
     if (!db || db.length === 0) return;
     if (isNaN(refDt)) return;
     const refTs = refDt.getTime();
-    let before = null, after = null;
-    for (let i = db.length - 1; i >= 0; i--) {
-      if (new Date(db[i].dt).getTime() <= refTs) { before = db[i]; break; }
-    }
-    for (let i = 0; i < db.length; i++) {
-      if (new Date(db[i].dt).getTime() > refTs) { after = db[i]; break; }
-    }
-    if (before) eppTiden[loc][0] = Object.assign({}, before);
-    if (after)  eppTiden[loc][1] = Object.assign({}, after);
+    // Zwei nächste zukünftige Ereignisse (>= refTs) anzeigen
+    const upcoming = db.filter(e => new Date(e.dt).getTime() >= refTs);
+    if (upcoming.length >= 1) eppTiden[loc][0] = Object.assign({}, upcoming[0]);
+    if (upcoming.length >= 2) eppTiden[loc][1] = Object.assign({}, upcoming[1]);
   });
   // Strom-Felder mit berechneten WSA-Werten vorausfüllen
   const ataLegsKeys = ['Hamburg','Brunsbuettel','Glameyer','ElbeRakon','E3'];
@@ -5666,6 +5661,35 @@ async function _fetchHWOffset(uuid) {
   } catch { return null; }
 }
 
+// HW-Offset aus importierter BSH-Datenbank (tideDbs) berechnen
+// Gibt { dtHW, hwTime, nwTime } zurück oder null wenn keine DB-Daten
+function _hwOffsetFromDb(dbKey) {
+  const db = tideDbs[dbKey];
+  if (!db || !db.length) return null;
+  const now = Date.now();
+  // Vergangene Ereignisse, neueste zuerst
+  const past = db
+    .map(e => ({ type: e.type, ts: new Date(e.dt).getTime(), dt: e.dt }))
+    .filter(e => e.ts <= now)
+    .sort((a, b) => b.ts - a.ts);
+  const hwEntry = past.find(e => e.type === 'HW');
+  const nwEntry = past.find(e => e.type === 'NW');
+  if (!hwEntry) return null;
+  const hwTime = new Date(hwEntry.dt);
+  const nwTime = nwEntry ? new Date(nwEntry.dt) : null;
+  let dtHW = (now - hwTime.getTime()) / 3600000;
+  // Korrektur auf nächsten HW-Zyklus nur wenn NW bereits nach HW eingetreten
+  if (nwTime && nwTime > hwTime) dtHW -= 12.42;
+  return { dtHW, hwTime, nwTime };
+}
+
+// HW-Offset: DB-Daten bevorzugen, Pegelonline als Fallback
+async function _getHWOffset(dbKey, uuid) {
+  const fromDb = _hwOffsetFromDb(dbKey);
+  if (fromDb) return fromDb;
+  return _fetchHWOffset(uuid);
+}
+
 function _fracToCoord(frac, fracs) {
   // Konvertiert line-progress-Fraktion in geografische Koordinate [lon, lat]
   for (let i = 1; i < KARTE_WP.length; i++) {
@@ -5705,11 +5729,11 @@ async function _karteLoadStroem() {
   if (!_karteMap) return;
   _karteRemoveStroem();
 
-  // Strömungsdaten: HW-Zeitpunkt für drei Bezugspegel abrufen
+  // Strömungsdaten: HW-Zeitpunkt für drei Bezugspegel — tideDbs bevorzugen, Pegelonline als Fallback
   const [resCux, resBrb, resStP] = await Promise.all([
-    _fetchHWOffset('aad49293-242a-43ad-a8b1-e91d7792c4b2'), // Cuxhaven
-    _fetchHWOffset('d4f5f719-8c52-4f8d-945d-1c31404cc628'), // Brunsbüttel
-    _fetchHWOffset('d488c5cc-4de9-4631-8ce1-0db0e700b546'), // Hamburg St. Pauli
+    _getHWOffset('Cuxhaven',    'aad49293-242a-43ad-a8b1-e91d7792c4b2'),
+    _getHWOffset('Brunsbuettel','d4f5f719-8c52-4f8d-945d-1c31404cc628'),
+    _getHWOffset('Hamburg',     'd488c5cc-4de9-4631-8ce1-0db0e700b546'),
   ]);
   const dtCux = resCux?.dtHW ?? null;
   const dtBrb = resBrb?.dtHW ?? null;
@@ -6133,9 +6157,9 @@ async function _karteLoadWind() {
 // Stationen: die 3 Pegelonline-Stationen mit bekannten Positionen
 const KARTE_TIDE_STATIONS = [
   // labelLat/Lon: Label-Position abseits des Fahrwassers; anchor: MapLibre Marker-Ankerpunkt
-  { key:'cux', label:'Cuxhaven',    lat:53.8689, lon:8.7097, labelLat:53.820, labelLon:8.600, anchor:'top-left'    },
-  { key:'brb', label:'Brunsbüttel', lat:53.8917, lon:9.1523, labelLat:53.950, labelLon:9.070, anchor:'bottom-left' },
-  { key:'hh',  label:'Hamburg',     lat:53.5440, lon:9.9636, labelLat:53.500, labelLon:9.870, anchor:'top-left'    },
+  { key:'cux', label:'Cuxhaven',    dbKey:'Cuxhaven',    lat:53.8689, lon:8.7097, labelLat:53.820, labelLon:8.600, anchor:'top-left'    },
+  { key:'brb', label:'Brunsbüttel', dbKey:'Brunsbuettel',lat:53.8917, lon:9.1523, labelLat:53.950, labelLon:9.070, anchor:'bottom-left' },
+  { key:'hh',  label:'Hamburg',     dbKey:'Hamburg',     lat:53.5440, lon:9.9636, labelLat:53.500, labelLon:9.870, anchor:'top-left'    },
 ];
 
 // Nächste N Gezeiten: aus Daten + Extrapolation per halbem Tidenzyklus
@@ -6207,20 +6231,34 @@ async function _karteLoadTides() {
   const BASE_PO = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
   await Promise.allSettled(KARTE_TIDE_STATIONS.map(async st => {
     try {
-      let pts = _pegelData[st.key] || [];
-      if (pts.length < 30) {
-        // Frisch laden: 48h für mind. 4 Tidenzyklen
-        const station = PEGEL_STATIONS.find(s => s.key === st.key);
-        if (!station) return;
-        const raw = await fetch(`${BASE_PO}/${station.uuid}/W/measurements.json?start=P2D`).then(r => r.json());
-        pts = (Array.isArray(raw) ? raw : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
-        _pegelData[st.key] = pts; // cachen
+      let display = null;
+
+      // Vorrang: importierte BSH-Datenbank (tideDbs)
+      const dbEntries = tideDbs[st.dbKey] || [];
+      if (dbEntries.length) {
+        const now = Date.now();
+        const upcoming = dbEntries
+          .map(e => ({ type: e.type, t: new Date(e.dt), v: parseInt(e.ws) || 0, estimated: false }))
+          .filter(e => e.t.getTime() >= now)
+          .sort((a, b) => a.t - b.t);
+        display = upcoming.slice(0, 2);
+      } else {
+        // Fallback: Pegelonline-Messdaten
+        let pts = _pegelData[st.key] || [];
+        if (pts.length < 30) {
+          const station = PEGEL_STATIONS.find(s => s.key === st.key);
+          if (!station) return;
+          const raw = await fetch(`${BASE_PO}/${station.uuid}/W/measurements.json?start=P2D`).then(r => r.json());
+          pts = (Array.isArray(raw) ? raw : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
+          _pegelData[st.key] = pts;
+        }
+        const tides = _karteFindTides(pts);
+        if (!tides.length) return;
+        display = _karteNextTides(tides, 2);
       }
 
-      const tides = _karteFindTides(pts);
-      if (!tides.length) return;
+      if (!display || !display.length) return;
 
-      const now = Date.now();
       const fmtT = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
       const fmtDate = d => {
         const today = new Date(); const tom = new Date(today); tom.setDate(tom.getDate() + 1);
@@ -6228,10 +6266,6 @@ async function _karteLoadTides() {
         if (d.toDateString() === tom.toDateString()) return 'morgen';
         return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
       };
-
-      // Nächste 2 Ereignisse (aus Daten oder extrapoliert)
-      const display = _karteNextTides(tides, 2);
-      if (!display.length) return;
 
       const rows = display.map(e => {
         const isHW  = e.type === 'HW';
