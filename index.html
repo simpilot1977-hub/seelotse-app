@@ -4928,14 +4928,18 @@ let _karteMap = null;
 let _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, seezeichen: false };
 let _kartePegelMarkers = [];
 let _karteWindMarkers = [];
+let _karteFairwayCoords = null; // stored after map init for Strömung overlay
+let _karteStroemTimer = null;
 let _karteShipMarkers = {};   // mmsi → { dot: HTMLEl, marker: maplibregl.Marker }
 let _karteTideMarkers = [];   // maplibregl.Marker[]
 let _karteSeamarkMarkers = [];
 let _karteSeamarkFetching = false;
 let _karteSeamarkBbox = '';
+let _karteSeamarkRetryAfter = 0;
 let _karteSeamarkAnimStyle = null;
 let _karteRangeLineRAF = null;
 let _karteRangeLineLayers = []; // [{layerId, sourceId, char_, period, group}]
+let _karteSectorLayers = [];   // [{layerId, sourceId}]
 let _karteDarkMode = false;
 let _karteLandLayerIds = [];  // demotiles layer IDs that got land color
 let _karteWaterLayerIds = []; // demotiles layer IDs that got water color
@@ -4995,7 +4999,7 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, seezeichen: false };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false };
   _karteDarkMode = false;
 
   document.getElementById('app-main').innerHTML = `
@@ -5026,11 +5030,33 @@ function goKarte() {
           <input type="checkbox" id="karte-toggle-tide" onchange="karteToggleOverlay('tide',this.checked)"> Hoch-/Niedrigwasser
         </label>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-stroem" onchange="karteToggleOverlay('stroem',this.checked)"> Strömung (Fahrwasser)
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-schiffe" onchange="karteToggleOverlay('schiffe',this.checked)"> Schiffe (AIS)
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 9)</span>
         </label>
+        <div id="karte-seezeichen-filter" style="display:none;margin-top:6px;padding:6px 0 0 4px;border-top:1px solid rgba(148,163,184,0.2)">
+          <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Filtern:</div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-tonnen" checked onchange="karteSeamarkFilterChange()"> Fahrwassertonnen</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-richtfeuer" checked onchange="karteSeamarkFilterChange()"> Richtfeuer</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-sektoren" checked onchange="karteSeamarkFilterChange()"> Sektorenfeuer</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-leuchtfeuer" checked onchange="karteSeamarkFilterChange()"> Leuchtfeuer</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-sonstige" onchange="karteSeamarkFilterChange()"> Sonstiges</label>
+          <div style="border-top:1px solid rgba(148,163,184,0.15);margin:5px 0 4px"></div>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:4px"><input type="checkbox" id="sz-filter-labels" onchange="karteSeamarkFilterChange()"> Beschriftung anzeigen</label>
+          <div id="sz-kennung-list" style="display:none;margin-top:2px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+              <span style="font-size:10px;color:#94a3b8;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Kennungen:</span>
+              <span style="font-size:9px;color:#64748b;cursor:pointer" onclick="karteSeamarkKennungenAll(true)">Alle</span>
+              <span style="font-size:9px;color:#64748b"> / </span>
+              <span style="font-size:9px;color:#64748b;cursor:pointer" onclick="karteSeamarkKennungenAll(false)">Keine</span>
+            </div>
+            <div id="sz-kennung-checks" style="max-height:120px;overflow-y:auto"></div>
+          </div>
+        </div>
         <div id="karte-schiffe-panel" style="display:none;margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
           <div style="font-size:11px;color:#637485;margin-bottom:3px">Schiff auswählen:</div>
           <select id="karte-ship-select" onchange="karteShipSelect(this.value)" style="width:100%;font-size:11px;border:1px solid #c8d6e2;border-radius:4px;padding:3px 4px;margin-bottom:6px;background:#fff">
@@ -5068,6 +5094,7 @@ function goKarte() {
     _karteSeamarkBbox = '';
     if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
     _karteRangeLineLayers = [];
+    _karteSectorLayers = [];
 
     // ── Nautisches Flat-Design (demotiles) ────────────────────────────
     _karteLandLayerIds = []; _karteWaterLayerIds = []; _karteBgLayerId = null;
@@ -5186,6 +5213,7 @@ function goKarte() {
         fairwayCoords = [...OUTER_ELBE_COORDS, ...KARTE_WP.slice(2).map(wp => [wp.lon, wp.lat])];
       }
 
+      _karteFairwayCoords = fairwayCoords; // store for Strömung overlay
       _karteMap.addSource('fairway', {
         type: 'geojson',
         data: { type: 'Feature', geometry: { type: 'LineString', coordinates: fairwayCoords } }
@@ -5287,6 +5315,77 @@ function _karteUpdateGrid() {
 }
 
 // ── Overlay-Toggle ─────────────────────────────────────────────────
+// ── Strömungs-Overlay: färbt Fahrwasser nach Tidenströmung ein ─────
+function _stroemColor(dh) {
+  // dh = Wasserstandsänderung in cm in den letzten 30 Minuten
+  // Positiv = Flut (einlaufend), Negativ = Ebbe (auslaufend)
+  if (dh >  8) return '#1d4ed8'; // starke Flut
+  if (dh >  3) return '#60a5fa'; // Flut
+  if (dh > -3) return '#94a3b8'; // Kenterpunkt / Stau
+  if (dh > -8) return '#f97316'; // Ebbe
+  return '#dc2626';              // starke Ebbe
+}
+
+function _karteRemoveStroem() {
+  if (_karteStroemTimer) { clearTimeout(_karteStroemTimer); _karteStroemTimer = null; }
+  if (!_karteMap) return;
+  try { _karteMap.removeLayer('stroem-line'); } catch(e) {}
+  try { _karteMap.removeSource('stroem'); } catch(e) {}
+}
+
+async function _karteLoadStroem() {
+  if (!_karteMap || !_karteFairwayCoords) return;
+  _karteRemoveStroem();
+
+  const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+  const stationen = [
+    { uuid: 'aad49293-242a-43ad-a8b1-e91d7792c4b2', frac: 0.25 }, // Cuxhaven  km 724
+    { uuid: 'd4f5f719-8c52-4f8d-945d-1c31404cc628', frac: 0.55 }, // Brunsbüttel km 695
+    { uuid: 'd488c5cc-4de9-4631-8ce1-0db0e700b546', frac: 1.00 }, // Hamburg km 623
+  ];
+
+  const dhs = {};
+  await Promise.allSettled(stationen.map(async (st, i) => {
+    try {
+      const pts = await fetch(`${BASE}/${st.uuid}/W/measurements.json?start=PT1H`).then(r => r.json());
+      if (Array.isArray(pts) && pts.length >= 2) {
+        const n = pts.length;
+        // Änderung in den letzten ~30 Minuten (alle 5 min = 6 Werte)
+        dhs[i] = pts[n-1].value - pts[Math.max(0, n-7)].value;
+      } else dhs[i] = 0;
+    } catch { dhs[i] = 0; }
+  }));
+
+  // line-gradient braucht lineMetrics:true — eigene Source anlegen
+  try {
+    _karteMap.addSource('stroem', {
+      type: 'geojson',
+      lineMetrics: true,
+      data: { type: 'Feature', geometry: { type: 'LineString', coordinates: _karteFairwayCoords } }
+    });
+    _karteMap.addLayer({
+      id: 'stroem-line', type: 'line', source: 'stroem',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-width': 5,
+        'line-opacity': 0.72,
+        'line-gradient': [
+          'interpolate', ['linear'], ['line-progress'],
+          0.00, _stroemColor(dhs[0] ?? 0),   // LV Elbe → Cuxhaven
+          0.25, _stroemColor(dhs[0] ?? 0),   // Cuxhaven
+          0.55, _stroemColor(dhs[1] ?? 0),   // Brunsbüttel
+          1.00, _stroemColor(dhs[2] ?? 0),   // Hamburg
+        ]
+      }
+    }, 'fairway-line'); // direkt unter der Fahrwasserlinie einfügen
+  } catch(e) { console.warn('Strömung:', e); }
+
+  // Auto-Refresh alle 10 Minuten
+  if (_karteOverlays.stroem) {
+    _karteStroemTimer = setTimeout(_karteLoadStroem, 10 * 60 * 1000);
+  }
+}
+
 function karteToggleOverlay(type, visible) {
   _karteOverlays[type] = visible;
   if (!_karteMap) return;
@@ -5305,12 +5404,26 @@ function karteToggleOverlay(type, visible) {
   } else if (type === 'tide') {
     if (visible) _karteLoadTides();
     else { _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = []; }
+  } else if (type === 'stroem') {
+    if (visible) _karteLoadStroem();
+    else _karteRemoveStroem();
   } else if (type === 'schiffe') {
     const panel = document.getElementById('karte-schiffe-panel');
     if (panel) panel.style.display = visible ? 'block' : 'none';
     if (visible) _karteStartShips();
     else _karteStopShips();
   } else if (type === 'seezeichen') {
+    const filterPanel = document.getElementById('karte-seezeichen-filter');
+    if (filterPanel) {
+      filterPanel.style.display = visible ? 'block' : 'none';
+      if (visible) {
+        // Sync checkbox states from the filter object (fixes initialization)
+        ['tonnen','richtfeuer','sektoren','leuchtfeuer','sonstige','labels'].forEach(k => {
+          const el = document.getElementById('sz-filter-' + k);
+          if (el) el.checked = _karteSeamarkFilter[k];
+        });
+      }
+    }
     if (visible) {
       _karteLoadSeamarks();
       _karteMap.on('moveend', _karteSeamarkOnMove);
@@ -5321,12 +5434,90 @@ function karteToggleOverlay(type, visible) {
       _karteMap.off('moveend', _karteSeamarkOnMove);
       _karteMap.off('zoomend', _karteSeamarkOnMove);
       if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
-      _karteRangeLineLayers.forEach(({ layerId, sourceId }) => {
-        if (_karteMap.getLayer(layerId)) _karteMap.removeLayer(layerId);
-        if (_karteMap.getSource(sourceId)) _karteMap.removeSource(sourceId);
-      });
+      try {
+        const _togStyle = _karteMap.getStyle();
+        (_togStyle.layers || []).map(l => l.id).filter(id => /^karte-(sec|rl)-/.test(id))
+          .forEach(id => { try { _karteMap.removeLayer(id); } catch(e) {} });
+        Object.keys(_togStyle.sources || {}).filter(s => /^karte-(sec|rl)-/.test(s))
+          .forEach(s => { try { _karteMap.removeSource(s); } catch(e) {} });
+      } catch(e) {}
       _karteRangeLineLayers = [];
+      _karteSectorLayers = [];
     }
+  }
+}
+
+// ── Seezeichen-Filter ──────────────────────────────────────────────
+let _karteSeamarkFilter = { tonnen: true, richtfeuer: true, sektoren: true, leuchtfeuer: true, sonstige: false, labels: false, kennungenHide: new Set() };
+
+function karteSeamarkFilterChange() {
+  _karteSeamarkFilter.tonnen      = document.getElementById('sz-filter-tonnen')?.checked ?? true;
+  _karteSeamarkFilter.richtfeuer  = document.getElementById('sz-filter-richtfeuer')?.checked ?? true;
+  _karteSeamarkFilter.sektoren    = document.getElementById('sz-filter-sektoren')?.checked ?? true;
+  _karteSeamarkFilter.leuchtfeuer = document.getElementById('sz-filter-leuchtfeuer')?.checked ?? true;
+  _karteSeamarkFilter.sonstige    = document.getElementById('sz-filter-sonstige')?.checked ?? false;
+  _karteSeamarkFilter.labels      = document.getElementById('sz-filter-labels')?.checked ?? false;
+  _karteSeamarkBbox = '';
+  _karteLoadSeamarks();
+}
+
+function karteSeamarkKennungChange(key, checked) {
+  if (checked) _karteSeamarkFilter.kennungenHide.delete(key);
+  else _karteSeamarkFilter.kennungenHide.add(key);
+  _karteSeamarkBbox = '';
+  _karteLoadSeamarks();
+}
+
+function karteSeamarkKennungenAll(show) {
+  const boxes = document.querySelectorAll('#sz-kennung-checks input[type=checkbox]');
+  boxes.forEach(cb => {
+    cb.checked = show;
+    const key = cb.dataset.key;
+    if (show) _karteSeamarkFilter.kennungenHide.delete(key);
+    else _karteSeamarkFilter.kennungenHide.add(key);
+  });
+  _karteSeamarkBbox = '';
+  _karteLoadSeamarks();
+}
+
+function _karteGetKennungKey(t, smType) {
+  const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || '').replace(/\s/g, '');
+  const period = parseFloat(t['seamark:light:period'] || '0');
+  const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
+  if (char_ && char_ !== 'F' && period > 0) {
+    return char_ + (group > 1 ? `(${group})` : '') + ' ' + period + 's';
+  }
+  if (char_ === 'F') return 'Festfeuer';
+  if (smType === 'buoy_lateral' || smType === 'beacon_lateral') {
+    const col = (t['seamark:buoy_lateral:colour'] || t['seamark:beacon_lateral:colour'] || '').toLowerCase();
+    return col.includes('red') ? 'Steuerbord' : col.includes('green') ? 'Backbord' : 'Lateral';
+  }
+  if (smType === 'buoy_cardinal' || smType === 'beacon_cardinal') {
+    const cat = (t['seamark:buoy_cardinal:category'] || t['seamark:beacon_cardinal:category'] || '').toLowerCase();
+    return cat ? 'Kardinal ' + cat : 'Kardinaltonne';
+  }
+  return 'Sonstige';
+}
+
+function _karteRenderKennungList(kennungSet) {
+  const listEl = document.getElementById('sz-kennung-list');
+  const checksEl = document.getElementById('sz-kennung-checks');
+  if (!listEl || !checksEl) return;
+  listEl.style.display = kennungSet.size ? 'block' : 'none';
+  // Add new entries, keep existing state
+  for (const key of [...kennungSet].sort()) {
+    if (document.querySelector(`#sz-kennung-checks input[data-key="${CSS.escape(key)}"]`)) continue;
+    const hidden = _karteSeamarkFilter.kennungenHide.has(key);
+    const lbl = document.createElement('label');
+    lbl.style.cssText = 'display:flex;align-items:center;gap:5px;font-size:10px;margin-bottom:2px;cursor:pointer';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.key = key;
+    cb.checked = !hidden;
+    cb.onchange = () => karteSeamarkKennungChange(key, cb.checked);
+    lbl.appendChild(cb);
+    lbl.appendChild(document.createTextNode(key));
+    checksEl.appendChild(lbl);
   }
 }
 
@@ -5820,28 +6011,52 @@ async function _karteLoadSeamarks() {
 
   const b = _karteMap.getBounds();
   const bbox = [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()].map(v => v.toFixed(4)).join(',');
-  if (bbox === _karteSeamarkBbox || _karteSeamarkFetching) return;
+  if (bbox === _karteSeamarkBbox || _karteSeamarkFetching || Date.now() < _karteSeamarkRetryAfter) return;
   _karteSeamarkFetching = true;
   _karteSeamarkBbox = bbox;
 
+  // Slightly expanded bbox for Richtfeuer to catch Ober/Unter pairs straddling the view edge
+  const pad = 0.15;
+  const richtBbox = [
+    Math.max(b.getSouth() - pad, 53.3), Math.max(b.getWest() - pad, 7.5),
+    Math.min(b.getNorth() + pad, 54.3), Math.min(b.getEast() + pad, 11.0)
+  ].map(v => v.toFixed(4)).join(',');
+
   try {
-    // Fetch nodes + leading_line ways together
-    const query = `[out:json][timeout:25];(node["seamark:type"](${bbox});way["seamark:type"="leading_line"](${bbox}););out geom;`;
-    const resp = await fetch('https://overpass-api.de/api/interpreter', {
-      method: 'POST',
-      body: 'data=' + encodeURIComponent(query),
-    });
-    const data = await resp.json();
+    // seamark:type filter first → uses Overpass index, then name filter is cheap
+    // Also fetch front/rear category lights (e.g. Richtfeuer Balje uses category instead of name)
+    const query = `[out:json][timeout:10];(node["seamark:type"](${bbox});way["seamark:type"="leading_line"](${richtBbox});node["seamark:type"~"light_major|light_minor|lighthouse"](${bbox});node["seamark:type"~"light_major|light_minor|lighthouse"]["name"~"feuer"](${richtBbox});node["seamark:type"~"light_major|light_minor|lighthouse"]["seamark:light:category"~"front|rear"](${richtBbox}););out geom;`;
+    const OVERPASS_ENDPOINTS = [
+      'https://overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter',
+      'https://overpass.private.coffee/api/interpreter',
+    ];
+    let data = null;
+    for (const ep of OVERPASS_ENDPOINTS) {
+      try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 12000); // 12s per endpoint
+        const resp = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctrl.signal });
+        const text = await resp.text(); // keep abort signal active during body read
+        clearTimeout(tid);
+        if (text.trim().startsWith('{')) { data = JSON.parse(text); break; }
+      } catch(e) { /* try next endpoint */ }
+    }
+    if (!data) throw new Error('All Overpass endpoints failed');
 
     _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
 
-    // Clean up old range line layers
+    // Robust cleanup: query the map style directly so we never miss a layer/source
     if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
-    _karteRangeLineLayers.forEach(({ layerId, sourceId }) => {
-      if (_karteMap.getLayer(layerId)) _karteMap.removeLayer(layerId);
-      if (_karteMap.getSource(sourceId)) _karteMap.removeSource(sourceId);
-    });
+    try {
+      const _style = _karteMap.getStyle();
+      (_style.layers || []).map(l => l.id).filter(id => /^karte-(sec|rl)-/.test(id))
+        .forEach(id => { try { _karteMap.removeLayer(id); } catch(e) {} });
+      Object.keys(_style.sources || {}).filter(s => /^karte-(sec|rl)-/.test(s))
+        .forEach(s => { try { _karteMap.removeSource(s); } catch(e) {} });
+    } catch(e) {}
     _karteRangeLineLayers = [];
+    _karteSectorLayers = [];
 
     if (!_karteSeamarkAnimStyle) {
       _karteSeamarkAnimStyle = document.createElement('style');
@@ -5852,15 +6067,64 @@ async function _karteLoadSeamarks() {
 
     // Collect Richtfeuer nodes for name-based pairing (fallback for unpaired nodes)
     const richtfeuerByBase = {};
+    // Collect front/rear category lights (e.g. Richtfeuer Balje — no "Ober"/"Unter" in name)
+    const categoryLights = { fronts: [], rears: [] };
+    // Collect sector light nodes for rendering
+    const sectorLightNodes = [];
+    // Collect unique buoy kennungen for the filter list
+    const kennungSet = new Set();
 
     const nodes = (data.elements || []).filter(e => e.type === 'node');
     const ways  = (data.elements || []).filter(e => e.type === 'way');
 
-    // ── Process nodes (dots) ──────────────────────────────────────────
+    // ── Pre-pass: collect ALL light nodes for Richtfeuer pairing (whole Elbe) ──
     for (const node of nodes) {
       const t = node.tags || {};
       const smType = t['seamark:type'];
+      if (smType !== 'light_major' && smType !== 'light_minor' && smType !== 'lighthouse') continue;
+      const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
+      const period = parseFloat(t['seamark:light:period'] || '0');
+      const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
+      // front/rear category lights (e.g. Balje) — paired separately by proximity
+      const cat = t['seamark:light:category'] || '';
+      if (cat === 'rear')  { categoryLights.rears.push({ node, char_, period, group }); continue; }
+      if (cat === 'front') { categoryLights.fronts.push({ node, char_, period, group }); continue; }
+      // name-based pairing
+      const name = (t.name || t['seamark:name'] || '').trim();
+      if (!name) continue;
+      const baseName = name.replace(/\b(Ober|Unter|oberes?|unteres?|Ober-Feuer|Unter-Feuer|Oberfeuer|Unterfeuer)\b/gi, '').replace(/\s+/g, ' ').trim();
+      if (!baseName) continue;
+      if (!richtfeuerByBase[baseName]) richtfeuerByBase[baseName] = [];
+      richtfeuerByBase[baseName].push({ node, char_, period, group });
+    }
+
+    // ── Process nodes (dots) — only for visible viewport ─────────────
+    const vw = b.getWest(), ve = b.getEast(), vs = b.getSouth(), vn = b.getNorth();
+    for (const node of nodes) {
+      // Skip nodes outside visible bounds (they were fetched for range line purposes only)
+      if (node.lon < vw || node.lon > ve || node.lat < vs || node.lat > vn) continue;
+
+      const t = node.tags || {};
+      const smType = t['seamark:type'];
       if (!smType) continue;
+
+      // Classify node for filter
+      const _isTonne = smType === 'buoy_lateral' || smType === 'beacon_lateral' || smType === 'buoy_cardinal' || smType === 'beacon_cardinal';
+      const _name_ = (t.name || t['seamark:name'] || '').toLowerCase();
+      const _isRichtfeuer = smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse' || smType === 'light_vessel';
+      const _isMole = _isRichtfeuer && (parseFloat(t['seamark:light:1:range'] || t['seamark:light:range'] || '99') < 5);
+      const _hasSectors = _isRichtfeuer && (() => {
+        for (let i = 1; i <= 8; i++) { if (t[`seamark:light:${i}:sector_start`]) return true; } return false;
+      })();
+
+      // Apply filter
+      if (_isTonne && !_karteSeamarkFilter.tonnen) continue;
+      if (_isRichtfeuer && !_isMole) {
+        if (_hasSectors && !_karteSeamarkFilter.sektoren) continue;
+        if (!_hasSectors && !_karteSeamarkFilter.leuchtfeuer) continue;
+      }
+      if (_isMole && !_karteSeamarkFilter.leuchtfeuer) continue;
+      if (!_isTonne && !_isRichtfeuer && !_karteSeamarkFilter.sonstige) continue;
 
       let color, size = 7;
       if (smType === 'buoy_lateral' || smType === 'beacon_lateral') {
@@ -5892,31 +6156,93 @@ async function _karteLoadSeamarks() {
 
       // Tooltip: Name + Kennung
       const name = t.name || t['seamark:name'] || t['ref'] || '';
-      const kennung = char_ !== 'F' && period > 0
-        ? `${char_}${group > 1 ? `(${group})` : ''} ${period}s`
-        : char_ === 'F' ? 'Festfeuer' : char_;
+      let kennung = '';
+      if (char_ !== 'F' && period > 0) {
+        kennung = `${char_}${group > 1 ? `(${group})` : ''} ${period}s`;
+      } else if (char_ === 'F') {
+        kennung = 'Festfeuer';
+      } else if (smType === 'buoy_lateral' || smType === 'beacon_lateral') {
+        const col = (t['seamark:buoy_lateral:colour'] || t['seamark:beacon_lateral:colour'] || '').toLowerCase();
+        kennung = col.includes('red') ? 'Steuerbord (rot)' : col.includes('green') ? 'Backbord (grün)' : '';
+      } else if (smType === 'buoy_cardinal' || smType === 'beacon_cardinal') {
+        const cat = (t['seamark:buoy_cardinal:category'] || t['seamark:beacon_cardinal:category'] || '').toLowerCase();
+        kennung = cat ? `Kardinaltonne ${cat}` : 'Kardinaltonne';
+      }
       const tooltip = [name, kennung].filter(Boolean).join(' · ');
 
+      // Apply kennung filter for buoys
+      const kennungKey = _isTonne ? _karteGetKennungKey(t, smType) : null;
+      if (_isTonne) {
+        if (_karteSeamarkFilter.kennungenHide.has(kennungKey)) continue;
+        kennungSet.add(kennungKey);
+      }
+
+      // Zero-size anchor element so anchor:'center' places the dot center exactly at coordinates
       const el = document.createElement('div');
-      el.style.cssText = `width:${size}px;height:${size}px;background:${color};border:1.5px solid rgba(255,255,255,0.8);border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4);cursor:help`;
-      if (tooltip) el.title = tooltip;
-      if (animName) el.style.animation = `${animName} ${animDur} linear infinite`;
+      el.style.cssText = 'position:relative;width:0;height:0;';
+
+      // The visible dot — animation applied here, not on the parent
+      const dot = document.createElement('div');
+      const half = size / 2;
+      dot.style.cssText = `position:absolute;left:${-half}px;top:${-half}px;width:${size}px;height:${size}px;background:${color};border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4);cursor:help`;
+      if (tooltip) dot.title = tooltip;
+      if (animName) {
+        // Sync marker blink phase with range line animation (both use performance.now()/1000 % period)
+        const phaseDelay = -(performance.now() / 1000 % period);
+        dot.style.animation = `${animName} ${animDur} linear ${phaseDelay.toFixed(3)}s infinite`;
+      }
+      el.appendChild(dot);
+
+      // Buoy label (name/ref) — shown when "Beschriftung anzeigen" is checked
+      if (_isTonne && _karteSeamarkFilter.labels && name) {
+        const lbl = document.createElement('span');
+        lbl.textContent = name.replace(/^(Tonne|Bake)\s*/i, '').trim();
+        lbl.style.cssText = `position:absolute;left:0;transform:translateX(-50%);top:${-(half + 13)}px;font-size:8px;font-weight:700;color:#fff;text-shadow:0 0 2px #000,0 0 2px #000;white-space:nowrap;pointer-events:none;animation:none`;
+        el.appendChild(lbl);
+      }
+      // Richtfeuer name label — placed toward land (north shore: above, south shore: below)
+      const isRichtfeuerNode = _isRichtfeuer && name && /richtfeuer|ober|unter|leitfeuer/i.test(name);
+      if (isRichtfeuerNode) {
+        const rfl = document.createElement('span');
+        rfl.textContent = name;
+        // North shore (lat > 53.9°N) → label above dot (away from fairway northward)
+        // South shore (lat ≤ 53.9°N) → label below dot (away from fairway southward)
+        const onNorthShore = node.lat > 53.9;
+        const topVal = onNorthShore ? `${-(half + 13)}px` : `${half + 2}px`;
+        rfl.style.cssText = `position:absolute;left:0;transform:translateX(-50%);top:${topVal};font-size:8px;color:#f59e0b;text-shadow:0 0 2px #000,0 0 2px #000;white-space:nowrap;pointer-events:none;font-weight:600;animation:none`;
+        el.appendChild(rfl);
+      }
 
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([node.lon, node.lat]).addTo(_karteMap);
       _karteSeamarkMarkers.push(marker);
 
-      // Collect Richtfeuer nodes for pairing
-      if (smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse') {
-        const baseName = name.replace(/\b(Ober|Unter|oberes?|unteres?|Ober-Feuer|Unter-Feuer|Oberfeuer|Unterfeuer)\b/gi, '').replace(/\s+/g, ' ').trim();
-        if (baseName) {
-          if (!richtfeuerByBase[baseName]) richtfeuerByBase[baseName] = [];
-          richtfeuerByBase[baseName].push({ node, char_, period, group });
+      // Collect sector lights (only real lighthouses/major lights, not harbor mole lights)
+      // Minimum range threshold to exclude mole lights (< 5 nm range)
+      if (smType === 'lighthouse' || smType === 'light_major' || smType === 'light_vessel') {
+        const range1 = parseFloat(t['seamark:light:1:range'] || t['seamark:light:range'] || '99');
+        if (range1 < 5) continue; // skip short-range mole/harbor lights
+        const sectors = [];
+        for (let i = 1; i <= 8; i++) {
+          const start = parseFloat(t[`seamark:light:${i}:sector_start`]);
+          const end   = parseFloat(t[`seamark:light:${i}:sector_end`]);
+          const col   = (t[`seamark:light:${i}:colour`] || '').toLowerCase();
+          if (!isNaN(start) && !isNaN(end) && col) {
+            // OSM sector_start/end are measured from the vessel's perspective (looking at lighthouse)
+            // To draw from lighthouse outward, rotate 180° so sectors point toward the fairway
+            sectors.push({ start: (start + 180) % 360, end: (end + 180) % 360, col });
+          }
+        }
+        if (sectors.length > 0) {
+          sectorLightNodes.push({ node, name, sectors });
         }
       }
     }
 
     _karteSeamarkAnimStyle.textContent = styleText;
+
+    // Update kennung filter list with all found buoy kennungen
+    _karteRenderKennungList(kennungSet);
 
     // ── Range lines: from OSM leading_line ways ───────────────────────
     const rangeLineFeatures = {}; // key → {features, char_, period, group}
@@ -5938,39 +6264,114 @@ async function _karteLoadSeamarks() {
       });
     }
 
-    // ── Range lines: fallback — pair Richtfeuer nodes by name ─────────
-    // Richtfeuer (range lights): Ober = rear (land), Unter = front (toward water)
-    // The leading line extends FROM the front light (Unter) OUTWARD into the fairway,
-    // in the same direction as the Ober→Unter bearing.
-    for (const [baseName, items] of Object.entries(richtfeuerByBase)) {
-      // Robust: find first Ober and first Unter even if duplicates exist
-      const ober  = items.find(i => /ober/i.test(i.node.tags?.name || ''));
-      const unter = items.find(i => /unter/i.test(i.node.tags?.name || ''));
-      if (!ober || !unter) continue; // skip if pair is incomplete
-      const char_ = unter.char_, period = unter.period, group = unter.group;
+    // ── Range lines: Ober/Unter pairs ──────────────────────────────────
+    const handledNodeIds = new Set();
 
-      // Bearing from Ober → Unter (the steering course toward the ship)
+    // Helper: draw one Ober→Unter→fairway range line
+    const drawOberUnterLine = (ober, unter, labelKey) => {
+      handledNodeIds.add(ober.node.id);
+      handledNodeIds.add(unter.node.id);
+      const char_ = unter.char_, period = unter.period, group = unter.group;
       const lat1 = ober.node.lat  * Math.PI / 180;
       const lat2 = unter.node.lat * Math.PI / 180;
       const dLon = (unter.node.lon - ober.node.lon) * Math.PI / 180;
-      const sinBrg = Math.sin(dLon) * Math.cos(lat2);
-      const cosBrg = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
-      const bearing = Math.atan2(sinBrg, cosBrg);
-
-      // Extend 12 km from Unter outward into the fairway
-      const R = 6371, d = 12 / R;
-      const lat3 = Math.asin(Math.sin(lat2) * Math.cos(d) + Math.cos(lat2) * Math.sin(d) * Math.cos(bearing));
-      const lon3 = unter.node.lon * Math.PI / 180 + Math.atan2(
-        Math.sin(bearing) * Math.sin(d) * Math.cos(lat2),
-        Math.cos(d) - Math.sin(lat2) * Math.sin(lat3)
+      const brg = Math.atan2(
+        Math.sin(dLon) * Math.cos(lat2),
+        Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon)
       );
-      const extPt = [lon3 * 180 / Math.PI, lat3 * 180 / Math.PI];
-
-      const key = `${char_}-${period}-${group}`;
+      const ext = (lat, lon, d) => {
+        const R = 6371, dd = d / R;
+        const la = Math.asin(Math.sin(lat)*Math.cos(dd) + Math.cos(lat)*Math.sin(dd)*Math.cos(brg));
+        const lo = lon + Math.atan2(Math.sin(brg)*Math.sin(dd)*Math.cos(lat), Math.cos(dd)-Math.sin(lat)*Math.sin(la));
+        return [lo*180/Math.PI, la*180/Math.PI];
+      };
+      const coords = [[ober.node.lon, ober.node.lat], [unter.node.lon, unter.node.lat], ext(lat2, unter.node.lon*Math.PI/180, 10)];
+      const key = `${char_}-${period}-${group}-${labelKey}`;
       if (!rangeLineFeatures[key]) rangeLineFeatures[key] = { features: [], char_, period, group };
-      rangeLineFeatures[key].features.push({
+      rangeLineFeatures[key].features.push({ type: 'Feature', geometry: { type: 'LineString', coordinates: coords }, properties: {} });
+    };
+
+    // Pass 1: exact name-based pairing
+    const unpaired = { obers: [], unters: [] };
+    for (const [baseName, items] of Object.entries(richtfeuerByBase)) {
+      const ober  = items.find(i => /ober/i.test(i.node.tags?.name || ''));
+      const unter = items.find(i => /unter/i.test(i.node.tags?.name || ''));
+      if (ober && unter) {
+        drawOberUnterLine(ober, unter, baseName);
+      } else {
+        if (ober  && !handledNodeIds.has(ober.node.id))  unpaired.obers.push(ober);
+        if (unter && !handledNodeIds.has(unter.node.id)) unpaired.unters.push(unter);
+      }
+    }
+
+    // Pass 2: proximity-based pairing for unmatched lights (within 3 km)
+    const km = (a, b) => {
+      const R = 6371, dlat = (b.node.lat - a.node.lat)*Math.PI/180, dlon = (b.node.lon - a.node.lon)*Math.PI/180;
+      const s = Math.sin(dlat/2)**2 + Math.cos(a.node.lat*Math.PI/180)*Math.cos(b.node.lat*Math.PI/180)*Math.sin(dlon/2)**2;
+      return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+    };
+    // Allow shared Unterfeuer (e.g. "Altenbruch/Wehldorf Unterfeuer" serves two Oberfeuers)
+    for (const ober of unpaired.obers) {
+      if (handledNodeIds.has(ober.node.id)) continue;
+      let best = null, bestD = Infinity;
+      for (const unter of unpaired.unters) {
+        if (handledNodeIds.has(unter.node.id)) continue;
+        const d = km(ober, unter);
+        if (d < bestD && d < 3) { bestD = d; best = unter; }
+      }
+      if (best) { drawOberUnterLine(ober, best, `prox-${ober.node.id}`); }
+    }
+
+    // Pass 3: front/rear category pairing (e.g. Richtfeuer Balje — rear=Ober, front=Unter)
+    for (const rear of categoryLights.rears) {
+      if (handledNodeIds.has(rear.node.id)) continue;
+      let best = null, bestD = Infinity;
+      for (const front of categoryLights.fronts) {
+        if (handledNodeIds.has(front.node.id)) continue;
+        const d = km(rear, front);
+        if (d < bestD && d < 4) { bestD = d; best = front; }
+      }
+      if (best) { drawOberUnterLine(rear, best, `cat-${rear.node.id}`); }
+    }
+
+    // Pass 4: static range lines for marks whose OSM names don't match Ober/Unter pattern
+    // Richtfeuer Otterndorf/Belum — OSM node 339261891 "Leuchtfeuer Otterndorf/Belum" is the
+    // rear light but has no "Ober"/"Unter" in name → skipped by Pass 1/2.
+    // Pair with OSM node 854975325 "Otterndorf/Belum Unterfeuer" (bearing ~066°, extends NE into fairway).
+    {
+      const oberOtterndorf = { node: { id: 'static-otterndorf-ober', lat: 53.826,   lon: 8.90113, tags: {} }, char_: 'F', period: 0, group: 1 };
+      const unterBelum     = { node: { id: 'static-belum-unter',     lat: 53.83537, lon: 8.93575, tags: {} }, char_: 'F', period: 0, group: 1 };
+      drawOberUnterLine(oberOtterndorf, unterBelum, 'static-otterndorf-belum');
+    }
+
+    // ── Range lines: ALL lights with bearing tags (not yet handled above) ──
+    // Covers all Richtfeuer with seamark:leading_light:bearing / seamark:light:bearing
+    for (const node of nodes) {
+      const t = node.tags || {};
+      const smType = t['seamark:type'];
+      if (!(smType === 'light_major' || smType === 'light_minor' || smType === 'lighthouse')) continue;
+      if (handledNodeIds.has(node.id)) continue;
+      const brg = parseFloat(
+        t['seamark:leading_light:bearing'] || t['seamark:light:bearing'] ||
+        t['seamark:light:1:bearing'] || 'NaN'
+      );
+      if (isNaN(brg)) continue;
+      const char_ = (t['seamark:light:character'] || t['seamark:light:1:character'] || 'F').replace(/\s/g, '');
+      const period = parseFloat(t['seamark:light:period'] || '0');
+      const group  = Math.max(1, parseInt(t['seamark:light:group'] || '1'));
+      const lat0 = node.lat * Math.PI / 180, lon0 = node.lon * Math.PI / 180;
+      const brgRad = brg * Math.PI / 180;
+      const projDir = (d, dir) => {
+        const R = 6371, dd = d / R;
+        const la = Math.asin(Math.sin(lat0)*Math.cos(dd) + Math.cos(lat0)*Math.sin(dd)*Math.cos(dir));
+        const lo = lon0 + Math.atan2(Math.sin(dir)*Math.sin(dd)*Math.cos(lat0), Math.cos(dd)-Math.sin(lat0)*Math.sin(la));
+        return [lo*180/Math.PI, la*180/Math.PI];
+      };
+      const keyB = `brg-${node.id}`;
+      if (!rangeLineFeatures[keyB]) rangeLineFeatures[keyB] = { features: [], char_, period, group };
+      rangeLineFeatures[keyB].features.push({
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [[unter.node.lon, unter.node.lat], extPt] },
+        geometry: { type: 'LineString', coordinates: [projDir(3, brgRad + Math.PI), [node.lon, node.lat], projDir(10, brgRad)] },
         properties: {}
       });
     }
@@ -5979,6 +6380,7 @@ async function _karteLoadSeamarks() {
     let layerIdx = 0;
     for (const [key, grp] of Object.entries(rangeLineFeatures)) {
       if (!grp.features.length) continue;
+      if (!_karteSeamarkFilter.richtfeuer) continue;
       const sourceId = `karte-rl-src-${layerIdx}`;
       const layerId  = `karte-rl-lyr-${layerIdx}`;
       _karteMap.addSource(sourceId, {
@@ -6003,9 +6405,52 @@ async function _karteLoadSeamarks() {
       _karteRangeLineRAF = requestAnimationFrame(_karteAnimateRangeLines);
     }
 
+    // ── Sektorenfeuer rendering ───────────────────────────────────────
+    // Build GeoJSON polygon wedges for each light sector
+    const sectorColorMap = {
+      white: { fill: 'rgba(255,255,220,0.18)', stroke: 'rgba(255,255,200,0.55)' },
+      red:   { fill: 'rgba(220,50,50,0.18)',   stroke: 'rgba(220,50,50,0.55)' },
+      green: { fill: 'rgba(30,160,60,0.18)',   stroke: 'rgba(30,160,60,0.55)' },
+    };
+
+    let sectorIdx = 0;
+    if (_karteSeamarkFilter.sektoren) for (const { node, name: sName, sectors } of sectorLightNodes) {
+      for (const { start, end, col } of sectors) {
+        const colKey = col.includes('red') ? 'red' : col.includes('green') ? 'green' : 'white';
+        const style = sectorColorMap[colKey];
+        // Build polygon arc (wedge) with 6 km radius
+        const R = 6371, rangKm = 6;
+        const lat0 = node.lat * Math.PI / 180;
+        const lon0 = node.lon * Math.PI / 180;
+        // Generate arc points every 2 degrees; handle wrap-around
+        let s = start, e = end;
+        if (e <= s) e += 360; // handle wrap
+        const steps = Math.max(2, Math.round((e - s) / 2));
+        const arcPts = [];
+        for (let i = 0; i <= steps; i++) {
+          const brg = ((s + (e - s) * i / steps) % 360) * Math.PI / 180;
+          const d = rangKm / R;
+          const la = Math.asin(Math.sin(lat0) * Math.cos(d) + Math.cos(lat0) * Math.sin(d) * Math.cos(brg));
+          const lo = lon0 + Math.atan2(Math.sin(brg) * Math.sin(d) * Math.cos(lat0), Math.cos(d) - Math.sin(lat0) * Math.sin(la));
+          arcPts.push([lo * 180 / Math.PI, la * 180 / Math.PI]);
+        }
+        const ring = [[node.lon, node.lat], ...arcPts, [node.lon, node.lat]];
+        const srcId = `karte-sec-src-${sectorIdx}`;
+        const fillId = `karte-sec-fill-${sectorIdx}`;
+        const lineId = `karte-sec-line-${sectorIdx}`;
+        _karteMap.addSource(srcId, { type: 'geojson', data: { type: 'Feature', geometry: { type: 'Polygon', coordinates: [ring] }, properties: {} } });
+        _karteMap.addLayer({ id: fillId, type: 'fill', source: srcId, paint: { 'fill-color': style.fill } });
+        _karteMap.addLayer({ id: lineId, type: 'line', source: srcId, paint: { 'line-color': style.stroke, 'line-width': 1 } });
+        _karteSectorLayers.push({ layerId: fillId, sourceId: srcId });
+        _karteSectorLayers.push({ layerId: lineId, sourceId: srcId });
+        sectorIdx++;
+      }
+    }
+
   } catch(e) {
     console.warn('Seamark', e);
-    // Don't reset bbox — prevents immediate retry storm; retry on next map move
+    _karteSeamarkBbox = ''; // allow retry after cooldown
+    _karteSeamarkRetryAfter = Date.now() + 30000; // 30s cooldown after failure
   } finally {
     _karteSeamarkFetching = false;
   }
