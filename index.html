@@ -6508,6 +6508,41 @@ async function _karteLoadSeamarks() {
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
     // (OSM nodes 1445813371 rear + 1460138804 front, Iso 8s) via Pass 3. No static needed.
 
+    // Static markers for lights not in OSM or landmark type (not rendered by normal dot path).
+    // Grünendeich Oberfeuer (B1540.1) and Somfletherwisch Oberfeuer (B1534.1) are not in OSM.
+    // Bützflethersand Ober/Unter have seamark:type=landmark → skipped by normal Richtfeuer renderer.
+    if (_karteSeamarkFilter.leuchtfeuer) {
+      const _addStaticRichtfeuerMarker = (name, lat, lon, char_, period) => {
+        if (lat < vs || lat > vn || lon < vw || lon > ve) return;
+        const animName_ = `sm${char_.replace(/[^a-z0-9]/gi,'')}g1p${Math.round(period*10)}`;
+        if (period > 0.1 && !animDefs.has(animName_)) {
+          animDefs.add(animName_);
+          _karteSeamarkAnimStyle.textContent += _karteSeamarkKeyframes(animName_, char_, 1, period);
+        }
+        const el = document.createElement('div');
+        el.style.cssText = 'position:relative;width:0;height:0;';
+        const dot = document.createElement('div');
+        dot.style.cssText = `position:absolute;left:-4.5px;top:-4.5px;width:9px;height:9px;background:#f59e0b;border-radius:50%;box-shadow:0 0 3px rgba(0,0,0,0.4);cursor:help`;
+        dot.title = name;
+        if (period > 0.1) {
+          const phaseDelay = -(performance.now() / 1000 % period);
+          dot.style.animation = `${animName_} ${period}s linear ${phaseDelay.toFixed(3)}s infinite`;
+        }
+        el.appendChild(dot);
+        const rfl = document.createElement('span');
+        rfl.textContent = name;
+        const onNorthShore = lat > 53.9;
+        rfl.style.cssText = `position:absolute;left:0;transform:translateX(-50%);top:${onNorthShore ? '-17px' : '6px'};font-size:8px;color:#f59e0b;text-shadow:0 0 2px #000,0 0 2px #000;white-space:nowrap;pointer-events:none;font-weight:600;animation:none`;
+        el.appendChild(rfl);
+        const m = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([lon, lat]).addTo(_karteMap);
+        _karteSeamarkMarkers.push(m);
+      };
+      _addStaticRichtfeuerMarker('Grünendeich Oberfeuer',     53.57389, 9.60944, 'Iso', 4);
+      _addStaticRichtfeuerMarker('Somfletherwisch Oberfeuer', 53.56356, 9.64964, 'Iso', 8);
+      _addStaticRichtfeuerMarker('Bützflethersand Oberfeuer', 53.63484, 9.51730, 'Iso', 4);
+      _addStaticRichtfeuerMarker('Bützflethersand Unterfeuer',53.63154, 9.52447, 'Iso', 4);
+    }
+
     // ── Range lines: ALL lights with bearing tags (not yet handled above) ──
     // Covers all Richtfeuer with seamark:leading_light:bearing / seamark:light:bearing
     for (const node of nodes) {
