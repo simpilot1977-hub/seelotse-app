@@ -6266,6 +6266,10 @@ async function _karteLoadSeamarks() {
 
     // ── Range lines: Ober/Unter pairs ──────────────────────────────────
     const handledNodeIds = new Set();
+    // Pre-register static pairings so Pass 1/2/3 don't create duplicates.
+    // Richtfeuer Otterndorf/Belum: Leuchtfeuer (OSM 339261891) + Unterfeuer (OSM 854975325)
+    handledNodeIds.add(339261891);
+    handledNodeIds.add(854975325);
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6334,23 +6338,23 @@ async function _karteLoadSeamarks() {
       if (best) { drawOberUnterLine(rear, best, `cat-${rear.node.id}`); }
     }
 
-    // Pass 4: static range lines for marks whose OSM names don't match Ober/Unter pattern
-    // Richtfeuer Otterndorf/Belum — OSM node 339261891 "Leuchtfeuer Otterndorf/Belum" is the
-    // rear light but has no "Ober"/"Unter" in name → skipped by Pass 1/2.
-    // Pair with OSM node 854975325 "Otterndorf/Belum Unterfeuer" (bearing ~066°, extends NE into fairway).
+    // Pass 4: static range lines for marks whose OSM names don't match Ober/Unter pattern.
+    // Node IDs are pre-registered in handledNodeIds above so Pass 1/2/3 skip them.
+    // Richtfeuer Otterndorf/Belum — OSM 339261891 (rear, "Leuchtfeuer Otterndorf/Belum", Iso 4s)
+    //   + OSM 854975325 (front, "Otterndorf/Belum Unterfeuer", Iso 4s). Bearing ~064°.
     {
-      const oberOtterndorf = { node: { id: 'static-otterndorf-ober', lat: 53.826,   lon: 8.90113, tags: {} }, char_: 'F', period: 0, group: 1 };
-      const unterBelum     = { node: { id: 'static-belum-unter',     lat: 53.83537, lon: 8.93575, tags: {} }, char_: 'F', period: 0, group: 1 };
-      drawOberUnterLine(oberOtterndorf, unterBelum, 'static-otterndorf-belum');
+      const oberNode = nodes.find(n => n.id === 339261891)
+                     || { id: 339261891, lat: 53.82600, lon: 8.90113, tags: {} };
+      const unterNode = nodes.find(n => n.id === 854975325)
+                      || { id: 854975325, lat: 53.83537, lon: 8.93575, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 4, group: 1 },
+        'static-otterndorf-belum'
+      );
     }
-    // Richtfeuer Altenbruch-Wehldorf — not in OSM; Kurs 261° (WSW ins Fahrwasser).
-    // Unterfeuer (Altenbruch, Elbufer): 53.867°N 9.057°E
-    // Oberfeuer (Wehldorf, ~3 km WSW auf Kurs 261°): 53.864°N 9.027°E
-    {
-      const oberWehldorf    = { node: { id: 'static-wehldorf-ober',   lat: 53.8640, lon: 9.0270, tags: {} }, char_: 'F', period: 0, group: 1 };
-      const unterAltenbruch = { node: { id: 'static-altenbruch-unter', lat: 53.8670, lon: 9.0570, tags: {} }, char_: 'F', period: 0, group: 1 };
-      drawOberUnterLine(oberWehldorf, unterAltenbruch, 'static-altenbruch-wehldorf');
-    }
+    // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
+    // (OSM nodes 1445813371 rear + 1460138804 front, Iso 8s) via Pass 3. No static needed.
 
     // ── Range lines: ALL lights with bearing tags (not yet handled above) ──
     // Covers all Richtfeuer with seamark:leading_light:bearing / seamark:light:bearing
