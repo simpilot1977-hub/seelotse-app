@@ -5336,56 +5336,54 @@ function goKarte() {
         paint: { 'text-color': '#4c1d95' }
       });
 
-      // ── Kurs & Distanz Labels (Segment-Mitten, linieparallel) ────────
-      const _kursFeatures = [];
+      // ── Kurs & Distanz Labels (je Segment, beide Richtungen) ─────────
+      // Jedes Segment als eigene LineString-Feature → symbol-placement:'line-center'
+      // richtet Text automatisch in Fahrtrichtung aus; text-keep-upright verhindert
+      // auf-dem-Kopf-stehen; linke Seite der Fahrtrichtung = "oben" für Ausfahrt,
+      // "unten" für Einfahrt (weil Linie umgekehrt).
+      const _kursFeatOut = [], _kursFeatIn = [];
       for (let i = 0; i < KARTE_WP.length - 1; i++) {
         const A = KARTE_WP[i], B = KARTE_WP[i+1];
-        const midLat = (A.lat + B.lat) / 2;
-        const midLon = (A.lon + B.lon) / 2;
         const brg    = _brgDeg(A.lat, A.lon, B.lat, B.lon);
         const brgIn  = (brg + 180) % 360;
         const dist   = _hvNm(A.lat, A.lon, B.lat, B.lon);
         const distStr = (dist < 1 ? dist.toFixed(2) : dist.toFixed(1)) + ' sm';
-        // text-rotate: parallel zur Linie, nie auf dem Kopf (range -90..90)
-        let rot = brg - 90;
-        if (rot > 90)  rot -= 180;
-        if (rot < -90) rot += 180;
-        _kursFeatures.push({
+        _kursFeatOut.push({
           type: 'Feature',
-          geometry: { type: 'Point', coordinates: [midLon, midLat] },
-          properties: {
-            kursOut: `▶ ${String(Math.round(brg)).padStart(3,'0')}°  ${distStr}`,
-            kursIn:  `◀ ${String(Math.round(brgIn)).padStart(3,'0')}°  ${distStr}`,
-            rot,
-          }
+          geometry: { type: 'LineString', coordinates: [[A.lon,A.lat],[B.lon,B.lat]] },
+          properties: { label: `▶ ${String(Math.round(brg)).padStart(3,'0')}°  ${distStr}` }
+        });
+        _kursFeatIn.push({
+          type: 'Feature',
+          geometry: { type: 'LineString', coordinates: [[B.lon,B.lat],[A.lon,A.lat]] },
+          properties: { label: `◀ ${String(Math.round(brgIn)).padStart(3,'0')}°  ${distStr}` }
         });
       }
-      _karteMap.addSource('kurs', { type: 'geojson', data: { type: 'FeatureCollection', features: _kursFeatures } });
+      _karteMap.addSource('kurs-out', { type: 'geojson', data: { type: 'FeatureCollection', features: _kursFeatOut } });
+      _karteMap.addSource('kurs-in',  { type: 'geojson', data: { type: 'FeatureCollection', features: _kursFeatIn  } });
       _karteMap.addLayer({
-        id: 'kurs-oben', type: 'symbol', source: 'kurs', minzoom: 9,
+        id: 'kurs-oben', type: 'symbol', source: 'kurs-out', minzoom: 9,
         layout: {
-          'text-field': ['get', 'kursOut'],
+          'symbol-placement': 'line-center',
+          'text-field': ['get', 'label'],
           'text-size': 9,
           'text-font': ['Noto Sans Regular'],
-          'text-anchor': 'bottom',
-          'text-offset': [0, -0.3],
-          'text-rotate': ['get', 'rot'],
-          'text-rotation-alignment': 'map',
+          'text-offset': [0, -1.1],   // linke Seite der Fahrtrichtung = über der Linie
+          'text-keep-upright': true,
           'text-optional': true,
           'text-allow-overlap': false,
         },
         paint: { 'text-color': '#4c1d95' }
       });
       _karteMap.addLayer({
-        id: 'kurs-unten', type: 'symbol', source: 'kurs', minzoom: 9,
+        id: 'kurs-unten', type: 'symbol', source: 'kurs-in', minzoom: 9,
         layout: {
-          'text-field': ['get', 'kursIn'],
+          'symbol-placement': 'line-center',
+          'text-field': ['get', 'label'],
           'text-size': 9,
           'text-font': ['Noto Sans Regular'],
-          'text-anchor': 'top',
-          'text-offset': [0, 0.3],
-          'text-rotate': ['get', 'rot'],
-          'text-rotation-alignment': 'map',
+          'text-offset': [0, -1.1],   // linke Seite = unter der ursprünglichen Linie
+          'text-keep-upright': true,
           'text-optional': true,
           'text-allow-overlap': false,
         },
