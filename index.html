@@ -5291,6 +5291,7 @@ function goKarte() {
           <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#990000;border-radius:2px"></span><span>&gt; 2 kn Ebbe</span></div>
         </div>
         <div style="margin-top:5px;font-size:9px;color:#94a3b8">WSA Elbe-Nordsee · Pegelonline HW</div>
+        <div id="stroem-debug" style="margin-top:6px;font-size:9px;color:#334155;border-top:1px solid #e2e8f0;padding-top:5px;line-height:1.6"></div>
       </div>
     </div>`;
 
@@ -5629,38 +5630,39 @@ function _stromdatenLookup(tableIdx, dtHW) {
 }
 
 async function _fetchHWOffset(uuid) {
-  // Gibt dtHW zurück: Stunden relativ zum nächsten oder letzten HW
-  // Negativ = vor HW, Positiv = nach HW, Bereich ca. -6.5h bis +6.0h
+  // Gibt { dtHW, hwTime, nwTime } zurück oder null bei Fehler
+  // dtHW: Stunden seit letztem HW; Korrektur auf nächsten Zyklus nur wenn NW bereits beobachtet
   try {
     const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
-    const pts = await fetch(`${BASE}/${uuid}/W/measurements.json?start=PT14H`).then(r => r.json());
-    if (!Array.isArray(pts) || pts.length < 6) return null;
+    const pts = await fetch(`${BASE}/${uuid}/W/measurements.json?start=PT15H`).then(r => r.json());
+    if (!Array.isArray(pts) || pts.length < 12) return null;
 
-    // Letztes lokales Maximum (HW) suchen — von hinten, Fenster ±4 Messpunkte (≈±20 min)
-    const WIN = 4;
-    let hwIdx = -1;
+    // Letztes lokales Maximum (HW) UND letztes lokales Minimum (NW) suchen — von hinten, Fenster ±5
+    const WIN = 5;
+    let hwIdx = -1, nwIdx = -1;
     for (let i = pts.length - 1 - WIN; i >= WIN; i--) {
-      let isMax = true;
+      let isMax = true, isMin = true;
       for (let j = i - WIN; j <= i + WIN; j++) {
-        if (j !== i && pts[j].value >= pts[i].value) { isMax = false; break; }
+        if (j === i) continue;
+        if (pts[j].value > pts[i].value) isMax = false;
+        if (pts[j].value < pts[i].value) isMin = false;
       }
-      if (isMax) { hwIdx = i; break; }
+      if (hwIdx < 0 && isMax) hwIdx = i;
+      if (nwIdx < 0 && isMin) nwIdx = i;
+      if (hwIdx >= 0 && nwIdx >= 0) break;
     }
-    if (hwIdx < 0) {
-      hwIdx = 0;
-      for (let i = 1; i < pts.length; i++) {
-        if (pts[i].value > pts[hwIdx].value) hwIdx = i;
-      }
-    }
+    if (hwIdx < 0) { hwIdx = 0; for (let i=1; i<pts.length; i++) if (pts[i].value > pts[hwIdx].value) hwIdx = i; }
+    if (nwIdx < 0) { nwIdx = 0; for (let i=1; i<pts.length; i++) if (pts[i].value < pts[nwIdx].value) nwIdx = i; }
 
     const hwTime = new Date(pts[hwIdx].timestamp);
+    const nwTime = new Date(pts[nwIdx].timestamp);
     let dtHW = (Date.now() - hwTime.getTime()) / 3600000;
 
-    // Nach dem NW (>6h nach HW): auf nächsten HW-Zyklus beziehen (Periode M2 ≈ 12.42h)
-    // Damit sind wir wieder im negativen dtHW-Bereich (vor dem nächsten HW)
-    if (dtHW > 6.0) dtHW -= 12.42;
+    // Korrektur auf nächsten HW-Zyklus NUR wenn NW bereits beobachtet wurde (nwTime > hwTime)
+    // → Wenn NW noch nicht erreicht: kein Abzug, dtHW bleibt positiv (= nach HW, Ebbe läuft)
+    if (nwTime > hwTime) dtHW -= 12.42;
 
-    return dtHW;
+    return { dtHW, hwTime, nwTime };
   } catch { return null; }
 }
 
@@ -5704,11 +5706,14 @@ async function _karteLoadStroem() {
   _karteRemoveStroem();
 
   // Strömungsdaten: HW-Zeitpunkt für drei Bezugspegel abrufen
-  const [dtCux, dtBrb, dtStP] = await Promise.all([
+  const [resCux, resBrb, resStP] = await Promise.all([
     _fetchHWOffset('aad49293-242a-43ad-a8b1-e91d7792c4b2'), // Cuxhaven
     _fetchHWOffset('d4f5f719-8c52-4f8d-945d-1c31404cc628'), // Brunsbüttel
     _fetchHWOffset('d488c5cc-4de9-4631-8ce1-0db0e700b546'), // Hamburg St. Pauli
   ]);
+  const dtCux = resCux?.dtHW ?? null;
+  const dtBrb = resBrb?.dtHW ?? null;
+  const dtStP = resStP?.dtHW ?? null;
   // Glückstadt: kein eigener Pegel, HW ~45 min nach Brunsbüttel
   const dtGlk = dtBrb !== null ? dtBrb - 0.75 : null;
 
@@ -5802,7 +5807,19 @@ async function _karteLoadStroem() {
     });
 
     const leg = document.getElementById('stroem-legend');
-    if (leg) leg.style.display = 'block';
+    if (leg) {
+      leg.style.display = 'block';
+      // Zeitstempel für HW/NW je Station anzeigen
+      const _fmtTs = d => d ? d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '–';
+      const _fmtDt = h => h !== null ? (h >= 0 ? `+${h.toFixed(1)}h` : `${h.toFixed(1)}h`) : '–';
+      const dbg = document.getElementById('stroem-debug');
+      if (dbg) dbg.innerHTML =
+        `<div style="font-weight:600;margin-bottom:2px;color:#475569">Bezugspegel HW/NW</div>` +
+        `<div>Cuxhaven &nbsp;HW ${_fmtTs(resCux?.hwTime)} | NW ${_fmtTs(resCux?.nwTime)} | dt ${_fmtDt(dtCux)}</div>` +
+        `<div>Brunsbüttel HW ${_fmtTs(resBrb?.hwTime)} | NW ${_fmtTs(resBrb?.nwTime)} | dt ${_fmtDt(dtBrb)}</div>` +
+        `<div>Hamburg &nbsp;&nbsp;&nbsp;HW ${_fmtTs(resStP?.hwTime)} | NW ${_fmtTs(resStP?.nwTime)} | dt ${_fmtDt(dtStP)}</div>` +
+        `<div style="color:#94a3b8;margin-top:1px">Stand: ${new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} Uhr</div>`;
+    }
   } catch(e) { console.warn('Strömung:', e); }
 
   // Auto-Refresh alle 10 Minuten
