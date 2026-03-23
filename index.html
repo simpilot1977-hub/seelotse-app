@@ -5060,6 +5060,122 @@ const KARTE_PEGEL_STATIONS = [
   { label:'Hamburg',     lat:53.5440, lon:9.9636, uuid:'d488c5cc-4de9-4631-8ce1-0db0e700b546' },
 ];
 
+// Stromdaten Elbe (WSA Elbe-Nordsee, 21.03.2024)
+// 7 Tabellen, Bezugsort je Pegelstation, Zeitschritt 0.25h, Bereich -6.5h bis +6.0h (HW=0)
+// Zeilen: [dtHW_start_h, phase, strom_kn, sog_see_hh, sog_hh_see]
+//   phase: 'E'=Ebbe (auslaufend), 'F'=Flut (einlaufend), 'S'=Stauwasser
+//   strom_kn: Strömungsgeschwindigkeit in Knoten (positiv)
+//   sog_see_hh/sog_hh_see: erlaubte Schiffsgeschwindigkeit über Grund (km/h)
+//   maxFDW: Basis-Fahrwassergeschwindigkeit (km/h), bei Stauwasser
+//   vonWp/bisWp: Radarlinie-Wegpunkt-Index für Segmentgrenzen
+const ELBE_STROMDATEN = [
+  { id:1, label:'Tn31–Tn47',        vonWp:0,  bisWp:14, bezugsort:'Cuxhaven',    bezugsortUuid:'aad49293-242a-43ad-a8b1-e91d7792c4b2', maxFDW:15, rows:[
+    [-6.50,'E',2.8,12.2,17.8],[-6.25,'E',2.7,12.3,17.7],[-6.00,'E',2.7,12.3,17.7],[-5.75,'E',2.6,12.4,17.6],
+    [-5.50,'E',2.4,12.6,17.4],[-5.25,'E',2.2,12.8,17.2],[-5.00,'E',2.1,12.9,17.1],[-4.75,'E',1.5,13.5,16.5],
+    [-4.50,'E',1.0,14.0,16.0],[-4.25,'E',0.7,14.3,15.7],[-4.00,'E',0.4,14.6,15.4],[-3.75,'S',0.0,15.0,15.0],
+    [-3.50,'F',0.8,15.8,14.2],[-3.25,'F',1.3,16.3,13.7],[-3.00,'F',1.7,16.7,13.3],[-2.75,'F',1.9,16.9,13.1],
+    [-2.50,'F',2.2,17.2,12.8],[-2.25,'F',2.3,17.3,12.7],[-2.00,'F',2.4,17.4,12.6],[-1.75,'F',2.5,17.5,12.5],
+    [-1.50,'F',2.5,17.5,12.5],[-1.25,'F',2.4,17.4,12.6],[-1.00,'F',2.4,17.4,12.6],[-0.75,'F',2.3,17.3,12.7],
+    [-0.50,'F',2.2,17.2,12.8],[-0.25,'F',2.0,17.0,13.0],[ 0.00,'F',1.7,16.7,13.3],[ 0.25,'F',1.6,16.6,13.4],
+    [ 0.50,'F',1.3,16.3,13.7],[ 0.75,'F',1.2,16.2,13.8],[ 1.00,'F',1.0,16.0,14.0],[ 1.25,'F',0.6,15.6,14.4],
+    [ 1.50,'F',0.3,15.3,14.7],[ 1.75,'S',0.0,15.0,15.0],[ 2.00,'E',0.3,14.7,15.3],[ 2.25,'E',0.5,14.5,15.5],
+    [ 2.50,'E',0.7,14.3,15.7],[ 2.75,'E',1.1,13.9,16.1],[ 3.00,'E',1.4,13.6,16.4],[ 3.25,'E',1.7,13.3,16.7],
+    [ 3.50,'E',2.1,12.9,17.1],[ 3.75,'E',2.3,12.7,17.3],[ 4.00,'E',2.4,12.6,17.4],[ 4.25,'E',2.6,12.4,17.6],
+    [ 4.50,'E',2.8,12.2,17.8],[ 4.75,'E',2.9,12.1,17.9],[ 5.00,'E',2.9,12.1,17.9],[ 5.25,'E',2.9,12.1,17.9],
+    [ 5.50,'E',2.8,12.2,17.8],[ 5.75,'E',2.8,12.2,17.8],
+  ]},
+  { id:2, label:'Tn47–Tn55a',       vonWp:14, bisWp:16, bezugsort:'Brunsbüttel', bezugsortUuid:'d4f5f719-8c52-4f8d-945d-1c31404cc628', maxFDW:15, rows:[
+    [-6.50,'E',2.3,12.7,17.3],[-6.25,'E',2.1,12.9,17.1],[-6.00,'E',2.0,13.0,17.0],[-5.75,'E',1.8,13.2,16.8],
+    [-5.50,'E',1.6,13.4,16.6],[-5.25,'E',1.3,13.7,16.3],[-5.00,'E',0.9,14.1,15.9],[-4.75,'E',0.5,14.5,15.5],
+    [-4.50,'S',0.0,15.0,15.0],[-4.25,'F',0.8,15.8,14.2],[-4.00,'F',1.0,16.0,14.0],[-3.75,'F',1.2,16.2,13.8],
+    [-3.50,'F',1.6,16.6,13.4],[-3.25,'F',1.8,16.8,13.2],[-3.00,'F',2.0,17.0,13.0],[-2.75,'F',2.2,17.2,12.8],
+    [-2.50,'F',2.2,17.2,12.8],[-2.25,'F',2.3,17.3,12.7],[-2.00,'F',2.2,17.2,12.8],[-1.75,'F',2.2,17.2,12.8],
+    [-1.50,'F',2.2,17.2,12.8],[-1.25,'F',2.1,17.1,12.9],[-1.00,'F',2.0,17.0,13.0],[-0.75,'F',1.8,16.8,13.2],
+    [-0.50,'F',1.7,16.7,13.3],[-0.25,'F',1.6,16.6,13.4],[ 0.00,'F',1.4,16.4,13.6],[ 0.25,'F',1.2,16.2,13.8],
+    [ 0.50,'F',0.9,15.9,14.1],[ 0.75,'F',0.7,15.7,14.3],[ 1.00,'F',0.4,15.4,14.6],[ 1.25,'S',0.0,15.0,15.0],
+    [ 1.50,'E',0.3,14.7,15.3],[ 1.75,'E',0.6,14.4,15.6],[ 2.00,'E',0.9,14.1,15.9],[ 2.25,'E',1.2,13.8,16.2],
+    [ 2.50,'E',1.3,13.7,16.3],[ 2.75,'E',1.6,13.4,16.6],[ 3.00,'E',1.8,13.2,16.8],[ 3.25,'E',2.0,13.0,17.0],
+    [ 3.50,'E',2.2,12.8,17.2],[ 3.75,'E',2.3,12.7,17.3],[ 4.00,'E',2.3,12.7,17.3],[ 4.25,'E',2.4,12.6,17.4],
+    [ 4.50,'E',2.4,12.6,17.4],[ 4.75,'E',2.4,12.6,17.4],[ 5.00,'E',2.3,12.7,17.3],[ 5.25,'E',2.3,12.7,17.3],
+    [ 5.50,'E',2.2,12.8,17.2],[ 5.75,'E',2.2,12.8,17.2],
+  ]},
+  { id:3, label:'Tn55a–Tn63',       vonWp:16, bisWp:20, bezugsort:'Brunsbüttel', bezugsortUuid:'d4f5f719-8c52-4f8d-945d-1c31404cc628', maxFDW:14, rows:[
+    [-6.50,'E',2.4,11.6,16.4],[-6.25,'E',2.3,11.7,16.3],[-6.00,'E',2.3,11.7,16.3],[-5.75,'E',2.2,11.8,16.2],
+    [-5.50,'E',2.1,11.9,16.1],[-5.25,'E',1.8,12.2,15.8],[-5.00,'E',1.6,12.4,15.6],[-4.75,'E',1.2,12.8,15.2],
+    [-4.50,'E',0.5,13.5,14.5],[-4.25,'S',0.0,14.0,14.0],[-4.00,'F',0.5,14.5,13.5],[-3.75,'F',0.9,14.9,13.1],
+    [-3.50,'F',1.6,15.6,12.4],[-3.25,'F',2.0,16.0,12.0],[-3.00,'F',2.2,16.2,11.8],[-2.75,'F',2.3,16.3,11.7],
+    [-2.50,'F',2.4,16.4,11.6],[-2.25,'F',2.6,16.6,11.4],[-2.00,'F',2.6,16.6,11.4],[-1.75,'F',2.5,16.5,11.5],
+    [-1.50,'F',2.4,16.4,11.6],[-1.25,'F',2.4,16.4,11.6],[-1.00,'F',2.3,16.3,11.7],[-0.75,'F',2.3,16.3,11.7],
+    [-0.50,'F',2.2,16.2,11.8],[-0.25,'F',2.1,16.1,11.9],[ 0.00,'F',1.8,15.8,12.2],[ 0.25,'F',1.7,15.7,12.3],
+    [ 0.50,'F',1.5,15.5,12.5],[ 0.75,'F',1.3,15.3,12.7],[ 1.00,'F',1.0,15.0,13.0],[ 1.25,'F',0.8,14.8,13.2],
+    [ 1.50,'F',0.3,14.3,13.7],[ 1.75,'S',0.0,14.0,14.0],[ 2.00,'E',0.5,13.5,14.5],[ 2.25,'E',0.7,13.3,14.7],
+    [ 2.50,'E',1.1,12.9,15.1],[ 2.75,'E',1.5,12.5,15.5],[ 3.00,'E',1.9,12.1,15.9],[ 3.25,'E',2.1,11.9,16.1],
+    [ 3.50,'E',2.3,11.7,16.3],[ 3.75,'E',2.5,11.5,16.5],[ 4.00,'E',2.6,11.4,16.6],[ 4.25,'E',2.6,11.4,16.6],
+    [ 4.50,'E',2.7,11.3,16.7],[ 4.75,'E',2.6,11.4,16.6],[ 5.00,'E',2.6,11.4,16.6],[ 5.25,'E',2.6,11.4,16.6],
+    [ 5.50,'E',2.5,11.5,16.5],[ 5.75,'E',2.4,11.6,16.4],
+  ]},
+  { id:4, label:'Tn63–Tn79/WS2',    vonWp:20, bisWp:24, bezugsort:'Glückstadt',  bezugsortUuid:null, maxFDW:14, rows:[
+    [-6.50,'E',1.9,12.1,15.9],[-6.25,'E',1.7,12.3,15.7],[-6.00,'E',1.5,12.5,15.5],[-5.75,'E',1.1,12.9,15.1],
+    [-5.50,'E',0.6,13.4,14.6],[-5.25,'S',0.0,14.0,14.0],[-5.00,'F',0.8,14.8,13.2],[-4.75,'F',1.4,15.4,12.6],
+    [-4.50,'F',1.8,15.8,12.2],[-4.25,'F',2.1,16.1,11.9],[-4.00,'F',2.3,16.3,11.7],[-3.75,'F',2.4,16.4,11.6],
+    [-3.50,'F',2.5,16.5,11.5],[-3.25,'F',2.5,16.5,11.5],[-3.00,'F',2.5,16.5,11.5],[-2.75,'F',2.5,16.5,11.5],
+    [-2.50,'F',2.4,16.4,11.6],[-2.25,'F',2.4,16.4,11.6],[-2.00,'F',2.3,16.3,11.7],[-1.75,'F',2.3,16.3,11.7],
+    [-1.50,'F',2.1,16.1,11.9],[-1.25,'F',2.1,16.1,11.9],[-1.00,'F',1.9,15.9,12.1],[-0.75,'F',1.7,15.7,12.3],
+    [-0.50,'F',1.4,15.4,12.6],[-0.25,'F',1.1,15.1,12.9],[ 0.00,'F',0.7,14.7,13.3],[ 0.25,'F',0.4,14.4,13.6],
+    [ 0.50,'S',0.0,14.0,14.0],[ 0.75,'E',0.4,13.6,14.4],[ 1.00,'E',0.7,13.3,14.7],[ 1.25,'E',1.1,12.9,15.1],
+    [ 1.50,'E',1.4,12.6,15.4],[ 1.75,'E',1.7,12.3,15.7],[ 2.00,'E',2.0,12.0,16.0],[ 2.25,'E',2.2,11.8,16.2],
+    [ 2.50,'E',2.4,11.6,16.4],[ 2.75,'E',2.5,11.5,16.5],[ 3.00,'E',2.5,11.5,16.5],[ 3.25,'E',2.5,11.5,16.5],
+    [ 3.50,'E',2.5,11.5,16.5],[ 3.75,'E',2.4,11.6,16.4],[ 4.00,'E',2.4,11.6,16.4],[ 4.25,'E',2.4,11.6,16.4],
+    [ 4.50,'E',2.3,11.7,16.3],[ 4.75,'E',2.3,11.7,16.3],[ 5.00,'E',2.2,11.8,16.2],[ 5.25,'E',2.2,11.8,16.2],
+    [ 5.50,'E',2.1,11.9,16.1],[ 5.75,'E',2.0,12.0,16.0],
+  ]},
+  { id:5, label:'Tn79/WS2–Tn107/Reede', vonWp:24, bisWp:38, bezugsort:'Glückstadt', bezugsortUuid:null, maxFDW:12, rows:[
+    [-6.50,'E',1.9,10.1,13.9],[-6.25,'E',1.8,10.2,13.8],[-6.00,'E',1.7,10.3,13.7],[-5.75,'E',1.6,10.4,13.6],
+    [-5.50,'E',1.5,10.5,13.5],[-5.25,'E',1.2,10.8,13.2],[-5.00,'E',0.7,11.3,12.7],[-4.75,'S',0.0,12.0,12.0],
+    [-4.50,'F',0.7,12.7,11.3],[-4.25,'F',1.4,13.4,10.6],[-4.00,'F',1.9,13.9,10.1],[-3.75,'F',2.2,14.2, 9.8],
+    [-3.50,'F',2.3,14.3, 9.7],[-3.25,'F',2.3,14.3, 9.7],[-3.00,'F',2.4,14.4, 9.6],[-2.75,'F',2.4,14.4, 9.6],
+    [-2.50,'F',2.4,14.4, 9.6],[-2.25,'F',2.4,14.4, 9.6],[-2.00,'F',2.3,14.3, 9.7],[-1.75,'F',2.3,14.3, 9.7],
+    [-1.50,'F',2.2,14.2, 9.8],[-1.25,'F',2.1,14.1, 9.9],[-1.00,'F',1.9,13.9,10.1],[-0.75,'F',1.7,13.7,10.3],
+    [-0.50,'F',1.5,13.5,10.5],[-0.25,'F',1.3,13.3,10.7],[ 0.00,'F',1.1,13.1,10.9],[ 0.25,'F',0.9,12.9,11.1],
+    [ 0.50,'F',0.6,12.6,11.4],[ 0.75,'S',0.0,12.0,12.0],[ 1.00,'S',0.0,12.0,12.0],[ 1.25,'E',0.5,11.5,12.5],
+    [ 1.50,'E',0.9,11.1,12.9],[ 1.75,'E',1.3,10.7,13.3],[ 2.00,'E',1.7,10.3,13.7],[ 2.25,'E',2.0,10.0,14.0],
+    [ 2.50,'E',2.2, 9.8,14.2],[ 2.75,'E',2.3, 9.7,14.3],[ 3.00,'E',2.3, 9.7,14.3],[ 3.25,'E',2.4, 9.6,14.4],
+    [ 3.50,'E',2.4, 9.6,14.4],[ 3.75,'E',2.4, 9.6,14.4],[ 4.00,'E',2.3, 9.7,14.3],[ 4.25,'E',2.3, 9.7,14.3],
+    [ 4.50,'E',2.2, 9.8,14.2],[ 4.75,'E',2.2, 9.8,14.2],[ 5.00,'E',2.1, 9.9,14.1],[ 5.25,'E',2.1, 9.9,14.1],
+    [ 5.50,'E',2.0,10.0,14.0],[ 5.75,'E',1.9,10.1,13.9],
+  ]},
+  { id:6, label:'Tn107/Reede–Tn119/HN1', vonWp:38, bisWp:44, bezugsort:'St. Pauli', bezugsortUuid:'d488c5cc-4de9-4631-8ce1-0db0e700b546', maxFDW:12, rows:[
+    [-6.50,'E',1.3,10.7,13.3],[-6.25,'E',1.2,10.8,13.2],[-6.00,'E',1.0,11.0,13.0],[-5.75,'E',0.6,11.4,12.6],
+    [-5.50,'S',0.0,12.0,12.0],[-5.25,'F',0.8,12.8,11.2],[-5.00,'F',1.3,13.3,10.7],[-4.75,'F',1.7,13.7,10.3],
+    [-4.50,'F',2.0,14.0,10.0],[-4.25,'F',2.2,14.2, 9.8],[-4.00,'F',2.3,14.3, 9.7],[-3.75,'F',2.4,14.4, 9.6],
+    [-3.50,'F',2.3,14.3, 9.7],[-3.25,'F',2.3,14.3, 9.7],[-3.00,'F',2.2,14.2, 9.8],[-2.75,'F',2.1,14.1, 9.9],
+    [-2.50,'F',2.0,14.0,10.0],[-2.25,'F',1.8,13.8,10.2],[-2.00,'F',1.7,13.7,10.3],[-1.75,'F',1.6,13.6,10.4],
+    [-1.50,'F',1.4,13.4,10.6],[-1.25,'F',1.3,13.3,10.7],[-1.00,'F',1.1,13.1,10.9],[-0.75,'F',0.9,12.9,11.1],
+    [-0.50,'F',0.6,12.6,11.4],[-0.25,'F',0.3,12.3,11.7],[ 0.00,'S',0.0,12.0,12.0],[ 0.25,'E',0.4,11.6,12.4],
+    [ 0.50,'E',0.7,11.3,12.7],[ 0.75,'E',1.1,10.9,13.1],[ 1.00,'E',1.4,10.6,13.4],[ 1.25,'E',1.7,10.3,13.7],
+    [ 1.50,'E',1.9,10.1,13.9],[ 1.75,'E',2.0,10.0,14.0],[ 2.00,'E',2.1, 9.9,14.1],[ 2.25,'E',2.1, 9.9,14.1],
+    [ 2.50,'E',2.1, 9.9,14.1],[ 2.75,'E',2.0,10.0,14.0],[ 3.00,'E',2.0,10.0,14.0],[ 3.25,'E',1.9,10.1,13.9],
+    [ 3.50,'E',1.8,10.2,13.8],[ 3.75,'E',1.8,10.2,13.8],[ 4.00,'E',1.7,10.3,13.7],[ 4.25,'E',1.7,10.3,13.7],
+    [ 4.50,'E',1.6,10.4,13.6],[ 4.75,'E',1.6,10.4,13.6],[ 5.00,'E',1.5,10.5,13.5],[ 5.25,'E',1.5,10.5,13.5],
+    [ 5.50,'E',1.4,10.6,13.4],[ 5.75,'E',1.4,10.6,13.4],
+  ]},
+  { id:7, label:'Tn119/HN1–Tn125',  vonWp:44, bisWp:51, bezugsort:'St. Pauli',  bezugsortUuid:'d488c5cc-4de9-4631-8ce1-0db0e700b546', maxFDW:10, rows:[
+    [-6.50,'E',1.3, 8.7,11.3],[-6.25,'E',1.2, 8.8,11.2],[-6.00,'E',1.0, 9.0,11.0],[-5.75,'E',0.6, 9.4,10.6],
+    [-5.50,'S',0.0,10.0,10.0],[-5.25,'F',0.8,10.8, 9.2],[-5.00,'F',1.3,11.3, 8.7],[-4.75,'F',1.7,11.7, 8.3],
+    [-4.50,'F',2.0,12.0, 8.0],[-4.25,'F',2.2,12.2, 7.8],[-4.00,'F',2.3,12.3, 7.7],[-3.75,'F',2.4,12.4, 7.6],
+    [-3.50,'F',2.3,12.3, 7.7],[-3.25,'F',2.3,12.3, 7.7],[-3.00,'F',2.2,12.2, 7.8],[-2.75,'F',2.1,12.1, 7.9],
+    [-2.50,'F',2.0,12.0, 8.0],[-2.25,'F',1.8,11.8, 8.2],[-2.00,'F',1.7,11.7, 8.3],[-1.75,'F',1.6,11.6, 8.4],
+    [-1.50,'F',1.4,11.4, 8.6],[-1.25,'F',1.3,11.3, 8.7],[-1.00,'F',1.1,11.1, 8.9],[-0.75,'F',0.9,10.9, 9.1],
+    [-0.50,'F',0.6,10.6, 9.4],[-0.25,'F',0.3,10.3, 9.7],[ 0.00,'S',0.0,10.0,10.0],[ 0.25,'E',0.4, 9.6,10.4],
+    [ 0.50,'E',0.7, 9.3,10.7],[ 0.75,'E',1.1, 8.9,11.1],[ 1.00,'E',1.4, 8.6,11.4],[ 1.25,'E',1.7, 8.3,11.7],
+    [ 1.50,'E',1.9, 8.1,11.9],[ 1.75,'E',2.0, 8.0,12.0],[ 2.00,'E',2.1, 7.9,12.1],[ 2.25,'E',2.1, 7.9,12.1],
+    [ 2.50,'E',2.1, 7.9,12.1],[ 2.75,'E',2.0, 8.0,12.0],[ 3.00,'E',2.0, 8.0,12.0],[ 3.25,'E',1.9, 8.1,11.9],
+    [ 3.50,'E',1.8, 8.2,11.8],[ 3.75,'E',1.8, 8.2,11.8],[ 4.00,'E',1.7, 8.3,11.7],[ 4.25,'E',1.7, 8.3,11.7],
+    [ 4.50,'E',1.6, 8.4,11.6],[ 4.75,'E',1.6, 8.4,11.6],[ 5.00,'E',1.5, 8.5,11.5],[ 5.25,'E',1.5, 8.5,11.5],
+    [ 5.50,'E',1.4, 8.6,11.4],[ 5.75,'E',1.4, 8.6,11.4],
+  ]},
+];
+
 function goKarte() {
   // AIS NICHT trennen – damit Schiffsdaten für das Karte-Overlay verfügbar bleiben
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
@@ -5160,6 +5276,23 @@ function goKarte() {
           <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:50%"></span><span>Wegpunkte</span></div>
         </div>
         <div style="margin-top:6px;font-size:9px;color:#94a3b8">OpenSeaMap · WSV BWaStr-Locator · Pegelonline</div>
+      </div>
+
+      <!-- Strömungslegende (wird via JS ein-/ausgeblendet) -->
+      <div id="stroem-legend" style="display:none;position:absolute;bottom:28px;left:220px;z-index:1000;background:rgba(255,255,255,0.93);border:1px solid #b8ccd8;border-radius:8px;padding:8px 12px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12)">
+        <div style="font-weight:700;margin-bottom:6px;color:#1b3d5f;font-size:12px">〰 Strömung</div>
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#1e1b4b;border-radius:2px"></span><span>&gt; 2.5 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#2563eb;border-radius:2px"></span><span>1.5–2.5 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#60a5fa;border-radius:2px"></span><span>0.5–1.5 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#bae6fd;border-radius:2px"></span><span>0–0.5 kn Flut</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#94a3b8;border-radius:2px"></span><span>Stauwasser</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#fde68a;border-radius:2px"></span><span>0–0.5 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#fb923c;border-radius:2px"></span><span>0.5–1.5 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#dc2626;border-radius:2px"></span><span>1.5–2.5 kn Ebbe</span></div>
+          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:9px;background:#7f1d1d;border-radius:2px"></span><span>&gt; 2.5 kn Ebbe</span></div>
+        </div>
+        <div style="margin-top:5px;font-size:9px;color:#94a3b8">WSA Elbe-Nordsee · Pegelonline HW</div>
       </div>
     </div>`;
 
@@ -5457,14 +5590,65 @@ function _karteUpdateGrid() {
 
 // ── Overlay-Toggle ─────────────────────────────────────────────────
 // ── Strömungs-Overlay: färbt Fahrwasser nach Tidenströmung ein ─────
-function _stroemColor(dh) {
-  // dh = Wasserstandsänderung in cm in den letzten 30 Minuten
-  // Positiv = Flut (einlaufend), Negativ = Ebbe (auslaufend)
-  if (dh >  8) return '#1d4ed8'; // starke Flut
-  if (dh >  3) return '#60a5fa'; // Flut
-  if (dh > -3) return '#94a3b8'; // Kenterpunkt / Stau
-  if (dh > -8) return '#f97316'; // Ebbe
-  return '#dc2626';              // starke Ebbe
+// ── Strömungs-Hilfsfunktionen ─────────────────────────────────────────────────
+
+function _lerpColor(c1, c2, t) {
+  // Interpoliert zwischen zwei Hex-Farben (#rrggbb)
+  const h = (a, b) => Math.round(parseInt(a, 16) + (parseInt(b, 16) - parseInt(a, 16)) * t)
+    .toString(16).padStart(2, '0');
+  return '#' + h(c1.slice(1,3), c2.slice(1,3)) + h(c1.slice(3,5), c2.slice(3,5)) + h(c1.slice(5,7), c2.slice(5,7));
+}
+
+function _stroemColorV2(strom_kn, phase) {
+  // Konvertiert Strömungswert in Farbe; Flut = positiv (blau), Ebbe = negativ (rot)
+  const s = phase === 'F' ? strom_kn : phase === 'E' ? -strom_kn : 0;
+  const stops = [
+    [-3.0, '#7f1d1d'], [-2.5, '#dc2626'], [-1.5, '#fb923c'],
+    [-0.5, '#fde68a'], [ 0.0, '#94a3b8'],
+    [ 0.5, '#bae6fd'], [ 1.5, '#60a5fa'], [ 2.5, '#2563eb'], [3.0, '#1e1b4b'],
+  ];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (s >= stops[i][0] && s <= stops[i+1][0]) {
+      return _lerpColor(stops[i][1], stops[i+1][1], (s - stops[i][0]) / (stops[i+1][0] - stops[i][0]));
+    }
+  }
+  return s < -3 ? stops[0][1] : stops[stops.length-1][1];
+}
+
+function _stromdatenLookup(tableIdx, dtHW) {
+  // Sucht die zutreffende Zeile in ELBE_STROMDATEN[tableIdx] für dtHW (h relativ zu HW)
+  const table = ELBE_STROMDATEN[tableIdx];
+  if (!table) return { phase:'S', strom_kn:0, sog_see_hh:table?.maxFDW??12, sog_hh_see:table?.maxFDW??12 };
+  const idx = Math.min(49, Math.max(0, Math.floor((dtHW + 6.5) / 0.25)));
+  const row = table.rows[idx];
+  return { phase:row[1], strom_kn:row[2], sog_see_hh:row[3], sog_hh_see:row[4] };
+}
+
+async function _fetchHWOffset(uuid) {
+  // Gibt Stunden seit letztem HW zurück (positiv = HW war in der Vergangenheit), null bei Fehler
+  try {
+    const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+    const pts = await fetch(`${BASE}/${uuid}/W/measurements.json?start=PT14H`).then(r => r.json());
+    if (!Array.isArray(pts) || pts.length < 3) return null;
+    let hwIdx = 0;
+    for (let i = 1; i < pts.length; i++) {
+      if (pts[i].value > pts[hwIdx].value) hwIdx = i;
+    }
+    const hwTime = new Date(pts[hwIdx].timestamp);
+    return (Date.now() - hwTime.getTime()) / 3600000; // h seit HW
+  } catch { return null; }
+}
+
+function _elbeSegFracs() {
+  // Liefert line-progress-Fraktionen [0..1] für jeden Wegpunkt in KARTE_WP
+  const dists = [0];
+  let total = 0;
+  for (let i = 1; i < KARTE_WP.length; i++) {
+    const A = KARTE_WP[i-1], B = KARTE_WP[i];
+    total += _hvNm(A.lat, A.lon, B.lat, B.lon);
+    dists.push(total);
+  }
+  return dists.map(d => d / total);
 }
 
 function _karteRemoveStroem() {
@@ -5472,33 +5656,58 @@ function _karteRemoveStroem() {
   if (!_karteMap) return;
   try { _karteMap.removeLayer('stroem-line'); } catch(e) {}
   try { _karteMap.removeSource('stroem'); } catch(e) {}
+  const leg = document.getElementById('stroem-legend');
+  if (leg) leg.style.display = 'none';
 }
 
 async function _karteLoadStroem() {
   if (!_karteMap) return;
   _karteRemoveStroem();
 
-  const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
-  const stationen = [
-    { uuid: 'aad49293-242a-43ad-a8b1-e91d7792c4b2', frac: 0.25 }, // Cuxhaven  km 724
-    { uuid: 'd4f5f719-8c52-4f8d-945d-1c31404cc628', frac: 0.55 }, // Brunsbüttel km 695
-    { uuid: 'd488c5cc-4de9-4631-8ce1-0db0e700b546', frac: 1.00 }, // Hamburg km 623
+  // Strömungsdaten: HW-Zeitpunkt für drei Bezugspegel abrufen
+  const [dtCux, dtBrb, dtStP] = await Promise.all([
+    _fetchHWOffset('aad49293-242a-43ad-a8b1-e91d7792c4b2'), // Cuxhaven
+    _fetchHWOffset('d4f5f719-8c52-4f8d-945d-1c31404cc628'), // Brunsbüttel
+    _fetchHWOffset('d488c5cc-4de9-4631-8ce1-0db0e700b546'), // Hamburg St. Pauli
+  ]);
+  // Glückstadt: kein eigener Pegel, HW ~45 min nach Brunsbüttel
+  const dtGlk = dtBrb !== null ? dtBrb - 0.75 : null;
+
+  // Segment-Zuweisung: vonWp, bisWp, Tabelle (0-basiert), HW-Offset
+  const segments = [
+    { tableIdx:0, dt:dtCux },  // Tn31–Tn47  (wp0–wp14)
+    { tableIdx:1, dt:dtBrb },  // Tn47–Tn55a (wp14–wp16)
+    { tableIdx:2, dt:dtBrb },  // Tn55a–Tn63 (wp16–wp20)
+    { tableIdx:3, dt:dtGlk },  // Tn63–Tn79  (wp20–wp24)
+    { tableIdx:4, dt:dtGlk },  // Tn79–Tn107 (wp24–wp38)
+    { tableIdx:5, dt:dtStP },  // Tn107–Tn119(wp38–wp44)
+    { tableIdx:6, dt:dtStP },  // Tn119–HH   (wp44–wp51)
   ];
 
-  const dhs = {};
-  await Promise.allSettled(stationen.map(async (st, i) => {
-    try {
-      const pts = await fetch(`${BASE}/${st.uuid}/W/measurements.json?start=PT1H`).then(r => r.json());
-      if (Array.isArray(pts) && pts.length >= 2) {
-        const n = pts.length;
-        // Änderung in den letzten ~30 Minuten (alle 5 min = 6 Werte)
-        dhs[i] = pts[n-1].value - pts[Math.max(0, n-7)].value;
-      } else dhs[i] = 0;
-    } catch { dhs[i] = 0; }
-  }));
+  // Farbe je Segment bestimmen
+  const segColors = segments.map(({ tableIdx, dt }) => {
+    if (dt === null) return '#94a3b8';
+    const r = _stromdatenLookup(tableIdx, dt);
+    return _stroemColorV2(r.strom_kn, r.phase);
+  });
 
-  // line-gradient braucht lineMetrics:true — eigene Source anlegen
-  // Strömung wird auf der Radarlinie dargestellt
+  // Linienfortschritts-Fraktionen für alle Wegpunkte berechnen
+  const fracs = _elbeSegFracs();
+
+  // line-gradient mit scharfen Übergängen an Segmentgrenzen aufbauen
+  const grad = ['interpolate', ['linear'], ['line-progress']];
+  grad.push(0, segColors[0]);
+  for (let i = 0; i < segments.length; i++) {
+    const bisWp = ELBE_STROMDATEN[segments[i].tableIdx].bisWp;
+    const f1 = fracs[bisWp];
+    grad.push(f1 - 0.0002, segColors[i]);
+    if (i < segments.length - 1) {
+      grad.push(f1, segColors[i+1]);
+    } else {
+      grad.push(Math.min(1, f1), segColors[i]);
+    }
+  }
+
   const radarLineCoords = KARTE_WP.map(wp => [wp.lon, wp.lat]);
   try {
     _karteMap.addSource('stroem', {
@@ -5509,18 +5718,11 @@ async function _karteLoadStroem() {
     _karteMap.addLayer({
       id: 'stroem-line', type: 'line', source: 'stroem',
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: {
-        'line-width': 6,
-        'line-opacity': 0.75,
-        'line-gradient': [
-          'interpolate', ['linear'], ['line-progress'],
-          0.00, _stroemColor(dhs[0] ?? 0),   // Deutsche Bucht → Cuxhaven
-          0.35, _stroemColor(dhs[0] ?? 0),   // Cuxhaven
-          0.55, _stroemColor(dhs[1] ?? 0),   // Brunsbüttel
-          1.00, _stroemColor(dhs[2] ?? 0),   // Hamburg
-        ]
-      }
-    }, 'radarlinie-line'); // direkt unter der Radarlinie einfügen
+      paint: { 'line-width': 6, 'line-opacity': 0.75, 'line-gradient': grad }
+    }, 'radarlinie-line');
+
+    const leg = document.getElementById('stroem-legend');
+    if (leg) leg.style.display = 'block';
   } catch(e) { console.warn('Strömung:', e); }
 
   // Auto-Refresh alle 10 Minuten
