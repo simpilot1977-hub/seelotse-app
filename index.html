@@ -6270,12 +6270,14 @@ async function _karteLoadSeamarks() {
     // Pre-register static pairings so Pass 1/2/3 don't create duplicates.
     // Richtfeuer Otterndorf/Belum (064°): Leuchtfeuer 339261891 + Unterfeuer 854975325
     // Richtfeuer Belum (093°):            Oberfeuer Belum 340384841 + shared Unterfeuer 854975325
-    // Richtfeuer Altenbruch (261°):       Oberfeuer Altenbruch 1469421139 + Unterfeuer 859486671
+    // Richtfeuer Altenbruch (261°):       Oberfeuer Altenbruch 1469421139 + shared Unterfeuer 859486671
+    // Richtfeuer Wehldorf (~311°):        Wehldorf Oberfeuer 1123906848  + shared Unterfeuer 859486671
     handledNodeIds.add(339261891);
     handledNodeIds.add(854975325);
     handledNodeIds.add(340384841);
     handledNodeIds.add(859486671);
     handledNodeIds.add(1469421139);
+    handledNodeIds.add(1123906848);
 
     // Helper: draw one Ober→Unter→fairway range line
     const drawOberUnterLine = (ober, unter, labelKey) => {
@@ -6383,6 +6385,19 @@ async function _karteLoadSeamarks() {
         { node: oberNode,  char_: 'Iso', period: 4, group: 1 },
         { node: unterNode, char_: 'Iso', period: 8, group: 1 },
         'static-altenbruch'
+      );
+    }
+    // Richtfeuer Wehldorf (~311°): Wehldorf Oberfeuer (OSM 1123906848, Iso 8s) als Ober,
+    // teilt das Altenbruch/Wehldorf Unterfeuer (OSM 859486671, Iso 8s) mit Richtfeuer Altenbruch.
+    {
+      const oberNode = nodes.find(n => n.id === 1123906848)
+                     || { id: 1123906848, lat: 53.83010, lon: 8.80168, tags: {} };
+      const unterNode = nodes.find(n => n.id === 859486671)
+                      || { id: 859486671, lat: 53.83364, lon: 8.79480, tags: {} };
+      drawOberUnterLine(
+        { node: oberNode,  char_: 'Iso', period: 8, group: 1 },
+        { node: unterNode, char_: 'Iso', period: 8, group: 1 },
+        'static-wehldorf'
       );
     }
     // Richtfeuer Altenbruch-Wehldorf (261°/081°) is already drawn by the Balje front/rear pair
