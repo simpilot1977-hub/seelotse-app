@@ -5656,35 +5656,36 @@ async function _fetchHWOffset(uuid) {
 
     const hwTime = new Date(pts[hwIdx].timestamp);
     const nwTime = new Date(pts[nwIdx].timestamp);
-    let dtHW = (Date.now() - hwTime.getTime()) / 3600000;
-
-    // Korrektur auf nächsten HW-Zyklus NUR wenn NW bereits beobachtet wurde (nwTime > hwTime)
-    // → Wenn NW noch nicht erreicht: kein Abzug, dtHW bleibt positiv (= nach HW, Ebbe läuft)
-    if (nwTime > hwTime) dtHW -= 12.42;
+    // Näheres HW verwenden (letztes vergangenes vs. aktuell erkanntes)
+    const dtFromPast = (Date.now() - hwTime.getTime()) / 3600000;
+    // Wenn dtFromPast > halber Gezeitenzyklus → nächstes HW ist näher
+    const dtHW = dtFromPast > 6.21 ? dtFromPast - 12.42 : dtFromPast;
 
     return { dtHW, hwTime, nwTime };
   } catch { return null; }
 }
 
 // HW-Offset aus importierter BSH-Datenbank (tideDbs) berechnen
-// Gibt { dtHW, hwTime, nwTime } zurück oder null wenn keine DB-Daten
+// dtHW relativ zum NÄHEREN HW (negativ = vor HW, positiv = nach HW), immer im Tabellenbereich [-6.5, +6.0]
 function _hwOffsetFromDb(dbKey) {
   const db = tideDbs[dbKey];
   if (!db || !db.length) return null;
   const now = Date.now();
-  // Vergangene Ereignisse, neueste zuerst
-  const past = db
-    .map(e => ({ type: e.type, ts: new Date(e.dt).getTime(), dt: e.dt }))
-    .filter(e => e.ts <= now)
-    .sort((a, b) => b.ts - a.ts);
-  const hwEntry = past.find(e => e.type === 'HW');
-  const nwEntry = past.find(e => e.type === 'NW');
-  if (!hwEntry) return null;
-  const hwTime = new Date(hwEntry.dt);
-  const nwTime = nwEntry ? new Date(nwEntry.dt) : null;
-  let dtHW = (now - hwTime.getTime()) / 3600000;
-  // Korrektur auf nächsten HW-Zyklus nur wenn NW bereits nach HW eingetreten
-  if (nwTime && nwTime > hwTime) dtHW -= 12.42;
+  const all = db.map(e => ({ type: e.type, t: new Date(e.dt) })).sort((a, b) => a.t - b.t);
+
+  // Letztes vergangenes HW und nächstes zukünftiges HW
+  const pastHW = [...all].filter(e => e.type === 'HW' && e.t.getTime() <= now).pop();
+  const nextHW = all.find(e => e.type === 'HW' && e.t.getTime() > now);
+  if (!pastHW && !nextHW) return null;
+
+  // dtHW relativ zum näheren HW (kleinerer Absolutbetrag → immer im Tabellenbereich)
+  const dtFromPast = pastHW ? (now - pastHW.t.getTime()) / 3600000 : Infinity;   // positiv
+  const dtToNext   = nextHW ? (now - nextHW.t.getTime()) / 3600000 : -Infinity;  // negativ
+  const dtHW = Math.abs(dtFromPast) <= Math.abs(dtToNext) ? dtFromPast : dtToNext;
+
+  // Für Anzeige: letztes vergangenes HW und letztes vergangenes NW
+  const hwTime = pastHW?.t ?? nextHW?.t;
+  const nwTime = [...all].filter(e => e.type === 'NW' && e.t.getTime() <= now).pop()?.t ?? null;
   return { dtHW, hwTime, nwTime };
 }
 
