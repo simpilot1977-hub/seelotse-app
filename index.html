@@ -5068,7 +5068,7 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, radarlinie: true, schnittpunkte: true };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, radarlinie: true, schnittpunkte: true, kursdistanz: true };
   _karteDarkMode = false;
 
   document.getElementById('app-main').innerHTML = `
@@ -5108,8 +5108,11 @@ function goKarte() {
           <input type="checkbox" id="karte-toggle-radarlinie" checked onchange="karteToggleOverlay('radarlinie',this.checked)"> <span style="color:#7c3aed;font-weight:600">Radarlinie</span>
         </label>
         <div id="karte-radarlinie-sub" style="padding-left:20px;margin-bottom:6px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px">
             <input type="checkbox" id="karte-toggle-schnittpunkte" checked onchange="karteToggleOverlay('schnittpunkte',this.checked)"> Schnittpunkte
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px">
+            <input type="checkbox" id="karte-toggle-kursdistanz" checked onchange="karteToggleOverlay('kursdistanz',this.checked)"> Kurse &amp; Distanzen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 9)</span>
           </label>
         </div>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -5333,6 +5336,53 @@ function goKarte() {
         paint: { 'text-color': '#4c1d95' }
       });
 
+      // ── Kurs & Distanz Labels (Segment-Mitten) ───────────────────────
+      const _kursFeatures = [];
+      for (let i = 0; i < KARTE_WP.length - 1; i++) {
+        const A = KARTE_WP[i], B = KARTE_WP[i+1];
+        const midLat = (A.lat + B.lat) / 2;
+        const midLon = (A.lon + B.lon) / 2;
+        const brg    = _brgDeg(A.lat, A.lon, B.lat, B.lon);
+        const brgIn  = (brg + 180) % 360;
+        const dist   = _hvNm(A.lat, A.lon, B.lat, B.lon);
+        const distStr = (dist < 1 ? dist.toFixed(2) : dist.toFixed(1)) + ' sm';
+        _kursFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [midLon, midLat] },
+          properties: {
+            kursOut: `▶  ${String(Math.round(brg)).padStart(3,'0')}°  ${distStr}`,
+            kursIn:  `◀  ${String(Math.round(brgIn)).padStart(3,'0')}°  ${distStr}`,
+          }
+        });
+      }
+      _karteMap.addSource('kurs', { type: 'geojson', data: { type: 'FeatureCollection', features: _kursFeatures } });
+      _karteMap.addLayer({
+        id: 'kurs-oben', type: 'symbol', source: 'kurs', minzoom: 9,
+        layout: {
+          'text-field': ['get', 'kursOut'],
+          'text-size': 9,
+          'text-font': ['Noto Sans Regular'],
+          'text-anchor': 'bottom',
+          'text-offset': [0, -0.4],
+          'text-optional': true,
+          'text-allow-overlap': false,
+        },
+        paint: { 'text-color': '#4c1d95' }
+      });
+      _karteMap.addLayer({
+        id: 'kurs-unten', type: 'symbol', source: 'kurs', minzoom: 9,
+        layout: {
+          'text-field': ['get', 'kursIn'],
+          'text-size': 9,
+          'text-font': ['Noto Sans Regular'],
+          'text-anchor': 'top',
+          'text-offset': [0, 0.4],
+          'text-optional': true,
+          'text-allow-overlap': false,
+        },
+        paint: { 'text-color': '#7e22ce' }
+      });
+
       // ── Schiffe: COG-Vektor-Layer (GeoJSON LineStrings) ──────────────
       _karteMap.addSource('karte-cog', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       _karteMap.addLayer({
@@ -5502,14 +5552,20 @@ function karteToggleOverlay(type, visible) {
     ['radarlinie-line','radarlinie-dots'].forEach(id => {
       if (_karteMap.getLayer(id)) _karteMap.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
     });
-    // Labels nur zeigen wenn Radarlinie UND Schnittpunkte aktiv
     if (_karteMap.getLayer('radarlinie-labels'))
       _karteMap.setLayoutProperty('radarlinie-labels', 'visibility', (visible && _karteOverlays.schnittpunkte) ? 'visible' : 'none');
+    ['kurs-oben','kurs-unten'].forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setLayoutProperty(id, 'visibility', (visible && _karteOverlays.kursdistanz) ? 'visible' : 'none');
+    });
     const sub = document.getElementById('karte-radarlinie-sub');
     if (sub) sub.style.display = visible ? 'block' : 'none';
   } else if (type === 'schnittpunkte') {
     if (_karteMap.getLayer('radarlinie-labels'))
       _karteMap.setLayoutProperty('radarlinie-labels', 'visibility', (visible && _karteOverlays.radarlinie) ? 'visible' : 'none');
+  } else if (type === 'kursdistanz') {
+    ['kurs-oben','kurs-unten'].forEach(id => {
+      if (_karteMap.getLayer(id)) _karteMap.setLayoutProperty(id, 'visibility', (visible && _karteOverlays.radarlinie) ? 'visible' : 'none');
+    });
   } else if (type === 'seezeichen') {
     const filterPanel = document.getElementById('karte-seezeichen-filter');
     if (filterPanel) {
@@ -5651,6 +5707,10 @@ function karteToggleDark(dark) {
     // Radarlinie labels: dark mode = hell, light mode = dunkel
     if (_karteMap.getLayer('radarlinie-labels'))
       _karteMap.setPaintProperty('radarlinie-labels', 'text-color', dark ? '#c4b5fd' : '#4c1d95');
+    if (_karteMap.getLayer('kurs-oben'))
+      _karteMap.setPaintProperty('kurs-oben', 'text-color', dark ? '#c4b5fd' : '#4c1d95');
+    if (_karteMap.getLayer('kurs-unten'))
+      _karteMap.setPaintProperty('kurs-unten', 'text-color', dark ? '#ddd6fe' : '#7e22ce');
   }
 
   // Overlay panel
