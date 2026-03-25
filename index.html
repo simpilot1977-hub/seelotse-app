@@ -2557,14 +2557,63 @@ const AR_NACH_KEY = { See:'ElbeRacon', BrB:'Brunsbuettel', NOK:'Brunsbuettel', H
 let arManuelleV = ''; // session-only manuelle Geschwindigkeit für Aktuelle Reise
 let arWpSog = {};     // { waypointKey: wahre SOG in kn } – überschreibt berechnete SOG je Wegpunkt
 
-function loadData() {
+// ── IndexedDB: persistenter Hauptspeicher (überlebt App-Updates) ─────────────
+const IDB_NAME = 'seelotse_idb';
+const IDB_VER  = 1;
+let _idb = null;
+
+function _openIDB() {
+  if (_idb) return Promise.resolve(_idb);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, IDB_VER);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains('fahrten'))    db.createObjectStore('fahrten',    { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('eppFahrten')) db.createObjectStore('eppFahrten', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('tideDbs'))    db.createObjectStore('tideDbs',    { keyPath: 'station' });
+    };
+    req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+async function _idbGetAll(store) {
+  const db = await _openIDB();
+  return new Promise((res, rej) => {
+    const req = db.transaction(store, 'readonly').objectStore(store).getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror   = () => rej(req.error);
+  });
+}
+
+async function _idbPutAll(store, items) {
+  const db = await _openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    const s  = tx.objectStore(store);
+    s.clear();
+    items.forEach(item => s.put(item));
+    tx.oncomplete = res;
+    tx.onerror    = () => rej(tx.error);
+  });
+}
+
+// ── fahrten ─────────────────────────────────────────────────────────────────
+async function loadData() {
   try {
+    const rows = await _idbGetAll('fahrten');
+    if (rows && rows.length > 0) { fahrten = rows; return; }
+    // Migration: localStorage → IDB
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) fahrten = JSON.parse(raw);
-  } catch(e) { fahrten = []; }
+    if (raw) { fahrten = JSON.parse(raw); _idbPutAll('fahrten', fahrten).catch(() => {}); }
+  } catch(e) {
+    try { const r = localStorage.getItem(STORAGE_KEY); if (r) fahrten = JSON.parse(r); }
+    catch(e2) { fahrten = []; }
+  }
 }
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(fahrten));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(fahrten)); // sync-Fallback
+  _idbPutAll('fahrten', fahrten).catch(() => {});             // primärer Store
   updateAgenturDatalist();
 }
 function updateAgenturDatalist() {
@@ -2578,25 +2627,44 @@ function updateAgenturDatalist() {
 }
 
 // ── EPP-Datenbank ────────────────────────────────────────────────────────────
-function loadEPPData() {
+async function loadEPPData() {
   try {
+    const rows = await _idbGetAll('eppFahrten');
+    if (rows && rows.length > 0) { eppFahrten = rows; return; }
     const raw = localStorage.getItem(EPP_STORAGE_KEY);
-    if (raw) eppFahrten = JSON.parse(raw);
-  } catch(e) { eppFahrten = []; }
+    if (raw) { eppFahrten = JSON.parse(raw); _idbPutAll('eppFahrten', eppFahrten).catch(() => {}); }
+  } catch(e) {
+    try { const r = localStorage.getItem(EPP_STORAGE_KEY); if (r) eppFahrten = JSON.parse(r); }
+    catch(e2) { eppFahrten = []; }
+  }
 }
 function saveEPPData() {
   localStorage.setItem(EPP_STORAGE_KEY, JSON.stringify(eppFahrten));
+  _idbPutAll('eppFahrten', eppFahrten).catch(() => {});
 }
 
 // ── Gezeiten-Datenbank ──────────────────────────────────────────────────────
-function loadTideDbs() {
+async function loadTideDbs() {
   try {
+    const rows = await _idbGetAll('tideDbs');
+    if (rows && rows.length > 0) {
+      tideDbs = { Cuxhaven:[], Brunsbuettel:[], Hamburg:[] };
+      rows.forEach(r => { if (tideDbs[r.station] !== undefined) tideDbs[r.station] = r.entries; });
+      return;
+    }
     const raw = localStorage.getItem(TIDE_DB_STORAGE_KEY);
-    if (raw) tideDbs = JSON.parse(raw);
-  } catch(e) { tideDbs = { Cuxhaven:[], Brunsbuettel:[], Hamburg:[] }; }
+    if (raw) {
+      tideDbs = JSON.parse(raw);
+      _idbPutAll('tideDbs', Object.entries(tideDbs).map(([station, entries]) => ({ station, entries }))).catch(() => {});
+    }
+  } catch(e) {
+    try { const r = localStorage.getItem(TIDE_DB_STORAGE_KEY); if (r) tideDbs = JSON.parse(r); }
+    catch(e2) { tideDbs = { Cuxhaven:[], Brunsbuettel:[], Hamburg:[] }; }
+  }
 }
 function saveTideDbs() {
   localStorage.setItem(TIDE_DB_STORAGE_KEY, JSON.stringify(tideDbs));
+  _idbPutAll('tideDbs', Object.entries(tideDbs).map(([station, entries]) => ({ station, entries }))).catch(() => {});
 }
 
 function parseBSHTideFile(text) {
@@ -8949,11 +9017,11 @@ function exportExcel() {
 /* ════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════ */
-loadData();
-updateAgenturDatalist();
-loadEPPData();
-loadTideDbs();
-goList();
+(async () => {
+  await Promise.all([loadData(), loadEPPData(), loadTideDbs()]);
+  updateAgenturDatalist();
+  goList();
+})();
 </script>
 
 <!-- EPP Modal ─────────────────────────────────────────────────────── -->
