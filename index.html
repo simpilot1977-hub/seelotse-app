@@ -1876,8 +1876,8 @@ async function fetchPressureHistory(hours) {
     el.style.gap = '16px';
     el.innerHTML =
       _renderPressureChart(ptsPressure, tRange) +
-      (ptsWind.length ? _renderWindChart(ptsWind, tRange) : '<div></div>') +
       (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '<div></div>') +
+      (ptsWind.length ? _renderWindChart(ptsWind, tRange) : '<div></div>') +
       (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>') +
       `<div style="grid-column:1/-1">${_renderPegelChartWithHeader(tRange)}</div>`;
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
