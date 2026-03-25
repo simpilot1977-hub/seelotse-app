@@ -1497,6 +1497,9 @@ function getElbeCurrent(ataDt, waypointKey) {
 
 let _windRefreshTimer     = null;
 let _pressureRefreshTimer = null;
+let _windLastFetch        = null; // Zeitstempel des letzten erfolgreichen Fetches
+const WIND_REFRESH_MS     = 15 * 60 * 1000; // 15 min = 4× pro Stunde
+const WIND_MAX_AGE_MS     = 60 * 60 * 1000; // 1 h = max Datenalter
 let _arMeteo = null; // Letzte Wetterdaten von Cuxhaven für das Umwelt-Dashboard
 
 function _msToKn(ms) { return ms * 1.94384; }
@@ -1662,12 +1665,26 @@ async function fetchWindData() {
     renderAstroDashboard();
   }
 
-  if (meta) meta.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr · Quellen: DWD / Open-Meteo';
+  _windLastFetch = Date.now();
+
+  // Datenalter prüfen: älteste Beobachtungszeit aus allen Stationen ermitteln
+  const obsTs = [results.bakeA?.ts, results.cux?.ts, results.brb?.ts, results.hh?.ts]
+    .filter(Boolean).map(t => new Date(t).getTime()).filter(t => !isNaN(t));
+  const oldestObs = obsTs.length ? Math.min(...obsTs) : null;
+  const obsAgeMin = oldestObs ? Math.round((Date.now() - oldestObs) / 60000) : null;
+  const isStale   = oldestObs && (Date.now() - oldestObs) > WIND_MAX_AGE_MS;
+
+  if (meta) {
+    const ageStr = obsAgeMin != null ? ` · Beobachtung vor ${obsAgeMin} Min.` : '';
+    const staleWarn = isStale ? ' ⚠️ Daten älter als 1 h' : '';
+    meta.textContent = 'Aktualisiert: ' + new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}) + ' Uhr · Quellen: DWD / Open-Meteo' + ageStr + staleWarn;
+    meta.style.color = isStale ? '#dc2626' : '';
+  }
   if (btn) btn.textContent = '↻ Aktualisieren';
 
-  // Auto-refresh alle 10 Minuten
+  // Auto-refresh alle 15 Minuten (= 4× pro Stunde)
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
-  _windRefreshTimer = setTimeout(() => { if (document.getElementById('ar-wind-inner')) fetchWindData(); }, 10 * 60 * 1000);
+  _windRefreshTimer = setTimeout(() => { if (document.getElementById('ar-wind-inner')) fetchWindData(); }, WIND_REFRESH_MS);
 }
 
 // ── Astronomie / Umwelt-Dashboard ────────────────────────────────────────────
@@ -6431,10 +6448,12 @@ function _karteUpdateShips() {
 
   // Elbe-Begrenzungsbox (LV Elbe bis Hamburg)
   const ELBE_BOX = { W:7.9, E:10.2, S:53.3, N:54.3 };
+  const RADARLINIE_MAX_NM = 250 / 1852; // 250 m beiderseits der Radarlinie
   const ships = [...(_aisShips?.values() || [])].filter(s =>
     s.lat !== null && s.lon !== null &&
     s.lon >= ELBE_BOX.W && s.lon <= ELBE_BOX.E &&
-    s.lat >= ELBE_BOX.S && s.lat <= ELBE_BOX.N
+    s.lat >= ELBE_BOX.S && s.lat <= ELBE_BOX.N &&
+    s.elbeDistNm != null && s.elbeDistNm <= RADARLINIE_MAX_NM
   );
 
   // Dropdown aktualisieren
@@ -7305,9 +7324,17 @@ function renderWetterPage() {
   if (sel) sel.value = _pressureStation;
   const title = document.getElementById('pchart-title');
   if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
-  if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
-  setTimeout(() => { fetchWindData(); renderAstroDashboard(); fetchPressureHistory(_pressureHours); }, 0);
+  setTimeout(() => {
+    // Winddaten nur neu laden wenn Daten fehlen oder älter als 15 min
+    const needsRefresh = !_windLastFetch || (Date.now() - _windLastFetch) >= WIND_REFRESH_MS;
+    if (needsRefresh) {
+      if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
+      fetchWindData();
+    }
+    renderAstroDashboard();
+    fetchPressureHistory(_pressureHours);
+  }, 0);
 }
 
 function exportWetterPDF() {
