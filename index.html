@@ -2100,6 +2100,33 @@ function _renderWindChart(pts, tRange) {
   const yOfS = v => padT + (1 - v / sMax) * (H - padT - padB);
   const yOfD = v => padT + (1 - v / 360) * (H - padT - padB);
 
+  // Beaufort bands
+  const BFT = [
+    { from:  0, to:  1, color: '#94a3b8' },
+    { from:  1, to:  4, color: '#86efac' },
+    { from:  4, to:  7, color: '#4ade80' },
+    { from:  7, to: 11, color: '#a3e635' },
+    { from: 11, to: 17, color: '#facc15' },
+    { from: 17, to: 22, color: '#fb923c' },
+    { from: 22, to: 28, color: '#f97316' },
+    { from: 28, to: 34, color: '#ef4444' },
+    { from: 34, to: 41, color: '#dc2626' },
+    { from: 41, to: 48, color: '#9f1239' },
+    { from: 48, to: 56, color: '#7c3aed' },
+    { from: 56, to: 64, color: '#4c1d95' },
+    { from: 64, to:999, color: '#1e1b4b' },
+  ];
+  let bftBands = '', bftLabels = '';
+  BFT.forEach((b, i) => {
+    const vTop = Math.min(b.to, sMax), vBot = Math.max(b.from, 0);
+    if (vTop <= 0 || vBot >= sMax) return;
+    const yTop = yOfS(vTop), yBot = yOfS(vBot);
+    if (yTop >= yBot) return;
+    bftBands += `<rect x="${padL}" y="${yTop.toFixed(1)}" width="${W-padL-padR}" height="${(yBot-yTop).toFixed(1)}" fill="${b.color}" opacity="0.13"/>`;
+    const yMid = ((yTop + yBot) / 2 + 3).toFixed(1);
+    bftLabels += `<text x="${padL+3}" y="${yMid}" font-size="7.5" fill="${b.color}" opacity="0.75" font-weight="700">Bft ${i}</text>`;
+  });
+
   let gridLines = '', yLabels = '', yRLabels = '';
   for (let i = 0; i <= 4; i++) {
     const v = sMax * i / 4;
@@ -2131,6 +2158,7 @@ function _renderWindChart(pts, tRange) {
       <span style="color:#9333ea">- - Windrichtung</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      ${bftBands}${bftLabels}
       ${gridLines}${yLabels}${yRLabels}${xLabels}
       <polyline points="${speedLinePts}" fill="none" stroke="#1d6fa5" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
       ${dirPathD ? `<path d="${dirPathD}" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
