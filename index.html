@@ -1894,13 +1894,13 @@ function _renderPegelChartWithHeader(tRange) {
   const currentRow = PEGEL_STATIONS.map(st => {
     const pts = _pegelData[st.key] || [];
     const last = pts[pts.length - 1];
-    const val = last?.v;
+    const val = (last?.v != null && st.skn != null) ? last.v - st.skn : null;
     return `<span style="color:${st.color};font-weight:700">${st.label}: <span style="color:var(--navy)">${val != null ? val.toFixed(0) : '–'} cm</span></span>`;
   }).join('<span style="color:var(--border)"> · </span>');
   return `<div>
     <div style="font-size:10px;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
       ${currentRow}
-      <span style="font-size:9px;color:var(--text-muted);margin-left:auto">ü. PN</span>
+      <span style="font-size:9px;color:var(--text-muted);margin-left:auto">ü. SKN</span>
     </div>
     ${_renderPegelChart(tRange)}
   </div>`;
@@ -2214,12 +2214,15 @@ function _renderPegelCurrent() {
 function _renderPegelChart(tRange) {
   const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 34;
   const tMin = tRange.min, tMax = tRange.max;
-  const allVals = PEGEL_STATIONS.flatMap(st => (_pegelData[st.key] || []).map(p => p.v)).filter(v => v != null);
+  // Alle Werte relativ zu station-eigenem SKN (= Seekartennull)
+  const allVals = PEGEL_STATIONS.flatMap(st =>
+    (_pegelData[st.key] || []).map(p => p.v != null ? p.v - (st.skn ?? 0) : null)
+  ).filter(v => v != null);
   if (!allVals.length) return '<span style="color:var(--text-muted);font-size:12px">Keine Pegeldaten verfügbar</span>';
   const vMin0 = Math.min(...allVals), vMax0 = Math.max(...allVals);
   const vCenter = (vMin0 + vMax0) / 2;
   const vSpread = Math.max(vMax0 - vMin0, 80);
-  const yMin = vCenter - vSpread / 2 - vSpread * 0.12;
+  const yMin = Math.min(vCenter - vSpread / 2 - vSpread * 0.12, -20); // SKN sichtbar lassen
   const yMax = vCenter + vSpread / 2 + vSpread * 0.12;
   const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
   const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
@@ -2232,39 +2235,35 @@ function _renderPegelChart(tRange) {
   }
   const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
   const lines = PEGEL_STATIONS.map(st => {
+    const skn = st.skn ?? 0;
     const pts = (_pegelData[st.key] || []).filter(p => p.v != null && p.t.getTime() >= tMin);
     if (!pts.length) return '';
-    const ptStr = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+    const ptStr = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v - skn).toFixed(1)}`).join(' ');
     const last = pts[pts.length - 1];
     return `<polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
-      <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v).toFixed(1)}" r="3" fill="${st.color}"/>`;
+      <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v - skn).toFixed(1)}" r="3" fill="${st.color}"/>`;
   }).join('');
 
-  // Referenzlinien: SKN (LAT), NN, MThw, MTnw
+  // Referenzlinien in SKN-relativen cm (skn→0, nn→nn-skn, mthw/mtnw analog)
   let refLines = '';
-  // Beschriftungs-x-Offsets je Station, damit sie sich nicht überlappen
-  const labelXOff = [3, 40, 77];
+  const labelXOff = [3, 40, 77]; // Beschriftungs-x-Offset je Station
   PEGEL_STATIONS.forEach((st, si) => {
+    const skn = st.skn ?? 0;
     const lx = padL + labelXOff[si];
-    if (st.skn != null && st.skn >= yMin && st.skn <= yMax) {
-      const y = yOf(st.skn).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.2" stroke-dasharray="8 3" opacity=".75"/>`;
-      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".85">SKN</text>`;
-    }
-    if (st.nn != null && st.nn >= yMin && st.nn <= yMax) {
-      const y = yOf(st.nn).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1" stroke-dasharray="3 4" opacity=".55"/>`;
-      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".70">NN</text>`;
-    }
-    if (st.mthw != null && st.mthw >= yMin && st.mthw <= yMax) {
-      const y = yOf(st.mthw).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.4" stroke-dasharray="10 4" opacity=".65"/>`;
-      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".80">MThw</text>`;
-    }
-    if (st.mtnw != null && st.mtnw >= yMin && st.mtnw <= yMax) {
-      const y = yOf(st.mtnw).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.4" stroke-dasharray="10 4" opacity=".65"/>`;
-      refLines += `<text x="${lx}" y="${(parseFloat(y)+8).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".80">MTnw</text>`;
+    const refs = [
+      { v: 0,              label: 'SKN', dash: '8 3',  w: 1.2, op: .80, labelPos: 'above' },
+      { v: (st.nn  ??skn)-skn, label: 'NN',  dash: '3 4',  w: 1.0, op: .55, labelPos: 'above' },
+      { v: (st.mthw??skn)-skn, label: 'MThw',dash: '10 4', w: 1.4, op: .65, labelPos: 'above' },
+      { v: (st.mtnw??skn)-skn, label: 'MTnw',dash: '10 4', w: 1.4, op: .65, labelPos: 'below' },
+    ];
+    for (const r of refs) {
+      if (r.v == null || r.v < yMin || r.v > yMax) continue;
+      // Nur zeichnen wenn Wert definiert ist
+      if (r.label !== 'SKN' && st[r.label.toLowerCase()] == null && r.label !== 'NN') continue;
+      const y = yOf(r.v).toFixed(1);
+      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="${r.w}" stroke-dasharray="${r.dash}" opacity="${r.op}"/>`;
+      const ty = r.labelPos === 'above' ? (parseFloat(y)-2).toFixed(1) : (parseFloat(y)+8).toFixed(1);
+      refLines += `<text x="${lx}" y="${ty}" font-size="7.5" font-weight="700" fill="${st.color}" opacity="${r.op + 0.1}">${r.label}</text>`;
     }
   });
 
@@ -2272,7 +2271,7 @@ function _renderPegelChart(tRange) {
   return `<div>
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:12px;flex-wrap:wrap">
       ${legend}
-      <span style="font-weight:400;margin-left:auto">cm ü. PN · – – SKN/LAT · ·· NN · — MThw/MTnw</span>
+      <span style="font-weight:400;margin-left:auto">cm ü. SKN (LAT=0) · – – SKN · ·· NN · — MThw/MTnw</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
       ${gridLines}${yLabels}${xLabels}${refLines}${lines}
