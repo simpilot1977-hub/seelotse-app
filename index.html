@@ -4323,6 +4323,34 @@ const ELBE_WP_IDX = { racon: 1, cuxhaven: 9, brunsbuettel: 18, hamburg: 51 };
 const _etSeg = []; for (let i=0;i<ELBE_TRACK.length-1;i++) _etSeg.push(_hvNm(ELBE_TRACK[i].lat,ELBE_TRACK[i].lon,ELBE_TRACK[i+1].lat,ELBE_TRACK[i+1].lon));
 const _etCum = [0]; for (const d of _etSeg) _etCum.push(_etCum[_etCum.length-1]+d);
 
+// Fahrwasser-Tonnen: wp-Index aus KARTE_WP → Tn-Nummer (ungerade = grüne Steuerbordtonne)
+// Die nummerierten Tonnen entsprechen den Steuerbord-Marken (grün) für einkommenden Verkehr;
+// rote Backbord-Tonnen haben die nächste gerade Nummer.
+const ELBE_TONNEN = [
+  { tn:  1, wpIdx:  2 }, { tn:  5, wpIdx:  3 }, { tn: 19, wpIdx:  4 },
+  { tn: 23, wpIdx:  5 }, { tn: 27, wpIdx:  7 }, { tn: 37, wpIdx: 12 },
+  { tn: 41, wpIdx: 13 }, { tn: 43, wpIdx: 14 }, { tn: 49, wpIdx: 15 },
+  { tn: 53, wpIdx: 16 }, { tn: 57, wpIdx: 17 }, { tn: 61, wpIdx: 19 },
+  { tn: 63, wpIdx: 20 }, { tn: 67, wpIdx: 21 }, { tn: 81, wpIdx: 25 },
+  { tn: 85, wpIdx: 26 }, { tn: 89, wpIdx: 29 }, { tn: 93, wpIdx: 31 },
+  { tn: 95, wpIdx: 33 }, { tn:111, wpIdx: 39 }, { tn:115, wpIdx: 41 },
+].map(m => ({ ...m, trackNm: _etCum[m.wpIdx] }));
+
+// Nächste Tonne zu einer trackNm-Position
+// Einkommend (in): grüne Steuerbord-Tonne (ungerade), Ausgehend (out): rote Backbord-Tonne (gerade = tn+1)
+function _nearestTonne(trackNm, dir) {
+  if (!trackNm && trackNm !== 0) return null;
+  let best = null, bestDist = Infinity;
+  for (const t of ELBE_TONNEN) {
+    const d = Math.abs(t.trackNm - trackNm);
+    if (d < bestDist) { bestDist = d; best = t; }
+  }
+  if (!best) return null;
+  if (dir === 'out') return { label: `Tn.${best.tn + 1}`, css: '#dc2626' }; // rot
+  if (dir === 'in')  return { label: `Tn.${best.tn}`,     css: '#16a34a' }; // grün
+  return null; // Unbekannte Richtung → Stromkilometer anzeigen
+}
+
 // Stromkilometer ↔ Tracklänge (piecewise linear über Referenzpunkte)
 const _KM_REFS = () => [
   [_etCum[ELBE_WP_IDX.racon],            755],   // südlich Tn.Elbe ≈ Racon (km 755)
@@ -4802,10 +4830,16 @@ function _aisRenderTable() {
     const zoneBadge = zone === 'fahrwasser'
       ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#dbeafe;color:#1d4ed8;font-weight:700;white-space:nowrap">⛵ FW</span>`
       : `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#f0fdf4;color:#15803d;font-weight:700;white-space:nowrap">⚓ Reede</span>`;
+    const tonneBadge = (() => {
+      const t = _nearestTonne(s.trackNm, s.dir);
+      if (t) return `<br><span style="font-size:10px;font-weight:700;color:${t.css}">${t.label}</span>`;
+      // Fallback: Stromkilometer wenn keine Tonne zuordenbar
+      return '';
+    })();
     return `<tr>
       <td><div class="ais-ship-name">${dot}${tE} ${s.name || s.mmsi}</div><div>${dest}<span class="ais-type-badge">${tL}</span> ${zoneBadge}</div></td>
       <td style="font-size:11px;white-space:nowrap">${len}<br><span style="color:var(--text-muted)">${drg}</span></td>
-      <td class="ais-pos">${posLabel(s.trackNm)}</td>
+      <td class="ais-pos">${posLabel(s.trackNm)}${tonneBadge}</td>
       <td class="ais-sog">${sog}</td>
       ${wpEtaCells(s, wps)}
       ${customEtaCell(s)}
@@ -5853,7 +5887,7 @@ async function _karteLoadStroem() {
     { tableIdx:6, dt:dtStP },  // Tn119–HH   (wp44–wp51)
   ];
 
-  // Farbe je Segment bestimmen
+  // Farbe je Segment bestimmen (Segmente 1-6; Segment 0 bekommt eigene Behandlung)
   const segColors = segments.map(({ tableIdx, dt }) => {
     if (dt === null) return '#94a3b8';
     const r = _stromdatenLookup(tableIdx, dt);
@@ -5863,7 +5897,43 @@ async function _karteLoadStroem() {
   // Linienfortschritts-Fraktionen für alle Wegpunkte berechnen
   const fracs = _elbeSegFracs();
 
-  // === STAUWASSER: erst berechnen, dann Gradient damit bauen ===
+  // === ÄUSSERE ELBE: Zeitinterpolation Racon→Kugelbake + Geschwindigkeitsgrenzen ===
+  // HW/NW Cuxhaven = Stauwasser bei Racon (E3); Kugelbake: wie Tabelle (STAU_EF=-3.75h)
+  // Zeitlich: dtHW_eff(pos) = dtCux − (1−t)·3.75  [t=0 Racon, t=1 Kugelbake]
+  // Geschwindigkeit: westlich Tn.7 max 1 kn, Tn.7–Tn.17 max 2 kn, östlich Tn.17 voll
+  const OUTER_RACON_OFFSET = 3.75; // h Zeitversatz Racon vs. Kugelbake-Tabelle
+  const fRacon     = fracs[0];
+  const fKugelbake = fracs[8];
+  // Tn.7 und Tn.17 linear interpoliert zwischen wp3 (Tn.5) und wp4 (≈Tn.19)
+  const fTn7  = fracs[3] + (2  / 14) * (fracs[4] - fracs[3]);
+  const fTn17 = fracs[3] + (12 / 14) * (fracs[4] - fracs[3]);
+
+  function _outerDtEff(frac) {
+    const t = Math.min(1, Math.max(0, (frac - fRacon) / (fKugelbake - fRacon)));
+    return dtCux - (1 - t) * OUTER_RACON_OFFSET;
+  }
+  function _outerMaxKn(frac) {
+    if (frac < fTn7)  return 1.0;
+    if (frac < fTn17) return 2.0;
+    return Infinity;
+  }
+  function _outerColor(frac, capOverride) {
+    if (dtCux === null) return '#94a3b8';
+    const dt = frac <= fKugelbake ? _outerDtEff(frac) : dtCux;
+    const r  = _stromdatenLookup(0, dt);
+    const kn = Math.min(r.strom_kn, capOverride ?? _outerMaxKn(frac));
+    return _stroemColorV2(kn, r.phase);
+  }
+
+  // Kentering-Front im äußeren Bereich: t_stau ∈ (0,1) → Frontposition zwischen Racon und Kugelbake
+  let outerStauFrac = null;
+  if (dtCux !== null) {
+    const t_stau = -dtCux / OUTER_RACON_OFFSET;
+    if (t_stau > 1e-6 && t_stau < 1 - 1e-6)
+      outerStauFrac = fRacon + t_stau * (fKugelbake - fRacon);
+  }
+
+  // === STAUWASSER für Segmente 1-6 (innerhalb der Tabellen-Bezugsorte) ===
   const STAU_EF = [-3.75, -4.50, -4.25, -5.25, -4.75, -5.50, -5.50];
   const segDtsArr = [dtCux, dtBrb, dtBrb, dtGlk, dtGlk, dtStP, dtStP];
 
@@ -5872,9 +5942,9 @@ async function _karteLoadStroem() {
     segDtsArr[i] !== null ? (s - segDtsArr[i]) * 60 : null
   );
 
-  // Alle Phasenübergänge finden (Vorzeichen-Wechsel → Kentering-Front)
-  const stauFracs = [];      // line-progress-Wert der Kentering
-  const stauTransIdxs = [];  // Segment-Index wo Übergang liegt
+  // Alle Phasenübergänge finden (Segmente 1-6; Segment 0 gesondert über outerStauFrac)
+  const stauFracs    = [];
+  const stauTransIdxs = [];
   for (let i = 1; i < STAU_EF.length; i++) {
     const prev = minToStau[i-1], curr = minToStau[i];
     if (prev === null || curr === null) continue;
@@ -5886,33 +5956,71 @@ async function _karteLoadStroem() {
       stauTransIdxs.push(i);
     }
   }
+  // Kentering-Front im äußeren Bereich hinzufügen (für Marker)
+  if (outerStauFrac !== null) stauFracs.unshift(outerStauFrac);
 
-  // Gradient: Übergänge liegen exakt an Kentering-Punkten, nicht an Segmentgrenzen
-  // stauTransSet: segmentIndex → stauFrac
-  const stauTransMap = new Map(stauTransIdxs.map((si, j) => [si, stauFracs[j]]));
+  // === GRADIENT AUFBAUEN ===
+  const EPS = 0.0002;
+  // stauFracs wurde ggf. mit outerStauFrac vorne ergänzt → Offset berücksichtigen
+  const outerOffset = outerStauFrac !== null ? 1 : 0;
+  const stauTransMapFixed = new Map();
+  stauTransIdxs.forEach((si, j) => {
+    stauTransMapFixed.set(si, stauFracs[j + outerOffset]);
+  });
+
   const grad = ['interpolate', ['linear'], ['line-progress']];
-  grad.push(0, segColors[0]);
-  for (let i = 0; i < segments.length; i++) {
+
+  // Segment 0: Äußere Elbe mit Zeitinterpolation und Geschwindigkeitsgrenzen
+  const outerEndFrac = fracs[14]; // Ende Segment 0 (bei Tn.43/wp14)
+
+  // Stops für äußeres Segment in aufsteigender Reihenfolge der Fraktionen
+  // Grundpunkte: Racon, Tn.7, Tn.17, Kugelbake, wp14
+  const outerStops = [
+    { f: fRacon,          cap: 1.0      },
+    { f: fTn7  - EPS,     cap: 1.0      },
+    { f: fTn7,            cap: 2.0      },  // Geschwindigkeitsgrenze
+    { f: fTn17 - EPS,     cap: 2.0      },
+    { f: fTn17,           cap: Infinity },  // volle Geschwindigkeit
+    { f: fKugelbake,      cap: Infinity },
+    { f: outerEndFrac - EPS, cap: Infinity },
+  ];
+  // Kentering-Front einfügen
+  if (outerStauFrac !== null) {
+    outerStops.push({ f: outerStauFrac - EPS, cap: _outerMaxKn(outerStauFrac - EPS), isStauPre: true });
+    outerStops.push({ f: outerStauFrac,        cap: _outerMaxKn(outerStauFrac),       isStauPost: true });
+  }
+  outerStops.sort((a, b) => a.f - b.f);
+
+  grad.push(0, _outerColor(outerStops[0].f, outerStops[0].cap));
+  for (const stop of outerStops) {
+    grad.push(stop.f, _outerColor(stop.f, stop.cap));
+  }
+  // Scharfer Übergang von Segment 0 auf Segment 1 am Segment-Ende (fracs[14])
+  const colorAtOuterEnd = _outerColor(outerEndFrac, Infinity);
+  if (stauTransMapFixed.has(1)) {
+    grad.push(outerEndFrac, colorAtOuterEnd); // äußere Farbe läuft weiter bis Stau in Seg 1
+  } else {
+    grad.push(outerEndFrac, segColors[1]); // direkte Transition auf Segment 1
+  }
+
+  // Segmente 1-6: innere Elbe (Brunsbüttel bis Hamburg)
+  for (let i = 1; i < segments.length; i++) {
     const bisWp = ELBE_STROMDATEN[segments[i].tableIdx].bisWp;
     const segEndFrac = fracs[bisWp];
     const isLast = i === segments.length - 1;
 
-    if (stauTransMap.has(i)) {
-      // Kentering innerhalb dieses Segments:
-      // Farbe des Vorgänger-Segments bis zum Kentering-Punkt fortführen
-      const sf = stauTransMap.get(i);
-      const prevColor = i > 0 ? segColors[i-1] : segColors[i];
-      grad.push(sf - 0.0002, prevColor);
-      grad.push(sf, segColors[i]);          // scharfer Übergang am Kentering-Punkt
-      grad.push(segEndFrac - 0.0002, segColors[i]);
+    if (stauTransMapFixed.has(i)) {
+      const sf = stauTransMapFixed.get(i);
+      const prevColor = i === 1 ? colorAtOuterEnd : segColors[i-1];
+      grad.push(sf - EPS, prevColor);
+      grad.push(sf, segColors[i]);
+      grad.push(segEndFrac - EPS, segColors[i]);
       if (!isLast) grad.push(segEndFrac, segColors[i+1]);
       else grad.push(Math.min(1, segEndFrac), segColors[i]);
-    } else if (!isLast && stauTransMap.has(i + 1)) {
-      // Nächstes Segment trägt den Kentering — hier keinen Übergang setzen,
-      // damit die aktuelle Farbe nahtlos bis zum stauFrac weiterläuft
+    } else if (!isLast && stauTransMapFixed.has(i + 1)) {
       grad.push(segEndFrac, segColors[i]);
     } else {
-      grad.push(segEndFrac - 0.0002, segColors[i]);
+      grad.push(segEndFrac - EPS, segColors[i]);
       if (!isLast) grad.push(segEndFrac, segColors[i+1]);
       else grad.push(Math.min(1, segEndFrac), segColors[i]);
     }
