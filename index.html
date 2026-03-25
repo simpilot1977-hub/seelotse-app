@@ -1890,6 +1890,13 @@ async function fetchPressureHistory(hours) {
   _pressureRefreshTimer = setTimeout(() => { if (document.getElementById('ar-pressure-inner')) fetchPressureHistory(); }, 10 * 60 * 1000);
 }
 
+if (!window._pegelVisible) window._pegelVisible = Object.fromEntries(PEGEL_STATIONS.map(s=>[s.key,true]));
+function _togglePegelStation(key, show) {
+  window._pegelVisible[key] = show;
+  const g = document.getElementById('pegel-group-' + key);
+  if (g) g.style.display = show ? '' : 'none';
+}
+
 function _renderPegelChartWithHeader(tRange) {
   const currentRow = PEGEL_STATIONS.map(st => {
     const pts = _pegelData[st.key] || [];
@@ -1897,11 +1904,18 @@ function _renderPegelChartWithHeader(tRange) {
     const val = (last?.v != null && st.skn != null) ? last.v - st.skn : null;
     return `<span style="color:${st.color};font-weight:700">${st.label}: <span style="color:var(--navy)">${val != null ? val.toFixed(0) : '–'} cm</span></span>`;
   }).join('<span style="color:var(--border)"> · </span>');
+  const checkboxes = PEGEL_STATIONS.map(st => {
+    const vis = window._pegelVisible[st.key] !== false;
+    return `<label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;font-size:10px;color:${st.color};font-weight:600">
+      <input type="checkbox" ${vis ? 'checked' : ''} onchange="_togglePegelStation('${st.key}',this.checked)" style="accent-color:${st.color};width:13px;height:13px">
+      ${st.label}</label>`;
+  }).join('');
   return `<div>
-    <div style="font-size:10px;margin-bottom:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center">
+    <div style="font-size:10px;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       ${currentRow}
       <span style="font-size:9px;color:var(--text-muted);margin-left:auto">ü. SKN</span>
     </div>
+    <div style="display:flex;gap:12px;margin-bottom:4px;flex-wrap:wrap">${checkboxes}</div>
     ${_renderPegelChart(tRange)}
   </div>`;
 }
@@ -2212,69 +2226,209 @@ function _renderPegelCurrent() {
 }
 
 function _renderPegelChart(tRange) {
-  const W = 700, H = 240, padL = 46, padR = 10, padT = 12, padB = 34;
+  // ─── Layout ──────────────────────────────────────────────────────────────
+  const W = 760, H = 280;
+  const padL = 52, padR = 92, padT = 18, padB = 36; // padR: Platz für Referenzlinien-Labels
   const tMin = tRange.min, tMax = tRange.max;
-  // Alle Werte relativ zu station-eigenem SKN (= Seekartennull)
+  const TICK = 4; // Tick-Länge px
+
+  // ─── Datenbasis (cm ü. SKN je Station) ───────────────────────────────────
   const allVals = PEGEL_STATIONS.flatMap(st =>
     (_pegelData[st.key] || []).map(p => p.v != null ? p.v - (st.skn ?? 0) : null)
   ).filter(v => v != null);
   if (!allVals.length) return '<span style="color:var(--text-muted);font-size:12px">Keine Pegeldaten verfügbar</span>';
+
   const vMin0 = Math.min(...allVals), vMax0 = Math.max(...allVals);
   const vCenter = (vMin0 + vMax0) / 2;
   const vSpread = Math.max(vMax0 - vMin0, 80);
-  const yMin = Math.min(vCenter - vSpread / 2 - vSpread * 0.12, -20); // SKN sichtbar lassen
-  const yMax = vCenter + vSpread / 2 + vSpread * 0.12;
-  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
-  const yOf = v => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
-  let gridLines = '', yLabels = '';
-  for (let i = 0; i <= 4; i++) {
-    const v = yMin + (yMax - yMin) * i / 4;
-    const y = yOf(v).toFixed(1);
-    gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
-    yLabels   += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(0)}</text>`;
-  }
-  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
-  const lines = PEGEL_STATIONS.map(st => {
-    const skn = st.skn ?? 0;
-    const pts = (_pegelData[st.key] || []).filter(p => p.v != null && p.t.getTime() >= tMin);
-    if (!pts.length) return '';
-    const ptStr = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v - skn).toFixed(1)}`).join(' ');
-    const last = pts[pts.length - 1];
-    return `<polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
-      <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v - skn).toFixed(1)}" r="3" fill="${st.color}"/>`;
-  }).join('');
+  const yMin = Math.min(vCenter - vSpread * 0.62, -20); // etwas Luft nach unten, SKN sichtbar
+  const yMax = vCenter + vSpread * 0.62;
+  const xOf = t  => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
+  const yOf = v  => padT + (1 - (v - yMin) / (yMax - yMin)) * (H - padT - padB);
+  const xR  = W - padR; // rechter Rand Plotbereich
+  const yBot = H - padB; // unterer Rand Plotbereich
 
-  // Referenzlinien in SKN-relativen cm (skn→0, nn→nn-skn, mthw/mtnw analog)
+  // ─── Gitternetz ──────────────────────────────────────────────────────────
+  // Saubere runde Gitter-Schritte
+  const rawStep = (yMax - yMin) / 5;
+  const step = Math.pow(10, Math.floor(Math.log10(rawStep))) *
+               (rawStep / Math.pow(10, Math.floor(Math.log10(rawStep))) > 3 ? 5 :
+                rawStep / Math.pow(10, Math.floor(Math.log10(rawStep))) > 1.5 ? 2 : 1);
+  const vStart = Math.ceil(yMin / step) * step;
+  let gridLines = '', yLabels = '';
+  for (let v = vStart; v <= yMax + 0.001; v += step) {
+    const y = yOf(v).toFixed(1);
+    const isZero = Math.abs(v) < 0.1;
+    gridLines += `<line x1="${padL}" y1="${y}" x2="${xR}" y2="${y}"
+      stroke="${isZero ? '#94a3b8' : '#e2e8f0'}" stroke-width="${isZero ? 1 : 0.5}"/>`;
+    // Tick links
+    gridLines += `<line x1="${padL - TICK}" y1="${y}" x2="${padL}" y2="${y}" stroke="#64748b" stroke-width="0.8"/>`;
+    yLabels += `<text x="${padL - TICK - 3}" y="${(parseFloat(y) + 3.5).toFixed(1)}"
+      text-anchor="end" font-size="9" font-family="'Inter',system-ui,sans-serif" fill="#334155">${v.toFixed(0)}</text>`;
+  }
+
+  // ─── Achsenrahmen ─────────────────────────────────────────────────────────
+  const axes = `
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#334155" stroke-width="1.2"/>
+    <line x1="${padL}" y1="${yBot}" x2="${xR}"   y2="${yBot}" stroke="#334155" stroke-width="1.2"/>`;
+
+  // ─── X-Achse Labels ───────────────────────────────────────────────────────
+  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
+
+  // ─── Y-Achsen-Titel (rotiert) ─────────────────────────────────────────────
+  const yTitle = `<text transform="rotate(-90,${(padL-38).toFixed(0)},${((padT+yBot)/2).toFixed(0)})"
+    x="${(padL-38).toFixed(0)}" y="${((padT+yBot)/2).toFixed(0)}"
+    text-anchor="middle" font-size="8.5" font-family="'Inter',system-ui,sans-serif"
+    fill="#64748b" letter-spacing="0.3">Wasserstand [cm ü. SKN]</text>`;
+
+  // ─── Referenzlinien ───────────────────────────────────────────────────────
+  // Labels im rechten Rand (padR) je Station gestaffelt: lx versetzt
+  const REF_LABEL_X = [xR + 3, xR + 31, xR + 59];
   let refLines = '';
-  const labelXOff = [3, 40, 77]; // Beschriftungs-x-Offset je Station
+  // Clip-Rect für Referenzlinien (nur innerhalb Plot-Bereich)
+  refLines += `<clipPath id="cp-plot"><rect x="${padL}" y="${padT}" width="${xR-padL}" height="${yBot-padT}"/></clipPath>`;
+
+  // Referenz-Definitionen: label, dash, Linienstärke, opacity
+  const REF_DEF = [
+    { key:'skn',  vFn: skn => 0,           label:'SKN',  dash:'4 3',  w:0.9, op:0.70 },
+    { key:'nn',   vFn:(skn,st)=>st.nn  != null ? st.nn  - skn : null, label:'NN',   dash:'2 3',  w:0.8, op:0.45 },
+    { key:'mthw', vFn:(skn,st)=>st.mthw != null ? st.mthw - skn : null, label:'MThw', dash:'8 3',  w:1.0, op:0.60 },
+    { key:'mtnw', vFn:(skn,st)=>st.mtnw != null ? st.mtnw - skn : null, label:'MTnw', dash:'8 3',  w:1.0, op:0.60 },
+  ];
   PEGEL_STATIONS.forEach((st, si) => {
     const skn = st.skn ?? 0;
-    const lx = padL + labelXOff[si];
-    const refs = [
-      { v: 0,              label: 'SKN', dash: '8 3',  w: 1.2, op: .80, labelPos: 'above' },
-      { v: (st.nn  ??skn)-skn, label: 'NN',  dash: '3 4',  w: 1.0, op: .55, labelPos: 'above' },
-      { v: (st.mthw??skn)-skn, label: 'MThw',dash: '10 4', w: 1.4, op: .65, labelPos: 'above' },
-      { v: (st.mtnw??skn)-skn, label: 'MTnw',dash: '10 4', w: 1.4, op: .65, labelPos: 'below' },
-    ];
-    for (const r of refs) {
-      if (r.v == null || r.v < yMin || r.v > yMax) continue;
-      // Nur zeichnen wenn Wert definiert ist
-      if (r.label !== 'SKN' && st[r.label.toLowerCase()] == null && r.label !== 'NN') continue;
-      const y = yOf(r.v).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="${r.w}" stroke-dasharray="${r.dash}" opacity="${r.op}"/>`;
-      const ty = r.labelPos === 'above' ? (parseFloat(y)-2).toFixed(1) : (parseFloat(y)+8).toFixed(1);
-      refLines += `<text x="${lx}" y="${ty}" font-size="7.5" font-weight="700" fill="${st.color}" opacity="${r.op + 0.1}">${r.label}</text>`;
+    const lx  = REF_LABEL_X[si];
+    for (const rd of REF_DEF) {
+      const v = rd.vFn(skn, st);
+      if (v == null || v < yMin || v > yMax) continue;
+      const y = yOf(v).toFixed(1);
+      refLines += `<line x1="${padL}" y1="${y}" x2="${xR + 2}" y2="${y}"
+        stroke="${st.color}" stroke-width="${rd.w}" stroke-dasharray="${rd.dash}" opacity="${rd.op}"
+        clip-path="url(#cp-plot)"/>`;
+      // Kurzer Überhang rechts als Tick
+      refLines += `<line x1="${xR}" y1="${y}" x2="${xR+TICK}" y2="${y}"
+        stroke="${st.color}" stroke-width="${rd.w}" opacity="${rd.op}"/>`;
+      // Label rechts, mittig auf der Linie
+      refLines += `<text x="${lx}" y="${(parseFloat(y)+3.5).toFixed(1)}"
+        font-size="7.5" font-family="'Inter',system-ui,sans-serif"
+        font-weight="600" fill="${st.color}" opacity="${rd.op + 0.15}">${rd.label}</text>`;
     }
   });
 
-  const legend = PEGEL_STATIONS.map(st => `<span style="color:${st.color}">— ${st.label}</span>`).join('');
+  // ─── Station Groups: Füllung + Kurve ─────────────────────────────────────
+  let defs = '<defs>';
+  let stationGroups = '';
+  PEGEL_STATIONS.forEach(st => {
+    const skn = st.skn ?? 0;
+    const vis = window._pegelVisible?.[st.key] !== false ? '' : ' style="display:none"';
+    const pts = (_pegelData[st.key] || []).filter(p => p.v != null && p.t.getTime() >= tMin);
+    if (!pts.length) return;
+
+    const xyPts = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v-skn).toFixed(1)}`);
+    const ptStr = xyPts.join(' ');
+    const x0    = xOf(pts[0].t.getTime()).toFixed(1);
+    const xN    = xOf(pts[pts.length-1].t.getTime()).toFixed(1);
+    const last  = pts[pts.length-1];
+
+    let fills = '';
+    // Füllung oberhalb MThw (rot/transparent) ─ clipPath: oberhalb MThw-Linie
+    if (st.mthw != null) {
+      const mthwV = st.mthw - skn;
+      if (mthwV > yMin && mthwV < yMax) {
+        const yMthw = yOf(mthwV).toFixed(1);
+        const cid = `cp-hi-${st.key}`;
+        defs += `<clipPath id="${cid}"><rect x="${padL}" y="${padT}" width="${xR-padL}" height="${(parseFloat(yMthw)-padT).toFixed(1)}"/></clipPath>`;
+        fills += `<polygon points="${x0},${yMthw} ${ptStr} ${xN},${yMthw}" fill="#dc2626" opacity="0.18" clip-path="url(#${cid})"/>`;
+      }
+    }
+    // Füllung unterhalb MTnw (rot/transparent) ─ clipPath: unterhalb MTnw-Linie
+    if (st.mtnw != null) {
+      const mtnwV = st.mtnw - skn;
+      if (mtnwV > yMin && mtnwV < yMax) {
+        const yMtnw = yOf(mtnwV).toFixed(1);
+        const cid = `cp-lo-${st.key}`;
+        defs += `<clipPath id="${cid}"><rect x="${padL}" y="${yMtnw}" width="${xR-padL}" height="${(yBot-parseFloat(yMtnw)).toFixed(1)}"/></clipPath>`;
+        fills += `<polygon points="${x0},${yMtnw} ${ptStr} ${xN},${yMtnw}" fill="#dc2626" opacity="0.18" clip-path="url(#${cid})"/>`;
+      }
+    }
+
+    // ─── Extremwerte markieren ──────────────────────────────────────────────
+    let extremeMarks = '';
+    const maxPt = pts.reduce((a, b) => (b.v > a.v ? b : a));
+    const minPt = pts.reduce((a, b) => (b.v < a.v ? b : a));
+    const maxV  = maxPt.v - skn;
+    const minV  = minPt.v - skn;
+
+    // Maximum: Abstand zu MThw
+    if (st.mthw != null) {
+      const mthwV  = st.mthw - skn;
+      const delta  = maxV - mthwV;
+      const xM     = xOf(maxPt.t.getTime());
+      const yM     = yOf(maxV);
+      const yMthwP = yOf(mthwV);
+      const sign   = delta >= 0 ? '+' : '';
+      const lbl    = `${sign}${delta.toFixed(0)} cm`;
+      // Verbindungslinie vom Extrempunkt zur MThw-Linie
+      extremeMarks += `<line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yMthwP.toFixed(1)}"
+        stroke="${st.color}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>`;
+      // Punkt
+      extremeMarks += `<circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5"
+        fill="white" stroke="${st.color}" stroke-width="1.5"/>`;
+      // Label mit Abstand zu MThw
+      const lblY = (yM - 8).toFixed(1);
+      const lblX = Math.min(Math.max(xM, padL + 16), xR - 16);
+      extremeMarks += `<text x="${lblX.toFixed(1)}" y="${lblY}" text-anchor="middle"
+        font-size="8" font-weight="700" font-family="'Inter',system-ui,sans-serif"
+        fill="${st.color}">${lbl}</text>`;
+    }
+    // Minimum: Abstand zu MTnw
+    if (st.mtnw != null) {
+      const mtnwV  = st.mtnw - skn;
+      const delta  = minV - mtnwV;
+      const xM     = xOf(minPt.t.getTime());
+      const yM     = yOf(minV);
+      const yMtnwP = yOf(mtnwV);
+      const sign   = delta >= 0 ? '+' : '';
+      const lbl    = `${sign}${delta.toFixed(0)} cm`;
+      extremeMarks += `<line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yMtnwP.toFixed(1)}"
+        stroke="${st.color}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>`;
+      extremeMarks += `<circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5"
+        fill="white" stroke="${st.color}" stroke-width="1.5"/>`;
+      const lblY = (yM + 14).toFixed(1);
+      const lblX = Math.min(Math.max(xOf(minPt.t.getTime()), padL + 16), xR - 16);
+      extremeMarks += `<text x="${lblX.toFixed(1)}" y="${lblY}" text-anchor="middle"
+        font-size="8" font-weight="700" font-family="'Inter',system-ui,sans-serif"
+        fill="${st.color}">${lbl}</text>`;
+    }
+
+    stationGroups += `<g id="pegel-group-${st.key}"${vis}>
+      ${fills}
+      <polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.6"
+        stroke-linejoin="round" stroke-linecap="round"/>
+      ${extremeMarks}
+      <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v-skn).toFixed(1)}"
+        r="2.5" fill="${st.color}"/>
+    </g>`;
+  });
+  defs += '</defs>';
+
+  // ─── Legende ──────────────────────────────────────────────────────────────
+  const legendItems = [
+    ...PEGEL_STATIONS.map(st=>`<span style="color:${st.color};display:inline-flex;align-items:center;gap:3px"><svg width="16" height="4" style="vertical-align:middle"><line x1="0" y1="2" x2="16" y2="2" stroke="${st.color}" stroke-width="1.6"/></svg>${st.label}</span>`),
+    `<span style="color:#dc2626;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="8" style="vertical-align:middle"><rect width="12" height="8" fill="#dc2626" opacity="0.3"/></svg>außerh. MThw/MTnw</span>`,
+  ].join('<span style="color:#cbd5e1;margin:0 4px">|</span>');
+
   return `<div>
-    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:12px;flex-wrap:wrap">
-      ${legend}
-      <span style="font-weight:400;margin-left:auto">cm ü. SKN (LAT=0) · – – SKN · ·· NN · — MThw/MTnw</span>
+    <div style="font-size:8.5px;font-family:'Inter',system-ui,sans-serif;color:#64748b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+      <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${legendItems}</span>
+      <span style="white-space:nowrap">SKN · NN · MThw · MTnw →</span>
     </div>
-    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
-      ${gridLines}${yLabels}${xLabels}${refLines}${lines}
+    <svg viewBox="0 0 ${W} ${H}" width="100%"
+         style="display:block;overflow:visible;font-family:'Inter',system-ui,sans-serif">
+      ${defs}
+      ${gridLines}${axes}${yLabels}${yTitle}${xLabels}
+      ${refLines}
+      ${stationGroups}
     </svg>
   </div>`;
 }
