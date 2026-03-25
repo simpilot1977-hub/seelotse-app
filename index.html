@@ -1803,11 +1803,11 @@ const WEATHER_STATIONS = {
 // ── Pegelstände (Pegel Online WSV) ───────────────────────────────────────────
 // Werte in cm über Pegelnullpunkt (PNP ≈ SKN / Seekartennull an Küstenstationen)
 const PEGEL_STATIONS = [
-  { key: 'cux', label: 'Cuxhaven',    km: 724, color: '#2563eb',
+  { key: 'cux', label: 'Cuxhaven',    km: 724, color: '#2563eb', nn: 491,
     uuid: 'aad49293-242a-43ad-a8b1-e91d7792c4b2' },
-  { key: 'brb', label: 'Brunsbüttel', km: 695, color: '#0d9488',
+  { key: 'brb', label: 'Brunsbüttel', km: 695, color: '#0d9488', nn: 505,
     uuid: 'd4f5f719-8c52-4f8d-945d-1c31404cc628' },
-  { key: 'hh',  label: 'Hamburg',     km: 623, color: '#d97706',
+  { key: 'hh',  label: 'Hamburg',     km: 623, color: '#d97706', nn: 524,
     uuid: 'd488c5cc-4de9-4631-8ce1-0db0e700b546' },
 ];
 let _pegelHours = 24;
@@ -2236,14 +2236,31 @@ function _renderPegelChart(tRange) {
     return `<polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>
       <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v).toFixed(1)}" r="3" fill="${st.color}"/>`;
   }).join('');
+
+  // Referenzlinien SKN (= PN = 0) und NN pro Station
+  let refLines = '';
+  // SKN = 0 cm (= Pegelnull = Seekartennull)
+  if (yMin < 0 && yMax > 0) {
+    const y = yOf(0).toFixed(1);
+    refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#475569" stroke-width="1.2" stroke-dasharray="5 3"/>`;
+    refLines += `<text x="${W-padR-2}" y="${(parseFloat(y)-3).toFixed(1)}" text-anchor="end" font-size="8.5" font-weight="700" fill="#475569">SKN</text>`;
+  }
+  // NN pro Station (cm über PN, unterschiedlich je Station)
+  for (const st of PEGEL_STATIONS) {
+    if (st.nn == null || st.nn < yMin || st.nn > yMax) continue;
+    const y = yOf(st.nn).toFixed(1);
+    refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1" stroke-dasharray="3 4" opacity=".7"/>`;
+    refLines += `<text x="${W-padR-2}" y="${(parseFloat(y)-3).toFixed(1)}" text-anchor="end" font-size="8" font-weight="700" fill="${st.color}" opacity=".85">NN</text>`;
+  }
+
   const legend = PEGEL_STATIONS.map(st => `<span style="color:${st.color}">— ${st.label}</span>`).join('');
   return `<div>
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:12px;flex-wrap:wrap">
       ${legend}
-      <span style="font-weight:400;margin-left:auto">cm ü. PN (Pegelnullpunkt) · SKN ≈ PN − 20…50 cm</span>
+      <span style="font-weight:400;margin-left:auto">cm ü. PN · <span style="color:#475569">— SKN = 0</span> · - - NN</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
-      ${gridLines}${yLabels}${xLabels}${lines}
+      ${gridLines}${yLabels}${xLabels}${refLines}${lines}
     </svg>
   </div>`;
 }
