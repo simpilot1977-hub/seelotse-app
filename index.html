@@ -1871,15 +1871,16 @@ async function fetchPressureHistory(hours) {
       } catch { _pegelData[st.key] = []; }
     }));
 
-    el.style.display = 'grid';
-    el.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    el.style.display = 'flex';
+    el.style.flexDirection = 'column';
+    el.style.gridTemplateColumns = '';
     el.style.gap = '16px';
     el.innerHTML =
       _renderPressureChart(ptsPressure, tRange) +
-      (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '<div></div>') +
-      (ptsWind.length ? _renderWindChart(ptsWind, tRange) : '<div></div>') +
-      (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>') +
-      `<div style="grid-column:1/-1">${_renderPegelChartWithHeader(tRange)}</div>`;
+      (ptsWind.length ? _renderWindChart(ptsWind, tRange) : '') +
+      (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '') +
+      (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '') +
+      _renderPegelChartWithHeader(tRange);
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
   // Auto-refresh alle 10 Minuten
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
