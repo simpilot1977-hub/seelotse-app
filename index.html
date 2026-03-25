@@ -1804,10 +1804,13 @@ const WEATHER_STATIONS = {
 // Werte in cm über Pegelnullpunkt (PNP ≈ SKN / Seekartennull an Küstenstationen)
 const PEGEL_STATIONS = [
   { key: 'cux', label: 'Cuxhaven',    km: 724, color: '#2563eb', skn: 302, nn: 503,
+    mthw: 655, mtnw: 363,  // Pegelonline API-Kennwerte [cm ü.PN]
     uuid: 'aad49293-242a-43ad-a8b1-e91d7792c4b2' },
   { key: 'brb', label: 'Brunsbüttel', km: 695, color: '#0d9488', skn: 310, nn: 500,
+    mthw: 656, mtnw: 370,  // interpoliert (API liefert keine Kennwerte)
     uuid: 'd4f5f719-8c52-4f8d-945d-1c31404cc628' },
   { key: 'hh',  label: 'Hamburg',     km: 623, color: '#d97706', skn: 310, nn: 500,
+    mthw: 711, mtnw: 347,  // Pegelonline API-Kennwerte [cm ü.PN]
     uuid: 'd488c5cc-4de9-4631-8ce1-0db0e700b546' },
 ];
 let _pegelHours = 24;
@@ -2237,26 +2240,39 @@ function _renderPegelChart(tRange) {
       <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v).toFixed(1)}" r="3" fill="${st.color}"/>`;
   }).join('');
 
-  // SKN und NN pro Station als Referenzlinien
+  // Referenzlinien: SKN (LAT), NN, MThw, MTnw
   let refLines = '';
-  for (const st of PEGEL_STATIONS) {
+  // Beschriftungs-x-Offsets je Station, damit sie sich nicht überlappen
+  const labelXOff = [3, 40, 77];
+  PEGEL_STATIONS.forEach((st, si) => {
+    const lx = padL + labelXOff[si];
     if (st.skn != null && st.skn >= yMin && st.skn <= yMax) {
       const y = yOf(st.skn).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.2" stroke-dasharray="8 3" opacity=".8"/>`;
-      refLines += `<text x="${padL+3}" y="${(parseFloat(y)-3).toFixed(1)}" font-size="8" font-weight="700" fill="${st.color}" opacity=".85">SKN</text>`;
+      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.2" stroke-dasharray="8 3" opacity=".75"/>`;
+      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".85">SKN</text>`;
     }
     if (st.nn != null && st.nn >= yMin && st.nn <= yMax) {
       const y = yOf(st.nn).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1" stroke-dasharray="3 4" opacity=".6"/>`;
-      refLines += `<text x="${padL+3}" y="${(parseFloat(y)-3).toFixed(1)}" font-size="8" font-weight="700" fill="${st.color}" opacity=".75">NN</text>`;
+      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1" stroke-dasharray="3 4" opacity=".55"/>`;
+      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".70">NN</text>`;
     }
-  }
+    if (st.mthw != null && st.mthw >= yMin && st.mthw <= yMax) {
+      const y = yOf(st.mthw).toFixed(1);
+      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.4" stroke-dasharray="10 4" opacity=".65"/>`;
+      refLines += `<text x="${lx}" y="${(parseFloat(y)-2).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".80">MThw</text>`;
+    }
+    if (st.mtnw != null && st.mtnw >= yMin && st.mtnw <= yMax) {
+      const y = yOf(st.mtnw).toFixed(1);
+      refLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${st.color}" stroke-width="1.4" stroke-dasharray="10 4" opacity=".65"/>`;
+      refLines += `<text x="${lx}" y="${(parseFloat(y)+8).toFixed(1)}" font-size="7.5" font-weight="700" fill="${st.color}" opacity=".80">MTnw</text>`;
+    }
+  });
 
   const legend = PEGEL_STATIONS.map(st => `<span style="color:${st.color}">— ${st.label}</span>`).join('');
   return `<div>
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:12px;flex-wrap:wrap">
       ${legend}
-      <span style="font-weight:400;margin-left:auto">cm ü. PN · — SKN (LAT) · - - NN</span>
+      <span style="font-weight:400;margin-left:auto">cm ü. PN · – – SKN/LAT · ·· NN · — MThw/MTnw</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
       ${gridLines}${yLabels}${xLabels}${refLines}${lines}
