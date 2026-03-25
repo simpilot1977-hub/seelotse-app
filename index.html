@@ -1850,11 +1850,14 @@ async function fetchPressureHistory(hours) {
       p: w.pressure_msl,
       temp: w.temperature,
       dew: w.dew_point,
-      vis: w.visibility
+      vis: w.visibility,
+      wind: w.wind_speed,
+      windDir: w.wind_direction
     }));
     const ptsPressure = allPts.filter(w => w.p != null);
     const ptsTempDew  = allPts.filter(w => w.temp != null);
     const ptsVis      = allPts.filter(w => w.vis != null);
+    const ptsWind     = allPts.filter(w => w.wind != null || w.windDir != null);
     if (!ptsPressure.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Keine Daten</span>'; return; }
     const tRange = { min: from.getTime(), max: now.getTime() };
 
@@ -1873,9 +1876,10 @@ async function fetchPressureHistory(hours) {
     el.style.gap = '16px';
     el.innerHTML =
       _renderPressureChart(ptsPressure, tRange) +
+      (ptsWind.length ? _renderWindChart(ptsWind, tRange) : '<div></div>') +
       (ptsTempDew.length ? _renderTempDewChart(ptsTempDew, tRange) : '<div></div>') +
       (ptsVis.length ? _renderVisibilityChart(ptsVis, tRange) : '<div></div>') +
-      _renderPegelChartWithHeader(tRange);
+      `<div style="grid-column:1/-1">${_renderPegelChartWithHeader(tRange)}</div>`;
   } catch(e) { el.innerHTML = '<span style="color:var(--danger);font-size:12px">Fehler beim Laden</span>'; }
   // Auto-refresh alle 10 Minuten
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
@@ -2076,6 +2080,61 @@ function _renderVisibilityChart(pts, tRange) {
       ${segLines}
       <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3.5" fill="${lc}"/>
       <text x="${Math.min(lx+6,W-padR-32).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="10" font-weight="700" fill="${lc}">${fmtV(last.v)} km</text>
+    </svg>
+  </div>`;
+}
+
+function _renderWindChart(pts, tRange) {
+  const KMH_TO_KN = 0.53996;
+  const speedPts = pts.filter(p => p.wind != null).map(p => ({ t: p.t, v: p.wind * KMH_TO_KN }));
+  const dirPts   = pts.filter(p => p.windDir != null);
+  if (!speedPts.length) return '<div style="color:var(--text-muted);font-size:11px;padding:8px">Keine Winddaten</div>';
+
+  const W = 700, H = 240, padL = 46, padR = 46, padT = 12, padB = 34;
+  const tMin = tRange ? tRange.min : speedPts[0].t.getTime();
+  const tMax = tRange ? tRange.max : speedPts[speedPts.length-1].t.getTime();
+  const speedVals = speedPts.map(p => p.v);
+  const sMax = Math.max(Math.max(...speedVals) * 1.20, 3);
+  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (W - padL - padR);
+  const yOfS = v => padT + (1 - v / sMax) * (H - padT - padB);
+  const yOfD = v => padT + (1 - v / 360) * (H - padT - padB);
+
+  let gridLines = '', yLabels = '', yRLabels = '';
+  for (let i = 0; i <= 4; i++) {
+    const v = sMax * i / 4;
+    const y = yOfS(v).toFixed(1);
+    gridLines += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;
+    yLabels += `<text x="${padL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(1)} kn</text>`;
+  }
+  for (const [deg, lbl] of [[0,'N'],[90,'E'],[180,'S'],[270,'W'],[360,'N']]) {
+    yRLabels += `<text x="${W-padR+4}" y="${(yOfD(deg)+3).toFixed(1)}" text-anchor="start" font-size="9" fill="#9333ea">${lbl}</text>`;
+  }
+  const xLabels = _makeXLabels(tMin, tMax, W, padL, padR, H, padB);
+
+  const speedLinePts = speedPts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOfS(p.v).toFixed(1)}`).join(' ');
+
+  let dirPathD = '', prevDeg = null;
+  for (const p of dirPts) {
+    if (p.windDir == null) { prevDeg = null; continue; }
+    const x = xOf(p.t.getTime()).toFixed(1), y = yOfD(p.windDir).toFixed(1);
+    if (prevDeg === null || Math.abs(p.windDir - prevDeg) > 180) dirPathD += `M ${x} ${y}`;
+    else dirPathD += ` L ${x} ${y}`;
+    prevDeg = p.windDir;
+  }
+
+  const last = speedPts[speedPts.length - 1];
+  const lx = xOf(last.t.getTime()), ly = yOfS(last.v);
+  return `<div>
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px;display:flex;gap:10px">
+      <span style="color:#1d6fa5">— Windstärke (kn)</span>
+      <span style="color:#9333ea">- - Windrichtung</span>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      ${gridLines}${yLabels}${yRLabels}${xLabels}
+      <polyline points="${speedLinePts}" fill="none" stroke="#1d6fa5" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dirPathD ? `<path d="${dirPathD}" fill="none" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6 3" stroke-linejoin="round" stroke-linecap="round"/>` : ''}
+      <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#1d6fa5"/>
+      <text x="${Math.min(lx+5,W-padR-24).toFixed(1)}" y="${(ly-5).toFixed(1)}" font-size="9" font-weight="700" fill="#1d6fa5">${last.v.toFixed(1)} kn</text>
     </svg>
   </div>`;
 }
