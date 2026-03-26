@@ -1769,6 +1769,10 @@ function renderAstroDashboard() {
     <div class="astro-card" id="ar-pegel-bar-card">
       <div class="astro-card-title">📊 Pegel Elbe · aktuell</div>
       <div id="ar-pegel-bar" style="margin-top:4px"><span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span></div>
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:6px">
+        <div class="astro-card-title" style="margin-bottom:2px">👁️ Sichtweite · aktuell</div>
+        <div id="ar-vis-bar"><span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span></div>
+      </div>
     </div>
     <div class="astro-card">
       <div class="astro-card-title">☀️ Sonne · Brunsbüttel</div>
@@ -1796,6 +1800,7 @@ function renderAstroDashboard() {
       })() : (_arMeteo ? '' : '<div class="astro-sub" style="margin-top:6px">Wird geladen…</div>')}
     </div>`;
   fetchBarPegelData();
+  fetchBarVisData();
 }
 
 const WEATHER_STATIONS = {
@@ -1974,6 +1979,82 @@ function _updatePegelBarChart() {
     <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
     <line x1="${padL}" y1="${yBot}" x2="${W-padR}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
     <text x="${padL-5}" y="${padT}" text-anchor="end" font-size="5.5" fill="#94a3b8" writing-mode="vertical-rl" transform="rotate(180,${padL-16},${((padT+yBot)/2).toFixed(0)})">cm ü.PN</text>
+  </svg>`;
+}
+
+// ── Sichtweite Elbe für Balkendiagramm (Cuxhaven → Hamburg) ──────────────────
+const VIS_STATIONS = [
+  { key:'vis_cux',  label:'Cux.',   lat:53.87,   lon:8.71,   color:'#1d4ed8' },
+  { key:'vis_brb',  label:'Brb.',   lat:53.89,   lon:9.14,   color:'#0d9488' },
+  { key:'vis_glue', label:'Glü.',   lat:53.79,   lon:9.42,   color:'#65a30d' },
+  { key:'vis_schu', label:'Schu.',  lat:53.57,   lon:9.69,   color:'#ea7b2d' },
+  { key:'vis_hh',   label:'HH',     lat:53.545,  lon:9.966,  color:'#d97706' },
+];
+const _barVisData = {};
+
+async function fetchBarVisData() {
+  await Promise.all(VIS_STATIONS.map(async st => {
+    try {
+      const d = await fetch(`https://api.brightsky.dev/current_weather?lat=${st.lat}&lon=${st.lon}`).then(r => r.json());
+      _barVisData[st.key] = d?.weather?.visibility ?? null; // meters
+    } catch { _barVisData[st.key] = null; }
+  }));
+  _updateVisBarChart();
+}
+
+function _updateVisBarChart() {
+  const el = document.getElementById('ar-vis-bar');
+  if (!el) return;
+  const vals = VIS_STATIONS.map(st => _barVisData[st.key] ?? null);
+  if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span>'; return; }
+  const validVals = vals.filter(v => v !== null);
+  const spread = Math.max(...validVals) - Math.min(...validVals) || 5000;
+  const vMax = Math.min(Math.max(...validVals) + spread * 0.05, 30000);
+  const vMin = Math.max(0, Math.min(...validVals) - spread * 0.05);
+  const W = 190, H = 100;
+  const padL = 28, padR = 4, padT = 8, padB = 26;
+  const n = VIS_STATIONS.length;
+  const slotW = (W - padL - padR) / n;
+  const barW = Math.max(slotW * 0.6, 4);
+  const yBot = H - padB;
+  const yOf = v => padT + (1 - (v - vMin) / (vMax - vMin)) * (yBot - padT);
+
+  // Y-Achse Ticks (km)
+  const ticksKm = [0, 2, 5, 10, 20, 30].filter(k => k * 1000 >= vMin && k * 1000 <= vMax + 1000);
+  let yAxis = '';
+  for (const km of ticksKm) {
+    const v = km * 1000;
+    const y = yOf(v).toFixed(1);
+    yAxis += `<line x1="${padL-3}" y1="${y}" x2="${padL}" y2="${y}" stroke="#94a3b8" stroke-width="0.6"/>
+      <text x="${padL-5}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="6" fill="#64748b">${km}</text>
+      <line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="0.4"/>`;
+  }
+
+  let bars = '';
+  VIS_STATIONS.forEach((st, i) => {
+    const v = vals[i];
+    const xCenter = padL + i * slotW + slotW / 2;
+    const xBar = xCenter - barW / 2;
+    if (v === null) {
+      bars += `<text x="${xCenter.toFixed(1)}" y="${(yBot-2).toFixed(1)}" text-anchor="middle" font-size="6" fill="#94a3b8">–</text>`;
+    } else {
+      const vClamped = Math.min(v, vMax);
+      const yV = yOf(vClamped);
+      const barH = Math.max(yBot - yV, 1);
+      const km = (v / 1000).toFixed(1);
+      bars += `<rect x="${xBar.toFixed(1)}" y="${yV.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${st.color}" opacity="0.75" rx="1.5"/>
+        <text x="${xCenter.toFixed(1)}" y="${Math.max(padT+7, yV-2).toFixed(1)}" text-anchor="middle" font-size="5.5" font-weight="700" fill="${st.color}">${km}</text>`;
+    }
+    bars += `<text x="${xCenter.toFixed(1)}" y="${(yBot+4).toFixed(1)}"
+      text-anchor="end" font-size="6.5" fill="#334155"
+      transform="rotate(-55,${xCenter.toFixed(1)},${(yBot+4).toFixed(1)})">${st.label}</text>`;
+  });
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;font-family:'Inter',system-ui,sans-serif">
+    ${yAxis}${bars}
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
+    <line x1="${padL}" y1="${yBot}" x2="${W-padR}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
+    <text x="${padL-5}" y="${padT}" text-anchor="end" font-size="5.5" fill="#94a3b8" writing-mode="vertical-rl" transform="rotate(180,${padL-16},${((padT+yBot)/2).toFixed(0)})">km</text>
   </svg>`;
 }
 
@@ -2306,6 +2387,7 @@ async function fetchPegelData(hours) {
     } catch { _pegelData[st.key] = []; }
   }));
   _updatePegelBarChart();
+  fetchBarVisData();
   if (elCur) elCur.innerHTML = _renderPegelCurrent();
   const now = new Date();
   const tRange = { min: now.getTime() - _pegelHours * 3600000, max: now.getTime() };
@@ -2336,17 +2418,19 @@ function _renderPegelChart(tRange) {
   const annotVis = window._pegelAnnotations !== false ? '' : ' style="display:none"';
   const annotCls = 'class="pegel-annot"';
 
-  // ─── Scheitelpunkte: lokale Maxima/Minima mit Prominenzfilter ────────────
+  // ─── Tatsächliche HW/NW: globales Extremum je Tidezyklus ─────────────────
   function _tideExtrema(pts, isMax) {
-    const MIN_SEP_MS  = 4.5 * 3600 * 1000;
-    const MIN_PROMIN  = 60; // cm: Extremum muss mindestens 60 cm aus Umgebung herausragen
-    // 1) Alle lokalen Extrema (strikte Ungleichung)
+    const MIN_SEP_MS = 4.5 * 3600 * 1000;
+    const REFINE_MS  = 2.5 * 3600 * 1000; // ±2.5h Fenster für echten Scheitel
+    const MIN_PROMIN = 60; // cm Mindest-Prominenz
+
+    // 1) Alle strikten lokalen Extrema finden
     const cands = [];
     for (let i = 1; i < pts.length - 1; i++) {
       const v = pts[i].v, vP = pts[i-1].v, vN = pts[i+1].v;
       if (isMax ? (v > vP && v > vN) : (v < vP && v < vN)) cands.push(pts[i]);
     }
-    // 2) Zusammenführen wenn zeitlich zu nah
+    // 2) Innerhalb MIN_SEP_MS zusammenführen (bestes behalten)
     const merged = [];
     for (const p of cands) {
       if (!merged.length) { merged.push(p); continue; }
@@ -2355,14 +2439,29 @@ function _renderPegelChart(tRange) {
         if (isMax ? p.v > prev.v : p.v < prev.v) merged[merged.length-1] = p;
       } else { merged.push(p); }
     }
-    // 3) Prominenzfilter: Extremum muss sich deutlich von Umgebung abheben
-    return merged.filter(p => {
+    // 3) Prominenzfilter: nur echte Tidescheitel
+    const filtered = merged.filter(p => {
       const tP = p.t.getTime();
       const win = pts.filter(q => Math.abs(q.t.getTime() - tP) <= MIN_SEP_MS);
       const prom = isMax
         ? p.v - Math.min(...win.map(q => q.v))
         : Math.max(...win.map(q => q.v)) - p.v;
       return prom >= MIN_PROMIN;
+    });
+    // 4) Verfeinern: globales Extremum im ±REFINE_MS Fenster = tatsächliches HW/NW
+    const refined = filtered.map(p => {
+      const tP = p.t.getTime();
+      const win = pts.filter(q => Math.abs(q.t.getTime() - tP) <= REFINE_MS);
+      return isMax
+        ? win.reduce((a, b) => b.v > a.v ? b : a, p)
+        : win.reduce((a, b) => b.v < a.v ? b : a, p);
+    });
+    // 5) Duplikate nach Verfeinern entfernen
+    const seen = new Set();
+    return refined.filter(p => {
+      const k = p.t.getTime();
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
     });
   }
 
