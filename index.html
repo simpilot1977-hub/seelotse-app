@@ -1795,6 +1795,7 @@ function renderAstroDashboard() {
         return `<div class="astro-sub" style="margin-top:6px;color:${color}">Stand: ${tsStr}${ageH > 3 ? ' ⚠️' : ''}</div>`;
       })() : (_arMeteo ? '' : '<div class="astro-sub" style="margin-top:6px">Wird geladen…</div>')}
     </div>`;
+  fetchBarPegelData();
 }
 
 const WEATHER_STATIONS = {
@@ -1898,28 +1899,45 @@ async function fetchPressureHistory(hours) {
   _pressureRefreshTimer = setTimeout(() => { if (document.getElementById('ar-pressure-inner')) fetchPressureHistory(); }, 10 * 60 * 1000);
 }
 
+// ── Pegelstationen Elbe für Balkendiagramm (Bake A → Hamburg, km absteigend) ─
+const BAR_PEGEL_STATIONS = [
+  { key:'bar_cux',  label:'Cux.',   km:724, color:'#1d4ed8', uuid:'aad49293-242a-43ad-a8b1-e91d7792c4b2' },
+  { key:'bar_ott',  label:'Ott.',   km:714, color:'#2563eb', uuid:'5140295e-b93e-4081-a920-642d89c7ca8b' },
+  { key:'bar_brb',  label:'Brb.',   km:695, color:'#0d9488', uuid:'d4f5f719-8c52-4f8d-945d-1c31404cc628' },
+  { key:'bar_brok', label:'Brok.',  km:684, color:'#059669', uuid:'610ab204-d3c4-4a11-a38b-e31461fdcf27' },
+  { key:'bar_glue', label:'Glü.',   km:674, color:'#65a30d', uuid:'1f1bbed7-c1fa-45b4-90d3-df94b50ad631' },
+  { key:'bar_sta',  label:'Sta.',   km:655, color:'#ca8a04', uuid:'80f0fc4d-9fc7-449d-9d68-ee89333f0eff' },
+  { key:'bar_schu', label:'Schu.',  km:641, color:'#ea7b2d', uuid:'f3c6ee73-5561-4068-96ec-364016e7d9ef' },
+  { key:'bar_hh',   label:'HH',     km:623, color:'#d97706', uuid:'d488c5cc-4de9-4631-8ce1-0db0e700b546' },
+];
+const _barPegelData = {};
+
+async function fetchBarPegelData() {
+  const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+  await Promise.all(BAR_PEGEL_STATIONS.map(async st => {
+    try {
+      const d = await fetch(`${BASE}/${st.uuid}/W/currentmeasurement.json`).then(r => r.json());
+      _barPegelData[st.key] = d?.value ?? null;
+    } catch { _barPegelData[st.key] = null; }
+  }));
+  _updatePegelBarChart();
+}
+
 function _updatePegelBarChart() {
   const el = document.getElementById('ar-pegel-bar');
   if (!el) return;
-  const vals = PEGEL_STATIONS.map(st => {
-    const pts = _pegelData[st.key] || [];
-    const last = pts[pts.length - 1];
-    return last?.v != null ? last.v - st.skn : null;
-  });
-  if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Keine Daten</span>'; return; }
+  const vals = BAR_PEGEL_STATIONS.map(st => _barPegelData[st.key] ?? null);
+  if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span>'; return; }
   const validVals = vals.filter(v => v !== null);
-  const refMax = Math.max(...PEGEL_STATIONS.map(st => st.mthw - st.skn));
-  const refMin = Math.min(...PEGEL_STATIONS.map(st => st.mtnw - st.skn));
-  const vMax = Math.max(refMax * 1.2, Math.max(...validVals) * 1.1, 400);
-  const vMin = Math.min(refMin * 0.5, Math.min(...validVals) * 1.1, -20);
-  const W = 190, H = 110;
-  const padL = 28, padR = 8, padT = 10, padB = 22;
-  const n = PEGEL_STATIONS.length;
+  const vMax = Math.max(...validVals) * 1.12;
+  const vMin = Math.max(0, Math.min(...validVals) * 0.85);
+  const W = 190, H = 120;
+  const padL = 26, padR = 4, padT = 10, padB = 26;
+  const n = BAR_PEGEL_STATIONS.length;
   const slotW = (W - padL - padR) / n;
-  const barW = slotW * 0.55;
+  const barW = Math.max(slotW * 0.6, 4);
   const yBot = H - padB;
   const yOf = v => padT + (1 - (v - vMin) / (vMax - vMin)) * (yBot - padT);
-  const yZero = yOf(0);
 
   // Y-Achse Ticks
   const yStep = 100;
@@ -1927,42 +1945,34 @@ function _updatePegelBarChart() {
   for (let v = Math.ceil(vMin/yStep)*yStep; v <= vMax; v += yStep) {
     const y = yOf(v).toFixed(1);
     yAxis += `<line x1="${padL-3}" y1="${y}" x2="${padL}" y2="${y}" stroke="#94a3b8" stroke-width="0.6"/>
-      <text x="${padL-5}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="6.5" fill="#64748b">${v}</text>
+      <text x="${padL-5}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="6" fill="#64748b">${v}</text>
       <line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="0.4"/>`;
   }
-  // Referenzlinien MThw/MTnw (Durchschnitt der Stationen)
-  const avgMthw = PEGEL_STATIONS.reduce((a,s) => a + s.mthw - s.skn, 0) / n;
-  const avgMtnw = PEGEL_STATIONS.reduce((a,s) => a + s.mtnw - s.skn, 0) / n;
-  const yMthw = yOf(avgMthw).toFixed(1), yMtnw = yOf(avgMtnw).toFixed(1);
-  const refLines = `
-    <line x1="${padL}" y1="${yMthw}" x2="${W-padR}" y2="${yMthw}" stroke="#dc2626" stroke-width="0.8" stroke-dasharray="4 2" opacity="0.7"/>
-    <text x="${W-padR+2}" y="${(parseFloat(yMthw)+3).toFixed(1)}" font-size="5.5" fill="#dc2626">MThw</text>
-    <line x1="${padL}" y1="${yMtnw}" x2="${W-padR}" y2="${yMtnw}" stroke="#0d9488" stroke-width="0.8" stroke-dasharray="4 2" opacity="0.7"/>
-    <text x="${W-padR+2}" y="${(parseFloat(yMtnw)+3).toFixed(1)}" font-size="5.5" fill="#0d9488">MTnw</text>`;
 
   let bars = '';
-  PEGEL_STATIONS.forEach((st, i) => {
+  BAR_PEGEL_STATIONS.forEach((st, i) => {
     const v = vals[i];
-    if (v === null) return;
     const xCenter = padL + i * slotW + slotW / 2;
     const xBar = xCenter - barW / 2;
-    const yV = yOf(v);
-    const barTop = Math.min(yV, yZero);
-    const barH = Math.max(Math.abs(yZero - yV), 1);
-    const lblY = v >= 0 ? yV - 3 : yV + 9;
-    const shortLabel = st.label === 'Brunsbüttel' ? 'Brb.' : st.label;
-    bars += `<rect x="${xBar.toFixed(1)}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${st.color}" opacity="0.85" rx="2"/>
-      <text x="${xCenter.toFixed(1)}" y="${Math.max(padT+8, lblY).toFixed(1)}" text-anchor="middle" font-size="7" font-weight="700" fill="${st.color}">${v.toFixed(0)}</text>
-      <text x="${xCenter.toFixed(1)}" y="${(yBot+13).toFixed(1)}" text-anchor="middle" font-size="7" fill="#334155">${shortLabel}</text>`;
+    if (v === null) {
+      bars += `<text x="${xCenter.toFixed(1)}" y="${(yBot-2).toFixed(1)}" text-anchor="middle" font-size="6" fill="#94a3b8">–</text>`;
+    } else {
+      const yV = yOf(v);
+      const barH = Math.max(yBot - yV, 1);
+      bars += `<rect x="${xBar.toFixed(1)}" y="${yV.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${st.color}" opacity="0.85" rx="1.5"/>
+        <text x="${xCenter.toFixed(1)}" y="${Math.max(padT+7, yV-2).toFixed(1)}" text-anchor="middle" font-size="6" font-weight="700" fill="${st.color}">${Math.round(v)}</text>`;
+    }
+    // Station label (rotiert, unterhalb)
+    bars += `<text x="${xCenter.toFixed(1)}" y="${(yBot+4).toFixed(1)}"
+      text-anchor="end" font-size="6.5" fill="#334155"
+      transform="rotate(-55,${xCenter.toFixed(1)},${(yBot+4).toFixed(1)})">${st.label}</text>`;
   });
 
   el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;font-family:'Inter',system-ui,sans-serif">
-    ${yAxis}${refLines}${bars}
-    <line x1="${padL}" y1="${yZero.toFixed(1)}" x2="${W-padR}" y2="${yZero.toFixed(1)}" stroke="#94a3b8" stroke-width="0.9"/>
-    <text x="${padL-5}" y="${(yZero+3).toFixed(1)}" text-anchor="end" font-size="6" fill="#94a3b8">SKN</text>
+    ${yAxis}${bars}
     <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
     <line x1="${padL}" y1="${yBot}" x2="${W-padR}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
-    <text x="${W/2}" y="${(H-2).toFixed(1)}" text-anchor="middle" font-size="6" fill="#94a3b8">cm ü. SKN</text>
+    <text x="${padL-5}" y="${padT}" text-anchor="end" font-size="5.5" fill="#94a3b8" writing-mode="vertical-rl" transform="rotate(180,${padL-16},${((padT+yBot)/2).toFixed(0)})">cm ü.PN</text>
   </svg>`;
 }
 
@@ -2325,17 +2335,14 @@ function _renderPegelChart(tRange) {
   const annotVis = window._pegelAnnotations !== false ? '' : ' style="display:none"';
   const annotCls = 'class="pegel-annot"';
 
-  // ─── Robuste lokale Extremwerte (inkl. Endpunkte, zeitbasierte Trennung) ─
+  // ─── Echte Scheitelpunkte: strikte Richtungsumkehr, mind. 4.5h Abstand ────
   function _tideExtrema(pts, isMax) {
-    const MIN_SEP_MS = 2 * 3600 * 1000; // mind. 2h zwischen zwei Extrema
+    const MIN_SEP_MS = 4.5 * 3600 * 1000;
     const cands = [];
-    for (let i = 0; i < pts.length; i++) {
-      const v    = pts[i].v;
-      const vP   = i > 0             ? pts[i-1].v : (isMax ? -Infinity : Infinity);
-      const vN   = i < pts.length-1  ? pts[i+1].v : (isMax ? -Infinity : Infinity);
-      if (isMax ? (v >= vP && v >= vN) : (v <= vP && v <= vN)) cands.push(pts[i]);
+    for (let i = 1; i < pts.length - 1; i++) {
+      const v = pts[i].v, vP = pts[i-1].v, vN = pts[i+1].v;
+      if (isMax ? (v > vP && v > vN) : (v < vP && v < vN)) cands.push(pts[i]);
     }
-    // Zusammenführen wenn zeitlich zu nah (Plateau oder Rauschen)
     const out = [];
     for (const p of cands) {
       if (!out.length) { out.push(p); continue; }
@@ -2466,6 +2473,8 @@ function _renderPegelChart(tRange) {
     const minima = _tideExtrema(pts, false);
     let extremeSvg = '';
 
+    const HW_COL = '#2563eb'; // HW immer blau
+    const NW_COL = '#dc2626'; // NW immer rot
     if (st.mthw != null) {
       const mthwV = st.mthw - skn, yRef = yOf(mthwV);
       for (const p of maxima) {
@@ -2474,12 +2483,12 @@ function _renderPegelChart(tRange) {
         const lbl2 = `${sign}${(v - mthwV).toFixed(0)} cm`;
         extremeSvg += `
           <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+            stroke="${HW_COL}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${HW_COL}" stroke-width="1.5"/>
           <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
-            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${HW_COL}">${lbl2}</text>
           <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
-            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>`;
+            text-anchor="middle" font-size="7" fill="${HW_COL}" opacity="0.8">${fmtTime(p.t)}</text>`;
       }
     }
     if (st.mtnw != null) {
@@ -2491,12 +2500,12 @@ function _renderPegelChart(tRange) {
         const useBelow = yM + 26 < yBot;
         extremeSvg += `
           <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+            stroke="${NW_COL}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${NW_COL}" stroke-width="1.5"/>
           <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
-            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>
+            text-anchor="middle" font-size="7" fill="${NW_COL}" opacity="0.8">${fmtTime(p.t)}</text>
           <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
-            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${NW_COL}">${lbl2}</text>`;
       }
     }
 
