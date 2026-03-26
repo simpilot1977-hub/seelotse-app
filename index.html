@@ -5939,25 +5939,15 @@ function goKarte() {
       </div>
 
       <!-- Strömungslegende (wird via JS ein-/ausgeblendet) -->
-      <div id="stroem-legend" style="display:none;position:absolute;bottom:28px;left:220px;z-index:1000;background:rgba(255,255,255,0.93);border:1px solid #b8ccd8;border-radius:8px;padding:8px 12px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12)">
-        <div style="font-weight:700;margin-bottom:6px;color:#1b3d5f;font-size:12px">〰 Strömung</div>
-        <div style="display:flex;flex-direction:column;gap:2px">
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#004400;border-radius:2px"></span><span>3,0 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#007700;border-radius:2px"></span><span>2,5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#00aa00;border-radius:2px"></span><span>2,0 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#00dd00;border-radius:2px"></span><span>1,5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#55ee00;border-radius:2px"></span><span>1,0 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#aaff00;border-radius:2px"></span><span>0,5 kn Flut</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#ffff00;border-radius:2px;border:1px solid #ccc"></span><span style="font-weight:600">⊙ Stauwasser</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#ff9900;border-radius:2px"></span><span>0,5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#ff4400;border-radius:2px"></span><span>1,0 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#ff0000;border-radius:2px"></span><span>1,5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#cc0000;border-radius:2px"></span><span>2,0 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#990000;border-radius:2px"></span><span>2,5 kn Ebbe</span></div>
-          <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:22px;height:8px;background:#660000;border-radius:2px"></span><span>3,0 kn Ebbe</span></div>
+      <div id="stroem-legend" style="display:none;position:absolute;bottom:28px;left:220px;z-index:1000;background:rgba(255,255,255,0.95);border:1px solid #b8ccd8;border-radius:8px;padding:7px 10px;font-size:11px;color:#1a2332;box-shadow:0 2px 8px rgba(0,0,0,0.12);min-width:0">
+        <div style="font-weight:700;margin-bottom:5px;color:#1b3d5f;font-size:12px">〰 Strömung</div>
+        <div style="display:flex;align-items:center;gap:5px;margin-bottom:3px">
+          <span style="font-size:9px;color:#660000;font-weight:600">Ebbe</span>
+          <div style="width:90px;height:9px;border-radius:3px;background:linear-gradient(to right,#660000,#ff0000,#ff9900,#ffff00,#aaff00,#00dd00,#004400)"></div>
+          <span style="font-size:9px;color:#004400;font-weight:600">Flut</span>
         </div>
-        <div style="margin-top:5px;font-size:9px;color:#94a3b8">WSA Elbe-Nordsee · Pegelonline HW</div>
-        <div id="stroem-debug" style="margin-top:6px;font-size:9px;color:#334155;border-top:1px solid #e2e8f0;padding-top:5px;line-height:1.6"></div>
+        <div style="font-size:9px;color:#64748b">● gelb = Kentering</div>
+        <div id="stroem-debug" style="margin-top:4px;font-size:9px;color:#334155;border-top:1px solid #e2e8f0;padding-top:4px;line-height:1.5"></div>
       </div>
     </div>`;
 
@@ -6401,18 +6391,16 @@ function _karteRemoveStroem() {
   if (leg) leg.style.display = 'none';
 }
 
-async function _karteLoadStroem() {
+function _karteLoadStroem() {
   if (!_karteMap) return;
   _karteRemoveStroem();
 
-  // Strömungsdaten: HW-Zeitpunkt für drei Bezugspegel — tideDbs bevorzugen, Pegelonline als Fallback
-  const [resCux, resBrb, resStP] = await Promise.all([
-    _getHWOffset('Cuxhaven',    'aad49293-242a-43ad-a8b1-e91d7792c4b2'),
-    _getHWOffset('Brunsbuettel','d4f5f719-8c52-4f8d-945d-1c31404cc628'),
-    _getHWOffset('Hamburg',     'd488c5cc-4de9-4631-8ce1-0db0e700b546'),
-  ]);
+  // Strömungsdaten: HW-Zeitpunkt aus lokalen tideDbs
+  const resCux = _hwOffsetFromDb('Cuxhaven');
   const dtCux = resCux?.dtHW ?? null;
+  const resBrb = _hwOffsetFromDb('Brunsbuettel');
   const dtBrb = resBrb?.dtHW ?? null;
+  const resStP = _hwOffsetFromDb('Hamburg');
   const dtStP = resStP?.dtHW ?? null;
   // Glückstadt: kein eigener Pegel, HW ~45 min nach Brunsbüttel
   const dtGlk = dtBrb !== null ? dtBrb - 0.75 : null;
@@ -6532,7 +6520,6 @@ async function _karteLoadStroem() {
   }
   outerStops.sort((a, b) => a.f - b.f);
 
-  grad.push(0, _outerColor(outerStops[0].f, outerStops[0].cap));
   for (const stop of outerStops) {
     grad.push(stop.f, _outerColor(stop.f, stop.cap));
   }
@@ -6601,16 +6588,11 @@ async function _karteLoadStroem() {
     const leg = document.getElementById('stroem-legend');
     if (leg) {
       leg.style.display = 'block';
-      // Zeitstempel für HW/NW je Station anzeigen
-      const _fmtTs = d => d ? d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '–';
       const _fmtDt = h => h !== null ? (h >= 0 ? `+${h.toFixed(1)}h` : `${h.toFixed(1)}h`) : '–';
       const dbg = document.getElementById('stroem-debug');
       if (dbg) dbg.innerHTML =
-        `<div style="font-weight:600;margin-bottom:2px;color:#475569">Bezugspegel HW/NW</div>` +
-        `<div>Cuxhaven &nbsp;HW ${_fmtTs(resCux?.hwTime)} | NW ${_fmtTs(resCux?.nwTime)} | dt ${_fmtDt(dtCux)}</div>` +
-        `<div>Brunsbüttel HW ${_fmtTs(resBrb?.hwTime)} | NW ${_fmtTs(resBrb?.nwTime)} | dt ${_fmtDt(dtBrb)}</div>` +
-        `<div>Hamburg &nbsp;&nbsp;&nbsp;HW ${_fmtTs(resStP?.hwTime)} | NW ${_fmtTs(resStP?.nwTime)} | dt ${_fmtDt(dtStP)}</div>` +
-        `<div style="color:#94a3b8;margin-top:1px">Stand: ${new Date().toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})} Uhr</div>`;
+        `<div>Cux ${_fmtDt(dtCux)} · Brb ${_fmtDt(dtBrb)} · HH ${_fmtDt(dtStP)}</div>` +
+        `<div style="color:#94a3b8;margin-top:1px">Stand: ${new Date().toLocaleString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr</div>`;
     }
   } catch(e) { console.warn('Strömung:', e); }
 
