@@ -226,8 +226,13 @@
       background: var(--surface);
       border-radius: var(--r-lg);
       box-shadow: var(--sh-md);
-      overflow: clip;
+      overflow: visible;
     }
+    /* Re-apply border-radius to first/last cells so corners look right */
+    .entries-table thead th:first-child { border-radius: var(--r-lg) 0 0 0; }
+    .entries-table thead th:last-child  { border-radius: 0 var(--r-lg) 0 0; }
+    .entries-table tbody tr:last-child td:first-child { border-radius: 0 0 0 var(--r-lg); }
+    .entries-table tbody tr:last-child td:last-child  { border-radius: 0 0 var(--r-lg) 0; }
 
     .entries-table {
       width: 100%;
