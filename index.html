@@ -2007,10 +2007,8 @@ function _updateVisBarChart() {
   if (!el) return;
   const vals = VIS_STATIONS.map(st => _barVisData[st.key] ?? null);
   if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span>'; return; }
-  const validVals = vals.filter(v => v !== null);
-  const spread = Math.max(...validVals) - Math.min(...validVals) || 5000;
-  const vMax = Math.min(Math.max(...validVals) + spread * 0.05, 30000);
-  const vMin = Math.max(0, Math.min(...validVals) - spread * 0.05);
+  const vMax = 10000; // Y-Achse fest: 0–10 km
+  const vMin = 0;
   const W = 190, H = 100;
   const padL = 28, padR = 4, padT = 8, padB = 26;
   const n = VIS_STATIONS.length;
@@ -2020,14 +2018,19 @@ function _updateVisBarChart() {
   const yOf = v => padT + (1 - (v - vMin) / (vMax - vMin)) * (yBot - padT);
 
   // Y-Achse Ticks (km)
-  const ticksKm = [0, 2, 5, 10, 20, 30].filter(k => k * 1000 >= vMin && k * 1000 <= vMax + 1000);
   let yAxis = '';
-  for (const km of ticksKm) {
+  for (const km of [0, 2, 5, 10]) {
     const v = km * 1000;
     const y = yOf(v).toFixed(1);
     yAxis += `<line x1="${padL-3}" y1="${y}" x2="${padL}" y2="${y}" stroke="#94a3b8" stroke-width="0.6"/>
       <text x="${padL-5}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="6" fill="#64748b">${km}</text>
       <line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="0.4"/>`;
+  }
+  // Referenzlinien 2000 m (Eingeschränkte Sicht) und 1000 m (schlechte Sicht)
+  for (const { m, lbl, col } of [{m:2000,lbl:'2 km',col:'#f59e0b'},{m:1000,lbl:'1 km',col:'#ef4444'}]) {
+    const y = yOf(m).toFixed(1);
+    yAxis += `<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="${col}" stroke-width="1" stroke-dasharray="3 2" opacity="0.7"/>
+      <text x="${W-padR+1}" y="${(parseFloat(y)+3).toFixed(1)}" font-size="5.5" fill="${col}" opacity="0.85">${lbl}</text>`;
   }
 
   let bars = '';
@@ -2579,9 +2582,17 @@ function _renderPegelChart(tRange) {
       }
     }
 
-    // ── Gemessene Extremwerte (alle lokalen Hoch- und Niedrigwasser) ─────
-    const maxima = _tideExtrema(pts, true);
-    const minima = _tideExtrema(pts, false);
+    // ── Gemessene Extremwerte: je astronomischem HW/NW das nächste Messmaximum/-minimum ─
+    const ANCHOR_WIN_MS = 3 * 3600 * 1000; // ±3h Fenster um astronomisches HW/NW
+    const tideEventsAll = (tideDbs[st.tideDb] || []);
+    const maxima = [], minima = [];
+    for (const e of tideEventsAll) {
+      const ems = new Date(e.dt).getTime();
+      const win = pts.filter(p => Math.abs(p.t.getTime() - ems) <= ANCHOR_WIN_MS);
+      if (!win.length) continue;
+      if (e.type === 'HW') maxima.push(win.reduce((a, b) => b.v > a.v ? b : a));
+      else                 minima.push(win.reduce((a, b) => b.v < a.v ? b : a));
+    }
     let extremeSvg = '';
 
     const HW_COL = '#2563eb'; // HW immer blau
