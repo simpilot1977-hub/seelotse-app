@@ -1929,11 +1929,11 @@ function _updatePegelBarChart() {
   const vals = BAR_PEGEL_STATIONS.map(st => _barPegelData[st.key] ?? null);
   if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span>'; return; }
   const validVals = vals.filter(v => v !== null);
-  const spread = Math.max(...validVals) - Math.min(...validVals);
-  const vMax = Math.max(...validVals) + spread * 0.08;
-  const vMin = Math.max(0, Math.min(...validVals) - spread * 0.08);
+  const spread = Math.max(...validVals) - Math.min(...validVals) || 50;
+  const vMax = Math.max(...validVals) + spread * 0.04;
+  const vMin = Math.max(0, Math.min(...validVals) - spread * 0.04);
   const W = 190, H = 120;
-  const padL = 26, padR = 4, padT = 10, padB = 26;
+  const padL = 26, padR = 4, padT = 8, padB = 26;
   const n = BAR_PEGEL_STATIONS.length;
   const slotW = (W - padL - padR) / n;
   const barW = Math.max(slotW * 0.6, 4);
@@ -2336,23 +2336,34 @@ function _renderPegelChart(tRange) {
   const annotVis = window._pegelAnnotations !== false ? '' : ' style="display:none"';
   const annotCls = 'class="pegel-annot"';
 
-  // ─── Echte Scheitelpunkte: strikte Richtungsumkehr, mind. 4.5h Abstand ────
+  // ─── Scheitelpunkte: lokale Maxima/Minima mit Prominenzfilter ────────────
   function _tideExtrema(pts, isMax) {
-    const MIN_SEP_MS = 4.5 * 3600 * 1000;
+    const MIN_SEP_MS  = 4.5 * 3600 * 1000;
+    const MIN_PROMIN  = 60; // cm: Extremum muss mindestens 60 cm aus Umgebung herausragen
+    // 1) Alle lokalen Extrema (strikte Ungleichung)
     const cands = [];
     for (let i = 1; i < pts.length - 1; i++) {
       const v = pts[i].v, vP = pts[i-1].v, vN = pts[i+1].v;
       if (isMax ? (v > vP && v > vN) : (v < vP && v < vN)) cands.push(pts[i]);
     }
-    const out = [];
+    // 2) Zusammenführen wenn zeitlich zu nah
+    const merged = [];
     for (const p of cands) {
-      if (!out.length) { out.push(p); continue; }
-      const prev = out[out.length - 1];
+      if (!merged.length) { merged.push(p); continue; }
+      const prev = merged[merged.length - 1];
       if (p.t.getTime() - prev.t.getTime() < MIN_SEP_MS) {
-        if (isMax ? p.v > prev.v : p.v < prev.v) out[out.length-1] = p;
-      } else { out.push(p); }
+        if (isMax ? p.v > prev.v : p.v < prev.v) merged[merged.length-1] = p;
+      } else { merged.push(p); }
     }
-    return out;
+    // 3) Prominenzfilter: Extremum muss sich deutlich von Umgebung abheben
+    return merged.filter(p => {
+      const tP = p.t.getTime();
+      const win = pts.filter(q => Math.abs(q.t.getTime() - tP) <= MIN_SEP_MS);
+      const prom = isMax
+        ? p.v - Math.min(...win.map(q => q.v))
+        : Math.max(...win.map(q => q.v)) - p.v;
+      return prom >= MIN_PROMIN;
+    });
   }
 
   // ─── Datenbasis (cm ü. SKN je Station) ───────────────────────────────────
@@ -2519,16 +2530,17 @@ function _renderPegelChart(tRange) {
       const xT  = xOf(ms);
       if (xT < padL || xT > xR) continue;
       const isHW = e.type === 'HW';
+      const tCol = isHW ? '#2563eb' : '#dc2626'; // HW blau, NW rot
       const lbl  = `${e.type} ${fmtTime(new Date(ms))}`;
       const lblY = yBot + 4; // unterhalb der X-Achse, vertikal
       tidePredSvg += `
         <line x1="${xT.toFixed(1)}" y1="${padT}" x2="${xT.toFixed(1)}" y2="${yBot}"
-          stroke="${st.color}" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.45"
+          stroke="${tCol}" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.5"
           clip-path="url(#cp-plot)"/>
         <line x1="${xT.toFixed(1)}" y1="${yBot}" x2="${xT.toFixed(1)}" y2="${(yBot+4).toFixed(1)}"
-          stroke="${st.color}" stroke-width="0.8" opacity="0.45"/>
+          stroke="${tCol}" stroke-width="0.8" opacity="0.5"/>
         <text x="${xT.toFixed(1)}" y="${lblY.toFixed(1)}"
-          text-anchor="end" font-size="7" font-weight="600" fill="${st.color}" opacity="0.75"
+          text-anchor="end" font-size="7" font-weight="600" fill="${tCol}" opacity="0.85"
           transform="rotate(-90,${xT.toFixed(1)},${lblY.toFixed(1)})">${lbl}</text>`;
     }
 
