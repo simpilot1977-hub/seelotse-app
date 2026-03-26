@@ -226,13 +226,9 @@
       background: var(--surface);
       border-radius: var(--r-lg);
       box-shadow: var(--sh-md);
-      overflow: visible;
+      overflow: auto;
+      max-height: calc(100vh - var(--header-h) - 140px);
     }
-    /* Re-apply border-radius to first/last cells so corners look right */
-    .entries-table thead th:first-child { border-radius: var(--r-lg) 0 0 0; }
-    .entries-table thead th:last-child  { border-radius: 0 var(--r-lg) 0 0; }
-    .entries-table tbody tr:last-child td:first-child { border-radius: 0 0 0 var(--r-lg); }
-    .entries-table tbody tr:last-child td:last-child  { border-radius: 0 0 var(--r-lg) 0; }
 
     .entries-table {
       width: 100%;
@@ -246,7 +242,7 @@
 
     .entries-table thead th {
       position: sticky;
-      top: var(--header-h); /* overridden by JS after render */
+      top: 0;
       z-index: 4;
     }
 
@@ -8320,13 +8316,6 @@ function renderList() {
     </div>
     ${tableHtml}`;
 
-  // Sticky thead: set top = header-height + toolbar-height so thead sticks just below toolbar
-  requestAnimationFrame(() => {
-    const toolbar = document.querySelector('.list-toolbar');
-    if (!toolbar) return;
-    const theadTop = 68 + toolbar.offsetHeight;
-    document.querySelectorAll('.entries-table thead th').forEach(th => th.style.top = theadTop + 'px');
-  });
 }
 
 function setSort(field) {
