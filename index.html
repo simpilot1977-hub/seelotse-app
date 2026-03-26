@@ -164,8 +164,14 @@
       display: flex;
       align-items: center;
       gap: 16px;
-      margin-bottom: 20px;
+      margin-bottom: 8px;
       flex-wrap: wrap;
+      position: sticky;
+      top: var(--header-h);
+      z-index: 50;
+      background: var(--bg);
+      padding-top: 10px;
+      padding-bottom: 8px;
     }
 
     .list-title-group { flex: 1 1 auto; }
@@ -220,7 +226,7 @@
       background: var(--surface);
       border-radius: var(--r-lg);
       box-shadow: var(--sh-md);
-      overflow: hidden;
+      overflow: clip;
     }
 
     .entries-table {
@@ -231,6 +237,12 @@
 
     .entries-table thead {
       background: linear-gradient(180deg, #f0f5fa 0%, #e8f0f8 100%);
+    }
+
+    .entries-table thead th {
+      position: sticky;
+      top: var(--header-h); /* overridden by JS after render */
+      z-index: 4;
     }
 
     .entries-table th {
@@ -8302,6 +8314,14 @@ function renderList() {
       </div>` : ''}
     </div>
     ${tableHtml}`;
+
+  // Sticky thead: set top = header-height + toolbar-height so thead sticks just below toolbar
+  requestAnimationFrame(() => {
+    const toolbar = document.querySelector('.list-toolbar');
+    if (!toolbar) return;
+    const theadTop = 68 + toolbar.offsetHeight;
+    document.querySelectorAll('.entries-table thead th').forEach(th => th.style.top = theadTop + 'px');
+  });
 }
 
 function setSort(field) {
