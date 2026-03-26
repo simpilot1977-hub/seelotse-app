@@ -1760,11 +1760,15 @@ function renderAstroDashboard() {
       <div class="astro-big"><span class="astro-moon-icon">${moon.phaseIcon}</span>${moon.phaseName}</div>
       <div class="astro-sub">Beleuchtung: ${Math.round(moon.illumination * 100)} % · Alter: ${moon.ageDays.toFixed(1)} Tage</div>
       <div class="astro-sub" style="margin-top:4px;color:var(--navy);font-weight:600">${moon.lastEventName}: ${moon.fmtEvent(moon.lastEventDate)}</div>
+      <div style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px">
+        <div class="astro-sub" style="color:var(--text-muted);font-size:9px;text-transform:uppercase;letter-spacing:0.5px">🌊 Alter der Gezeit</div>
+        <div style="font-size:13px;font-weight:700;color:${tidal.color};margin-top:2px">${tidal.label}</div>
+        <div style="margin-top:3px"><span class="tidal-badge" style="background:${tidal.bg};color:${tidal.color}">${tidalContext}</span></div>
+      </div>
     </div>
-    <div class="astro-card">
-      <div class="astro-card-title">🌊 Alter der Gezeit</div>
-      <div class="astro-big" style="color:${tidal.color}">${tidal.label}</div>
-      <div><span class="tidal-badge" style="background:${tidal.bg};color:${tidal.color}">${tidalContext}</span></div>
+    <div class="astro-card" id="ar-pegel-bar-card">
+      <div class="astro-card-title">📊 Pegel Elbe · aktuell</div>
+      <div id="ar-pegel-bar" style="margin-top:4px"><span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span></div>
     </div>
     <div class="astro-card">
       <div class="astro-card-title">☀️ Sonne · Brunsbüttel</div>
@@ -1876,6 +1880,7 @@ async function fetchPressureHistory(hours) {
         _pegelData[st.key] = (Array.isArray(pd) ? pd : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
       } catch { _pegelData[st.key] = []; }
     }));
+    _updatePegelBarChart();
 
     el.style.display = 'grid';
     el.style.flexDirection = '';
@@ -1891,6 +1896,74 @@ async function fetchPressureHistory(hours) {
   // Auto-refresh alle 10 Minuten
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
   _pressureRefreshTimer = setTimeout(() => { if (document.getElementById('ar-pressure-inner')) fetchPressureHistory(); }, 10 * 60 * 1000);
+}
+
+function _updatePegelBarChart() {
+  const el = document.getElementById('ar-pegel-bar');
+  if (!el) return;
+  const vals = PEGEL_STATIONS.map(st => {
+    const pts = _pegelData[st.key] || [];
+    const last = pts[pts.length - 1];
+    return last?.v != null ? last.v - st.skn : null;
+  });
+  if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Keine Daten</span>'; return; }
+  const validVals = vals.filter(v => v !== null);
+  const refMax = Math.max(...PEGEL_STATIONS.map(st => st.mthw - st.skn));
+  const refMin = Math.min(...PEGEL_STATIONS.map(st => st.mtnw - st.skn));
+  const vMax = Math.max(refMax * 1.2, Math.max(...validVals) * 1.1, 400);
+  const vMin = Math.min(refMin * 0.5, Math.min(...validVals) * 1.1, -20);
+  const W = 190, H = 110;
+  const padL = 28, padR = 8, padT = 10, padB = 22;
+  const n = PEGEL_STATIONS.length;
+  const slotW = (W - padL - padR) / n;
+  const barW = slotW * 0.55;
+  const yBot = H - padB;
+  const yOf = v => padT + (1 - (v - vMin) / (vMax - vMin)) * (yBot - padT);
+  const yZero = yOf(0);
+
+  // Y-Achse Ticks
+  const yStep = 100;
+  let yAxis = '';
+  for (let v = Math.ceil(vMin/yStep)*yStep; v <= vMax; v += yStep) {
+    const y = yOf(v).toFixed(1);
+    yAxis += `<line x1="${padL-3}" y1="${y}" x2="${padL}" y2="${y}" stroke="#94a3b8" stroke-width="0.6"/>
+      <text x="${padL-5}" y="${(parseFloat(y)+3).toFixed(1)}" text-anchor="end" font-size="6.5" fill="#64748b">${v}</text>
+      <line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="#e2e8f0" stroke-width="0.4"/>`;
+  }
+  // Referenzlinien MThw/MTnw (Durchschnitt der Stationen)
+  const avgMthw = PEGEL_STATIONS.reduce((a,s) => a + s.mthw - s.skn, 0) / n;
+  const avgMtnw = PEGEL_STATIONS.reduce((a,s) => a + s.mtnw - s.skn, 0) / n;
+  const yMthw = yOf(avgMthw).toFixed(1), yMtnw = yOf(avgMtnw).toFixed(1);
+  const refLines = `
+    <line x1="${padL}" y1="${yMthw}" x2="${W-padR}" y2="${yMthw}" stroke="#dc2626" stroke-width="0.8" stroke-dasharray="4 2" opacity="0.7"/>
+    <text x="${W-padR+2}" y="${(parseFloat(yMthw)+3).toFixed(1)}" font-size="5.5" fill="#dc2626">MThw</text>
+    <line x1="${padL}" y1="${yMtnw}" x2="${W-padR}" y2="${yMtnw}" stroke="#0d9488" stroke-width="0.8" stroke-dasharray="4 2" opacity="0.7"/>
+    <text x="${W-padR+2}" y="${(parseFloat(yMtnw)+3).toFixed(1)}" font-size="5.5" fill="#0d9488">MTnw</text>`;
+
+  let bars = '';
+  PEGEL_STATIONS.forEach((st, i) => {
+    const v = vals[i];
+    if (v === null) return;
+    const xCenter = padL + i * slotW + slotW / 2;
+    const xBar = xCenter - barW / 2;
+    const yV = yOf(v);
+    const barTop = Math.min(yV, yZero);
+    const barH = Math.max(Math.abs(yZero - yV), 1);
+    const lblY = v >= 0 ? yV - 3 : yV + 9;
+    const shortLabel = st.label === 'Brunsbüttel' ? 'Brb.' : st.label;
+    bars += `<rect x="${xBar.toFixed(1)}" y="${barTop.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${st.color}" opacity="0.85" rx="2"/>
+      <text x="${xCenter.toFixed(1)}" y="${Math.max(padT+8, lblY).toFixed(1)}" text-anchor="middle" font-size="7" font-weight="700" fill="${st.color}">${v.toFixed(0)}</text>
+      <text x="${xCenter.toFixed(1)}" y="${(yBot+13).toFixed(1)}" text-anchor="middle" font-size="7" fill="#334155">${shortLabel}</text>`;
+  });
+
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" style="overflow:visible;font-family:'Inter',system-ui,sans-serif">
+    ${yAxis}${refLines}${bars}
+    <line x1="${padL}" y1="${yZero.toFixed(1)}" x2="${W-padR}" y2="${yZero.toFixed(1)}" stroke="#94a3b8" stroke-width="0.9"/>
+    <text x="${padL-5}" y="${(yZero+3).toFixed(1)}" text-anchor="end" font-size="6" fill="#94a3b8">SKN</text>
+    <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
+    <line x1="${padL}" y1="${yBot}" x2="${W-padR}" y2="${yBot}" stroke="#334155" stroke-width="0.8"/>
+    <text x="${W/2}" y="${(H-2).toFixed(1)}" text-anchor="middle" font-size="6" fill="#94a3b8">cm ü. SKN</text>
+  </svg>`;
 }
 
 if (!window._pegelVisible)     window._pegelVisible     = Object.fromEntries(PEGEL_STATIONS.map(s=>[s.key,true]));
@@ -2221,6 +2294,7 @@ async function fetchPegelData(hours) {
       _pegelData[st.key] = (Array.isArray(data) ? data : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
     } catch { _pegelData[st.key] = []; }
   }));
+  _updatePegelBarChart();
   if (elCur) elCur.innerHTML = _renderPegelCurrent();
   const now = new Date();
   const tRange = { min: now.getTime() - _pegelHours * 3600000, max: now.getTime() };
@@ -2245,7 +2319,7 @@ function _renderPegelCurrent() {
 function _renderPegelChart(tRange) {
   // ─── Layout ──────────────────────────────────────────────────────────────
   const W = 760, H = 280;
-  const padL = 52, padR = 92, padT = 18, padB = 36;
+  const padL = 52, padR = 92, padT = 18, padB = 52;
   const tMin = tRange.min, tMax = tRange.max;
   const TICK = 4;
   const annotVis = window._pegelAnnotations !== false ? '' : ' style="display:none"';
@@ -2387,39 +2461,43 @@ function _renderPegelChart(tRange) {
       }
     }
 
-    // ── Gemessene Extremwerte (globales Maximum und Minimum) ─────────────
-    const maxPt = pts.reduce((a, b) => b.v > a.v ? b : a);
-    const minPt = pts.reduce((a, b) => b.v < a.v ? b : a);
+    // ── Gemessene Extremwerte (alle lokalen Hoch- und Niedrigwasser) ─────
+    const maxima = _tideExtrema(pts, true);
+    const minima = _tideExtrema(pts, false);
     let extremeSvg = '';
 
     if (st.mthw != null) {
       const mthwV = st.mthw - skn, yRef = yOf(mthwV);
-      const v = maxPt.v - skn, xM = xOf(maxPt.t.getTime()), yM = yOf(v);
-      const sign = (v - mthwV) >= 0 ? '+' : '';
-      const lbl2 = `${sign}${(v - mthwV).toFixed(0)} cm`;
-      extremeSvg += `
-        <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-          stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-        <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
-        <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
-          text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
-        <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
-          text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(maxPt.t)}</text>`;
+      for (const p of maxima) {
+        const v = p.v - skn, xM = xOf(p.t.getTime()), yM = yOf(v);
+        const sign = (v - mthwV) >= 0 ? '+' : '';
+        const lbl2 = `${sign}${(v - mthwV).toFixed(0)} cm`;
+        extremeSvg += `
+          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
+            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>`;
+      }
     }
     if (st.mtnw != null) {
       const mtnwV = st.mtnw - skn, yRef = yOf(mtnwV);
-      const v = minPt.v - skn, xM = xOf(minPt.t.getTime()), yM = yOf(v);
-      const sign = (v - mtnwV) >= 0 ? '+' : '';
-      const lbl2 = `${sign}${(v - mtnwV).toFixed(0)} cm`;
-      const useBelow = yM + 26 < yBot;
-      extremeSvg += `
-        <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-          stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-        <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
-        <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
-          text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(minPt.t)}</text>
-        <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
-          text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
+      for (const p of minima) {
+        const v = p.v - skn, xM = xOf(p.t.getTime()), yM = yOf(v);
+        const sign = (v - mtnwV) >= 0 ? '+' : '';
+        const lbl2 = `${sign}${(v - mtnwV).toFixed(0)} cm`;
+        const useBelow = yM + 26 < yBot;
+        extremeSvg += `
+          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
+            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
+      }
     }
 
     // ── Berechnete Gezeitenzeiten aus tideDbs (senkrechte Linien) ──────────
@@ -2432,14 +2510,16 @@ function _renderPegelChart(tRange) {
       if (xT < padL || xT > xR) continue;
       const isHW = e.type === 'HW';
       const lbl  = `${e.type} ${fmtTime(new Date(ms))}`;
-      const labelY = isHW ? clampY(padT + 10) : clampY(yBot - 12);
+      const lblY = yBot + 4; // unterhalb der X-Achse, vertikal
       tidePredSvg += `
         <line x1="${xT.toFixed(1)}" y1="${padT}" x2="${xT.toFixed(1)}" y2="${yBot}"
           stroke="${st.color}" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.45"
           clip-path="url(#cp-plot)"/>
-        <text x="${xT.toFixed(1)}" y="${labelY.toFixed(1)}"
-          text-anchor="middle" font-size="7" font-weight="600" fill="${st.color}" opacity="0.75"
-          transform="rotate(-90,${xT.toFixed(1)},${labelY.toFixed(1)})">${lbl}</text>`;
+        <line x1="${xT.toFixed(1)}" y1="${yBot}" x2="${xT.toFixed(1)}" y2="${(yBot+4).toFixed(1)}"
+          stroke="${st.color}" stroke-width="0.8" opacity="0.45"/>
+        <text x="${xT.toFixed(1)}" y="${lblY.toFixed(1)}"
+          text-anchor="end" font-size="7" font-weight="600" fill="${st.color}" opacity="0.75"
+          transform="rotate(-90,${xT.toFixed(1)},${lblY.toFixed(1)})">${lbl}</text>`;
     }
 
     stationGroups += `<g id="pegel-group-${st.key}"${vis}>
