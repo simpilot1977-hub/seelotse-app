@@ -1929,8 +1929,9 @@ function _updatePegelBarChart() {
   const vals = BAR_PEGEL_STATIONS.map(st => _barPegelData[st.key] ?? null);
   if (vals.every(v => v === null)) { el.innerHTML = '<span style="font-size:11px;color:var(--text-muted)">Wird geladen…</span>'; return; }
   const validVals = vals.filter(v => v !== null);
-  const vMax = Math.max(...validVals) * 1.12;
-  const vMin = Math.max(0, Math.min(...validVals) * 0.85);
+  const spread = Math.max(...validVals) - Math.min(...validVals);
+  const vMax = Math.max(...validVals) + spread * 0.08;
+  const vMin = Math.max(0, Math.min(...validVals) - spread * 0.08);
   const W = 190, H = 120;
   const padL = 26, padR = 4, padT = 10, padB = 26;
   const n = BAR_PEGEL_STATIONS.length;
@@ -2532,11 +2533,11 @@ function _renderPegelChart(tRange) {
     }
 
     stationGroups += `<g id="pegel-group-${st.key}"${vis}>
-      <g ${annotCls}${annotVis ? '' : ' style="display:none"'}>${refSvg}</g>
+      <g>${refSvg}</g>
       ${fills}
       <polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.6"
         stroke-linejoin="round" stroke-linecap="round"/>
-      <g ${annotCls}${annotVis ? '' : ' style="display:none"'}>${extremeSvg}${tidePredSvg}</g>
+      <g ${annotCls}${annotVis}>${extremeSvg}${tidePredSvg}</g>
       <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v-skn).toFixed(1)}"
         r="2.5" fill="${st.color}"/>
     </g>`;
