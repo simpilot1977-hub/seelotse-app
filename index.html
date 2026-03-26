@@ -2387,43 +2387,39 @@ function _renderPegelChart(tRange) {
       }
     }
 
-    // ── Gemessene Extremwerte (alle Hoch- und Niedrigwasser) ─────────────
-    const maxima = _tideExtrema(pts, true);
-    const minima = _tideExtrema(pts, false);
+    // ── Gemessene Extremwerte (globales Maximum und Minimum) ─────────────
+    const maxPt = pts.reduce((a, b) => b.v > a.v ? b : a);
+    const minPt = pts.reduce((a, b) => b.v < a.v ? b : a);
     let extremeSvg = '';
 
     if (st.mthw != null) {
       const mthwV = st.mthw - skn, yRef = yOf(mthwV);
-      for (const p of maxima) {
-        const v = p.v-skn, xM = xOf(p.t.getTime()), yM = yOf(v);
-        const sign = (v-mthwV) >= 0 ? '+' : '';
-        const lbl2 = `${sign}${(v-mthwV).toFixed(0)} cm`;
-        extremeSvg += `
-          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
-          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
-            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
-          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
-            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>`;
-      }
+      const v = maxPt.v - skn, xM = xOf(maxPt.t.getTime()), yM = yOf(v);
+      const sign = (v - mthwV) >= 0 ? '+' : '';
+      const lbl2 = `${sign}${(v - mthwV).toFixed(0)} cm`;
+      extremeSvg += `
+        <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+          stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+        <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+        <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
+          text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
+        <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
+          text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(maxPt.t)}</text>`;
     }
     if (st.mtnw != null) {
       const mtnwV = st.mtnw - skn, yRef = yOf(mtnwV);
-      for (const p of minima) {
-        const v = p.v-skn, xM = xOf(p.t.getTime()), yM = yOf(v);
-        const sign = (v-mtnwV) >= 0 ? '+' : '';
-        const lbl2 = `${sign}${(v-mtnwV).toFixed(0)} cm`;
-        const useBelow = yM + 26 < yBot;
-        extremeSvg += `
-          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
-            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
-          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
-          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
-            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>
-          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
-            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
-      }
+      const v = minPt.v - skn, xM = xOf(minPt.t.getTime()), yM = yOf(v);
+      const sign = (v - mtnwV) >= 0 ? '+' : '';
+      const lbl2 = `${sign}${(v - mtnwV).toFixed(0)} cm`;
+      const useBelow = yM + 26 < yBot;
+      extremeSvg += `
+        <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+          stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+        <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+        <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
+          text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(minPt.t)}</text>
+        <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
+          text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
     }
 
     // ── Berechnete Gezeitenzeiten aus tideDbs (senkrechte Linien) ──────────
