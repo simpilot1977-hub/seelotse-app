@@ -1805,12 +1805,15 @@ const WEATHER_STATIONS = {
 const PEGEL_STATIONS = [
   { key: 'cux', label: 'Cuxhaven',    km: 724, color: '#2563eb', skn: 302, nn: 503,
     mthw: 655, mtnw: 363,  // Pegelonline API-Kennwerte [cm ü.PN]
+    tideDb: 'Cuxhaven',
     uuid: 'aad49293-242a-43ad-a8b1-e91d7792c4b2' },
   { key: 'brb', label: 'Brunsbüttel', km: 695, color: '#0d9488', skn: 310, nn: 500,
     mthw: 656, mtnw: 370,  // interpoliert (API liefert keine Kennwerte)
+    tideDb: 'Brunsbuettel',
     uuid: 'd4f5f719-8c52-4f8d-945d-1c31404cc628' },
   { key: 'hh',  label: 'Hamburg',     km: 623, color: '#d97706', skn: 310, nn: 500,
     mthw: 711, mtnw: 347,  // Pegelonline API-Kennwerte [cm ü.PN]
+    tideDb: 'Hamburg',
     uuid: 'd488c5cc-4de9-4631-8ce1-0db0e700b546' },
 ];
 let _pegelHours = 24;
@@ -1890,32 +1893,46 @@ async function fetchPressureHistory(hours) {
   _pressureRefreshTimer = setTimeout(() => { if (document.getElementById('ar-pressure-inner')) fetchPressureHistory(); }, 10 * 60 * 1000);
 }
 
-if (!window._pegelVisible) window._pegelVisible = Object.fromEntries(PEGEL_STATIONS.map(s=>[s.key,true]));
+if (!window._pegelVisible)     window._pegelVisible     = Object.fromEntries(PEGEL_STATIONS.map(s=>[s.key,true]));
+if (window._pegelAnnotations === undefined) window._pegelAnnotations = true;
+
 function _togglePegelStation(key, show) {
   window._pegelVisible[key] = show;
   const g = document.getElementById('pegel-group-' + key);
   if (g) g.style.display = show ? '' : 'none';
 }
+function _togglePegelAnnotations(show) {
+  window._pegelAnnotations = show;
+  document.querySelectorAll('.pegel-annot').forEach(el => el.style.display = show ? '' : 'none');
+}
 
 function _renderPegelChartWithHeader(tRange) {
   const currentRow = PEGEL_STATIONS.map(st => {
-    const pts = _pegelData[st.key] || [];
+    const pts  = _pegelData[st.key] || [];
     const last = pts[pts.length - 1];
-    const val = (last?.v != null && st.skn != null) ? last.v - st.skn : null;
+    const val  = (last?.v != null && st.skn != null) ? last.v - st.skn : null;
     return `<span style="color:${st.color};font-weight:700">${st.label}: <span style="color:var(--navy)">${val != null ? val.toFixed(0) : '–'} cm</span></span>`;
   }).join('<span style="color:var(--border)"> · </span>');
-  const checkboxes = PEGEL_STATIONS.map(st => {
+
+  const cbxStations = PEGEL_STATIONS.map(st => {
     const vis = window._pegelVisible[st.key] !== false;
     return `<label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;font-size:10px;color:${st.color};font-weight:600">
-      <input type="checkbox" ${vis ? 'checked' : ''} onchange="_togglePegelStation('${st.key}',this.checked)" style="accent-color:${st.color};width:13px;height:13px">
-      ${st.label}</label>`;
+      <input type="checkbox" ${vis ? 'checked' : ''} onchange="_togglePegelStation('${st.key}',this.checked)"
+        style="accent-color:${st.color};width:13px;height:13px"> ${st.label}</label>`;
   }).join('');
+
+  const cbxAnnot = `<label style="display:inline-flex;align-items:center;gap:3px;cursor:pointer;font-size:10px;color:var(--text-muted);margin-left:auto">
+    <input type="checkbox" ${window._pegelAnnotations ? 'checked' : ''} onchange="_togglePegelAnnotations(this.checked)"
+      style="width:13px;height:13px"> Hilfslinien &amp; Labels</label>`;
+
   return `<div>
     <div style="font-size:10px;margin-bottom:3px;display:flex;flex-wrap:wrap;gap:8px;align-items:center">
       ${currentRow}
       <span style="font-size:9px;color:var(--text-muted);margin-left:auto">ü. SKN</span>
     </div>
-    <div style="display:flex;gap:12px;margin-bottom:4px;flex-wrap:wrap">${checkboxes}</div>
+    <div style="display:flex;gap:10px;margin-bottom:4px;flex-wrap:wrap;align-items:center">
+      ${cbxStations}${cbxAnnot}
+    </div>
     ${_renderPegelChart(tRange)}
   </div>`;
 }
@@ -2228,9 +2245,33 @@ function _renderPegelCurrent() {
 function _renderPegelChart(tRange) {
   // ─── Layout ──────────────────────────────────────────────────────────────
   const W = 760, H = 280;
-  const padL = 52, padR = 92, padT = 18, padB = 36; // padR: Platz für Referenzlinien-Labels
+  const padL = 52, padR = 92, padT = 18, padB = 36;
   const tMin = tRange.min, tMax = tRange.max;
-  const TICK = 4; // Tick-Länge px
+  const TICK = 4;
+  const annotVis = window._pegelAnnotations !== false ? '' : ' style="display:none"';
+  const annotCls = 'class="pegel-annot"';
+
+  // ─── Robuste lokale Extremwerte (inkl. Endpunkte, zeitbasierte Trennung) ─
+  function _tideExtrema(pts, isMax) {
+    const MIN_SEP_MS = 2 * 3600 * 1000; // mind. 2h zwischen zwei Extrema
+    const cands = [];
+    for (let i = 0; i < pts.length; i++) {
+      const v    = pts[i].v;
+      const vP   = i > 0             ? pts[i-1].v : (isMax ? -Infinity : Infinity);
+      const vN   = i < pts.length-1  ? pts[i+1].v : (isMax ? -Infinity : Infinity);
+      if (isMax ? (v >= vP && v >= vN) : (v <= vP && v <= vN)) cands.push(pts[i]);
+    }
+    // Zusammenführen wenn zeitlich zu nah (Plateau oder Rauschen)
+    const out = [];
+    for (const p of cands) {
+      if (!out.length) { out.push(p); continue; }
+      const prev = out[out.length - 1];
+      if (p.t.getTime() - prev.t.getTime() < MIN_SEP_MS) {
+        if (isMax ? p.v > prev.v : p.v < prev.v) out[out.length-1] = p;
+      } else { out.push(p); }
+    }
+    return out;
+  }
 
   // ─── Datenbasis (cm ü. SKN je Station) ───────────────────────────────────
   const allVals = PEGEL_STATIONS.flatMap(st =>
@@ -2281,57 +2322,52 @@ function _renderPegelChart(tRange) {
     text-anchor="middle" font-size="8.5" font-family="'Inter',system-ui,sans-serif"
     fill="#64748b" letter-spacing="0.3">Wasserstand [cm ü. SKN]</text>`;
 
-  // ─── Referenzlinien ───────────────────────────────────────────────────────
-  // Labels im rechten Rand (padR) je Station gestaffelt: lx versetzt
+  // ─── Station Groups: Referenzlinien + Füllung + Kurve + Annotationen ────
   const REF_LABEL_X = [xR + 3, xR + 31, xR + 59];
-  let refLines = '';
-  // Clip-Rect für Referenzlinien (nur innerhalb Plot-Bereich)
-  refLines += `<clipPath id="cp-plot"><rect x="${padL}" y="${padT}" width="${xR-padL}" height="${yBot-padT}"/></clipPath>`;
-
-  // Referenz-Definitionen: label, dash, Linienstärke, opacity
   const REF_DEF = [
-    { key:'skn',  vFn: skn => 0,           label:'SKN',  dash:'4 3',  w:0.9, op:0.70 },
-    { key:'nn',   vFn:(skn,st)=>st.nn  != null ? st.nn  - skn : null, label:'NN',   dash:'2 3',  w:0.8, op:0.45 },
-    { key:'mthw', vFn:(skn,st)=>st.mthw != null ? st.mthw - skn : null, label:'MThw', dash:'8 3',  w:1.0, op:0.60 },
-    { key:'mtnw', vFn:(skn,st)=>st.mtnw != null ? st.mtnw - skn : null, label:'MTnw', dash:'8 3',  w:1.0, op:0.60 },
+    { vFn: skn       => 0,                                 label:'SKN',  dash:'4 3', w:0.9, op:0.70 },
+    { vFn:(skn,st)   => st.nn   != null ? st.nn  -skn:null,label:'NN',  dash:'2 3', w:0.8, op:0.45 },
+    { vFn:(skn,st)   => st.mthw != null ? st.mthw-skn:null,label:'MThw',dash:'8 3', w:1.0, op:0.60 },
+    { vFn:(skn,st)   => st.mtnw != null ? st.mtnw-skn:null,label:'MTnw',dash:'8 3', w:1.0, op:0.60 },
   ];
-  PEGEL_STATIONS.forEach((st, si) => {
-    const skn = st.skn ?? 0;
-    const lx  = REF_LABEL_X[si];
-    for (const rd of REF_DEF) {
-      const v = rd.vFn(skn, st);
-      if (v == null || v < yMin || v > yMax) continue;
-      const y = yOf(v).toFixed(1);
-      refLines += `<line x1="${padL}" y1="${y}" x2="${xR + 2}" y2="${y}"
-        stroke="${st.color}" stroke-width="${rd.w}" stroke-dasharray="${rd.dash}" opacity="${rd.op}"
-        clip-path="url(#cp-plot)"/>`;
-      // Kurzer Überhang rechts als Tick
-      refLines += `<line x1="${xR}" y1="${y}" x2="${xR+TICK}" y2="${y}"
-        stroke="${st.color}" stroke-width="${rd.w}" opacity="${rd.op}"/>`;
-      // Label rechts, mittig auf der Linie
-      refLines += `<text x="${lx}" y="${(parseFloat(y)+3.5).toFixed(1)}"
-        font-size="7.5" font-family="'Inter',system-ui,sans-serif"
-        font-weight="600" fill="${st.color}" opacity="${rd.op + 0.15}">${rd.label}</text>`;
-    }
-  });
+  const fmtTime = t => t.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+  const clampX  = x => Math.min(Math.max(x, padL + 22), xR - 22);
+  const clampY  = y => Math.min(Math.max(y, padT + 7),  yBot - 5);
 
-  // ─── Station Groups: Füllung + Kurve ─────────────────────────────────────
-  let defs = '<defs>';
+  let defs = `<defs>
+    <clipPath id="cp-plot"><rect x="${padL}" y="${padT}" width="${xR-padL}" height="${yBot-padT}"/></clipPath>`;
   let stationGroups = '';
-  PEGEL_STATIONS.forEach(st => {
+
+  PEGEL_STATIONS.forEach((st, si) => {
     const skn = st.skn ?? 0;
     const vis = window._pegelVisible?.[st.key] !== false ? '' : ' style="display:none"';
     const pts = (_pegelData[st.key] || []).filter(p => p.v != null && p.t.getTime() >= tMin);
     if (!pts.length) return;
 
-    const xyPts = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v-skn).toFixed(1)}`);
-    const ptStr = xyPts.join(' ');
+    const ptStr = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v-skn).toFixed(1)}`).join(' ');
     const x0    = xOf(pts[0].t.getTime()).toFixed(1);
     const xN    = xOf(pts[pts.length-1].t.getTime()).toFixed(1);
     const last  = pts[pts.length-1];
+    const lx    = REF_LABEL_X[si]; // Label-x im rechten Rand
 
+    // ── Referenzlinien (mit Station ausblendbar, annotVis-fähig) ────────────
+    let refSvg = '';
+    for (const rd of REF_DEF) {
+      const v = rd.vFn(skn, st);
+      if (v == null || v < yMin || v > yMax) continue;
+      const y = yOf(v).toFixed(1);
+      refSvg += `<line x1="${padL}" y1="${y}" x2="${xR+2}" y2="${y}"
+        stroke="${st.color}" stroke-width="${rd.w}" stroke-dasharray="${rd.dash}" opacity="${rd.op}"
+        clip-path="url(#cp-plot)"/>
+        <line x1="${xR}" y1="${y}" x2="${xR+TICK}" y2="${y}"
+        stroke="${st.color}" stroke-width="${rd.w}" opacity="${rd.op}"/>
+        <text x="${lx}" y="${(parseFloat(y)+3.5).toFixed(1)}"
+        font-size="7.5" font-family="'Inter',system-ui,sans-serif"
+        font-weight="600" fill="${st.color}" opacity="${rd.op+0.15}">${rd.label}</text>`;
+    }
+
+    // ── Füllbereiche außerhalb MThw / MTnw (rot transparent) ─────────────
     let fills = '';
-    // Füllung oberhalb MThw (rot/transparent) ─ clipPath: oberhalb MThw-Linie
     if (st.mthw != null) {
       const mthwV = st.mthw - skn;
       if (mthwV > yMin && mthwV < yMax) {
@@ -2341,7 +2377,6 @@ function _renderPegelChart(tRange) {
         fills += `<polygon points="${x0},${yMthw} ${ptStr} ${xN},${yMthw}" fill="#dc2626" opacity="0.18" clip-path="url(#${cid})"/>`;
       }
     }
-    // Füllung unterhalb MTnw (rot/transparent) ─ clipPath: unterhalb MTnw-Linie
     if (st.mtnw != null) {
       const mtnwV = st.mtnw - skn;
       if (mtnwV > yMin && mtnwV < yMax) {
@@ -2352,60 +2387,71 @@ function _renderPegelChart(tRange) {
       }
     }
 
-    // ─── Extremwerte markieren ──────────────────────────────────────────────
-    let extremeMarks = '';
-    const maxPt = pts.reduce((a, b) => (b.v > a.v ? b : a));
-    const minPt = pts.reduce((a, b) => (b.v < a.v ? b : a));
-    const maxV  = maxPt.v - skn;
-    const minV  = minPt.v - skn;
+    // ── Gemessene Extremwerte (alle Hoch- und Niedrigwasser) ─────────────
+    const maxima = _tideExtrema(pts, true);
+    const minima = _tideExtrema(pts, false);
+    let extremeSvg = '';
 
-    // Maximum: Abstand zu MThw
     if (st.mthw != null) {
-      const mthwV  = st.mthw - skn;
-      const delta  = maxV - mthwV;
-      const xM     = xOf(maxPt.t.getTime());
-      const yM     = yOf(maxV);
-      const yMthwP = yOf(mthwV);
-      const sign   = delta >= 0 ? '+' : '';
-      const lbl    = `${sign}${delta.toFixed(0)} cm`;
-      // Verbindungslinie vom Extrempunkt zur MThw-Linie
-      extremeMarks += `<line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yMthwP.toFixed(1)}"
-        stroke="${st.color}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>`;
-      // Punkt
-      extremeMarks += `<circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5"
-        fill="white" stroke="${st.color}" stroke-width="1.5"/>`;
-      // Label mit Abstand zu MThw
-      const lblY = (yM - 8).toFixed(1);
-      const lblX = Math.min(Math.max(xM, padL + 16), xR - 16);
-      extremeMarks += `<text x="${lblX.toFixed(1)}" y="${lblY}" text-anchor="middle"
-        font-size="8" font-weight="700" font-family="'Inter',system-ui,sans-serif"
-        fill="${st.color}">${lbl}</text>`;
+      const mthwV = st.mthw - skn, yRef = yOf(mthwV);
+      for (const p of maxima) {
+        const v = p.v-skn, xM = xOf(p.t.getTime()), yM = yOf(v);
+        const sign = (v-mthwV) >= 0 ? '+' : '';
+        const lbl2 = `${sign}${(v-mthwV).toFixed(0)} cm`;
+        extremeSvg += `
+          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-15).toFixed(1)}"
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(yM-6).toFixed(1)}"
+            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>`;
+      }
     }
-    // Minimum: Abstand zu MTnw
     if (st.mtnw != null) {
-      const mtnwV  = st.mtnw - skn;
-      const delta  = minV - mtnwV;
-      const xM     = xOf(minPt.t.getTime());
-      const yM     = yOf(minV);
-      const yMtnwP = yOf(mtnwV);
-      const sign   = delta >= 0 ? '+' : '';
-      const lbl    = `${sign}${delta.toFixed(0)} cm`;
-      extremeMarks += `<line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yMtnwP.toFixed(1)}"
-        stroke="${st.color}" stroke-width="0.8" stroke-dasharray="2 2" opacity="0.6"/>`;
-      extremeMarks += `<circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5"
-        fill="white" stroke="${st.color}" stroke-width="1.5"/>`;
-      const lblY = (yM + 14).toFixed(1);
-      const lblX = Math.min(Math.max(xOf(minPt.t.getTime()), padL + 16), xR - 16);
-      extremeMarks += `<text x="${lblX.toFixed(1)}" y="${lblY}" text-anchor="middle"
-        font-size="8" font-weight="700" font-family="'Inter',system-ui,sans-serif"
-        fill="${st.color}">${lbl}</text>`;
+      const mtnwV = st.mtnw - skn, yRef = yOf(mtnwV);
+      for (const p of minima) {
+        const v = p.v-skn, xM = xOf(p.t.getTime()), yM = yOf(v);
+        const sign = (v-mtnwV) >= 0 ? '+' : '';
+        const lbl2 = `${sign}${(v-mtnwV).toFixed(0)} cm`;
+        const useBelow = yM + 26 < yBot;
+        extremeSvg += `
+          <line x1="${xM.toFixed(1)}" y1="${yM.toFixed(1)}" x2="${xM.toFixed(1)}" y2="${yRef.toFixed(1)}"
+            stroke="${st.color}" stroke-width="0.7" stroke-dasharray="2 2" opacity="0.5"/>
+          <circle cx="${xM.toFixed(1)}" cy="${yM.toFixed(1)}" r="3.5" fill="white" stroke="${st.color}" stroke-width="1.5"/>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+16 : yM-15).toFixed(1)}"
+            text-anchor="middle" font-size="7" fill="${st.color}" opacity="0.8">${fmtTime(p.t)}</text>
+          <text x="${clampX(xM).toFixed(1)}" y="${clampY(useBelow ? yM+25 : yM-6).toFixed(1)}"
+            text-anchor="middle" font-size="7.5" font-weight="700" fill="${st.color}">${lbl2}</text>`;
+      }
+    }
+
+    // ── Berechnete Gezeitenzeiten aus tideDbs (senkrechte Linien) ──────────
+    let tidePredSvg = '';
+    const tideEvents = (tideDbs[st.tideDb] || [])
+      .filter(e => { const ms = new Date(e.dt).getTime(); return ms >= tMin && ms <= tMax; });
+    for (const e of tideEvents) {
+      const ms = new Date(e.dt).getTime();
+      const xT  = xOf(ms);
+      if (xT < padL || xT > xR) continue;
+      const isHW = e.type === 'HW';
+      const lbl  = `${e.type} ${fmtTime(new Date(ms))}`;
+      const labelY = isHW ? clampY(padT + 10) : clampY(yBot - 12);
+      tidePredSvg += `
+        <line x1="${xT.toFixed(1)}" y1="${padT}" x2="${xT.toFixed(1)}" y2="${yBot}"
+          stroke="${st.color}" stroke-width="0.8" stroke-dasharray="3 4" opacity="0.45"
+          clip-path="url(#cp-plot)"/>
+        <text x="${xT.toFixed(1)}" y="${labelY.toFixed(1)}"
+          text-anchor="middle" font-size="7" font-weight="600" fill="${st.color}" opacity="0.75"
+          transform="rotate(-90,${xT.toFixed(1)},${labelY.toFixed(1)})">${lbl}</text>`;
     }
 
     stationGroups += `<g id="pegel-group-${st.key}"${vis}>
+      <g ${annotCls}${annotVis ? '' : ' style="display:none"'}>${refSvg}</g>
       ${fills}
       <polyline points="${ptStr}" fill="none" stroke="${st.color}" stroke-width="1.6"
         stroke-linejoin="round" stroke-linecap="round"/>
-      ${extremeMarks}
+      <g ${annotCls}${annotVis ? '' : ' style="display:none"'}>${extremeSvg}${tidePredSvg}</g>
       <circle cx="${xOf(last.t.getTime()).toFixed(1)}" cy="${yOf(last.v-skn).toFixed(1)}"
         r="2.5" fill="${st.color}"/>
     </g>`;
@@ -2416,18 +2462,18 @@ function _renderPegelChart(tRange) {
   const legendItems = [
     ...PEGEL_STATIONS.map(st=>`<span style="color:${st.color};display:inline-flex;align-items:center;gap:3px"><svg width="16" height="4" style="vertical-align:middle"><line x1="0" y1="2" x2="16" y2="2" stroke="${st.color}" stroke-width="1.6"/></svg>${st.label}</span>`),
     `<span style="color:#dc2626;display:inline-flex;align-items:center;gap:3px"><svg width="12" height="8" style="vertical-align:middle"><rect width="12" height="8" fill="#dc2626" opacity="0.3"/></svg>außerh. MThw/MTnw</span>`,
+    `<span style="color:#64748b;display:inline-flex;align-items:center;gap:3px"><svg width="4" height="14" style="vertical-align:middle"><line x1="2" y1="0" x2="2" y2="14" stroke="#64748b" stroke-width="1" stroke-dasharray="3 3"/></svg>Tide HW/NW</span>`,
   ].join('<span style="color:#cbd5e1;margin:0 4px">|</span>');
 
   return `<div>
-    <div style="font-size:8.5px;font-family:'Inter',system-ui,sans-serif;color:#64748b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center">
+    <div style="font-size:8.5px;font-family:'Inter',system-ui,sans-serif;color:#64748b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px">
       <span style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">${legendItems}</span>
-      <span style="white-space:nowrap">SKN · NN · MThw · MTnw →</span>
+      <span style="white-space:nowrap;color:#94a3b8">SKN · NN · MThw · MTnw →</span>
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%"
          style="display:block;overflow:visible;font-family:'Inter',system-ui,sans-serif">
       ${defs}
       ${gridLines}${axes}${yLabels}${yTitle}${xLabels}
-      ${refLines}
       ${stationGroups}
     </svg>
   </div>`;
