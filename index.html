@@ -48,6 +48,47 @@
       --tap:        48px;
     }
 
+    /* ── DARK MODE ── */
+    [data-theme="dark"] {
+      --bg:         #0d1b2a;
+      --surface:    #142031;
+      --border:     #243650;
+      --border-dk:  #32487a;
+      --text:       #dce8f5;
+      --text-muted: #7a9bbf;
+      --navy:       #93c5fd;
+      --navy-dk:    #06101c;
+      --blue:       #4a9ed8;
+      --blue-lt:    #62b5f0;
+      --blue-pale:  #162840;
+      --success:    #34d399;
+      --success-bg: #0d2018;
+      --danger:     #f87171;
+      --danger-bg:  #2a0e0e;
+      --warn:       #fbbf24;
+      --warn-bg:    #2a1800;
+      --sh:         0 2px 10px rgba(0,0,0,.5);
+      --sh-md:      0 4px 20px rgba(0,0,0,.6);
+      --sh-lg:      0 8px 32px rgba(0,0,0,.7);
+    }
+    [data-theme="dark"] .entries-table thead th {
+      background: linear-gradient(180deg, #1a2d42 0%, #122030 100%) !important;
+      color: #93c5fd;
+    }
+    [data-theme="dark"] .entries-table tbody tr:hover { background: #1a2d42; }
+    [data-theme="dark"] .dash-card.dc-green { background: #0d2018; border-color: #166534; }
+    [data-theme="dark"] .dash-card.dc-amber { background: #2a1800; border-color: #92400e; }
+    [data-theme="dark"] .dash-num.num-green { color: #34d399; }
+    [data-theme="dark"] .dash-num.num-amber { color: #fbbf24; }
+    [data-theme="dark"] .dur-reise   { background: #0d2018; color: #34d399; }
+    [data-theme="dark"] .dur-einsatz { background: #2a1e00; color: #fbbf24; }
+    [data-theme="dark"] .dur-cross   { background: #1e1640; color: #c4b5fd; }
+    [data-theme="dark"] .dur-pending { background: #2a1800; color: #fbbf24; border-color: #92400e; }
+    [data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+    [data-theme="dark"] select,
+    [data-theme="dark"] textarea { color-scheme: dark; }
+    [data-theme="dark"] .fq-btn.active { background: #162840; color: #4a9ed8; }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; font-size: 16px; }
 
@@ -1387,6 +1428,7 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Neue Fahrt
       </button>
+      <button id="theme-toggle" onclick="toggleDarkMode()" title="Tag/Nacht umschalten" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:var(--r-sm);width:38px;height:38px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0" onmouseenter="this.style.background='rgba(255,255,255,.22)'" onmouseleave="this.style.background='rgba(255,255,255,.12)'">🌙</button>
       <span class="header-copyright">© Nils Flegel</span>
     </div>
   </header>
@@ -1398,6 +1440,26 @@
 <div class="toast" id="toast"></div>
 
 <script>
+/* ════════════════════════════════════════════
+   DARK MODE
+════════════════════════════════════════════ */
+(function() {
+  const dark = localStorage.getItem('seelotse_theme') === 'dark';
+  if (dark) document.documentElement.setAttribute('data-theme', 'dark');
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = dark ? '☀️' : '🌙';
+})();
+
+function toggleDarkMode() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const next = isDark ? 'light' : 'dark';
+  if (next === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem('seelotse_theme', next);
+  const btn = document.getElementById('theme-toggle');
+  if (btn) btn.textContent = next === 'dark' ? '☀️' : '🌙';
+}
+
 /* ════════════════════════════════════════════
    STATE & STORAGE
 ════════════════════════════════════════════ */
@@ -3093,6 +3155,20 @@ const EPP_WP = [
 
 const EINSATZ_OPTS = ['Schiff', 'Radar', 'AG-Fahrt', 'Bagger', '2+2', 'WR', 'WB'];
 
+const EINSATZ_COLORS = {
+  'Schiff':   { bg: '#dbeafe', color: '#1e40af' },
+  'Radar':    { bg: '#ede9fe', color: '#6d28d9' },
+  'AG-Fahrt': { bg: '#dcfce7', color: '#166534' },
+  'Bagger':   { bg: '#ffedd5', color: '#c2410c' },
+  '2+2':      { bg: '#ccfbf1', color: '#0f766e' },
+  'WR':       { bg: '#fef3c7', color: '#92400e' },
+  'WB':       { bg: '#fee2e2', color: '#991b1b' },
+};
+function _einsatzBadge(art) {
+  const c = EINSATZ_COLORS[art] || { bg: 'var(--blue-pale)', color: 'var(--blue)' };
+  return `<span class="badge-einsatz" style="background:${c.bg};color:${c.color}">${esc(art)}</span>`;
+}
+
 const STRECKE_VON_OPTS = ['BrB', 'NOK', 'HH', 'See', 'E3'];
 const STRECKE_NACH_OPTS = ['See', 'NOK', 'BrB', 'Cux'];
 
@@ -3491,6 +3567,13 @@ function getEinsatzdauer(entry, allEntries) {
     return { dur: calcDuration(entry.abfahrt, entry.ankunft), cross: false };
   }
 
+  // Standalone cases: Radar without Anspleissen or Ausgehend with Abschöpfung
+  // → no cross-entry matching; duration only from own times
+  if ((entry.artDesEinsatzes === 'Radar' && !entry.anspleissen) ||
+      (entry.ausgehend && entry.abgeschöpft)) {
+    return null;
+  }
+
   // Case 2: Einkommend entry (has Ankunft, no Abfahrt) → cross-entry with Ausgehend
   if (entry.einkommend && entry.ankunft && !entry.abfahrt) {
     const ankunftTime = new Date(entry.ankunft);
@@ -3528,6 +3611,10 @@ function getEinsatzdauerMs(entry, allEntries) {
     const ms = new Date(entry.ankunft) - new Date(entry.abfahrt);
     return ms > 0 ? ms : null;
   }
+  if ((entry.artDesEinsatzes === 'Radar' && !entry.anspleissen) ||
+      (entry.ausgehend && entry.abgeschöpft)) {
+    return null;
+  }
   if (entry.einkommend && entry.ankunft && !entry.abfahrt) {
     const ankunftTime = new Date(entry.ankunft);
     const candidates = allEntries
@@ -3554,6 +3641,8 @@ function getEinsatzdauerAusgehend(entry, allEntries) {
 // Returns the partner entry object for an Ausgehend entry (or null)
 function findPartnerEntry(entry, allEntries) {
   if (!entry.ausgehend || !entry.abfahrt || entry.ankunft) return null;
+  // Standalone entries never participate in cross-entry pairing
+  if ((entry.artDesEinsatzes === 'Radar' && !entry.anspleissen) || entry.abgeschöpft) return null;
   const abfahrtTime = new Date(entry.abfahrt);
   const candidates = allEntries
     .filter(e => e.id !== entry.id && e.einkommend === true && e.ankunft && !e.abfahrt
@@ -7972,61 +8061,125 @@ function exportWetterPDF() {
   const now = new Date();
   const fmtDt = d => d.toLocaleString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
-  // Capture current rendered wind cards
   const windInner  = document.getElementById('ar-wind-inner')?.innerHTML || '';
   const astroInner = document.getElementById('ar-astro-grid')?.innerHTML || '';
   const pressInner = document.getElementById('ar-pressure-inner')?.innerHTML || '';
   const windMeta   = document.getElementById('ar-wind-meta')?.innerHTML || '';
-
-  // Time range buttons — replicate active state
-  const activeH = _pressureHours;
-  const timeRangeBtns = [6,12,24,48,72].map(h =>
-    `<span style="padding:2px 9px;font-size:10px;border:1px solid ${h===activeH?'#2a6495':'#cbd5e1'};border-radius:20px;background:${h===activeH?'#2a6495':'#fff'};color:${h===activeH?'#fff':'#64748b'}">${h}h</span>`
-  ).join(' ');
-
-  // Collect CSS variables & wind-specific styles
-  const styles = [...document.styleSheets].flatMap(ss => {
-    try { return [...ss.cssRules].map(r => r.cssText); } catch { return []; }
-  }).join('\n');
+  const stationLabel = WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven';
 
   const html = `<!DOCTYPE html><html lang="de"><head>
   <meta charset="UTF-8">
   <title>Wetter-Report ${fmtDt(now)}</title>
   <style>
-    @page { size: A4 landscape; margin: 8mm 10mm; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 9px; margin: 0; color: #1e293b; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
-    h2 { font-size: 13px; margin: 0 0 8px; color: #1b3d5f; }
-    .meta { font-size: 8px; color: #64748b; margin-bottom: 10px; }
-    .wind-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-    .astro-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
-    .wind-station { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; min-width: 0; }
-    .wind-station-name { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; margin-bottom: 6px; }
-    .wind-kn { font-size: 22px; font-weight: 800; color: #1b3d5f; line-height: 1; }
-    .wind-ms { font-size: 10px; color: #64748b; margin-top: 2px; }
-    .wind-dir { font-size: 11px; color: #334155; font-weight: 600; margin-top: 4px; }
-    .wind-badge { display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 10px; background: #f1f5f9; color: #475569; margin-top: 3px; }
-    .astro-card { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; }
-    .astro-card-title { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; margin-bottom: 6px; }
-    .pressure-section { border: 1.5px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; background: #fff; }
-    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .section-title { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #637485; }
-    .tidal-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+    :root {
+      --navy:#1b3d5f; --blue:#2a6495; --text-muted:#637485;
+      --border:#d6e3ee; --bg:#f4f8fb; --danger:#dc2626;
+    }
+    @page { size: A4 landscape; margin: 7mm 9mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 9px; color: #1e293b; background: #edf2f7;
+      print-color-adjust: exact; -webkit-print-color-adjust: exact; }
     svg text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
-    ${styles}
+
+    /* ── Header ─────────────────────────────────── */
+    .pdf-hdr {
+      background: linear-gradient(135deg,#0a1f35 0%,#1b3d5f 55%,#2a6495 100%);
+      color:#fff; border-radius:8px; padding:8px 14px;
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:9px;
+    }
+    .pdf-hdr-title { font-size:14px; font-weight:800; letter-spacing:.3px; }
+    .pdf-hdr-sub   { font-size:8px; opacity:.7; margin-top:2px; }
+    .pdf-hdr-meta  { text-align:right; font-size:8px; opacity:.8; line-height:1.7; }
+
+    /* ── Two-column body ─────────────────────────── */
+    .pdf-body { display:grid; grid-template-columns:258px 1fr; gap:9px; align-items:start; }
+
+    /* ── Left panel ──────────────────────────────── */
+    .pdf-left { display:flex; flex-direction:column; gap:7px; }
+    .pdf-panel {
+      background:#fff; border:1px solid #d0dce8; border-radius:7px; padding:8px 10px;
+      box-shadow:0 1px 4px rgba(0,0,0,.06);
+    }
+    .sec-lbl {
+      font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:1px;
+      color:#637485; padding-bottom:5px; margin-bottom:6px;
+      border-bottom:1.5px solid #e2eaf2;
+    }
+
+    /* Wind */
+    .wind-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .wind-station { background:#f8fbff; border:1px solid #d6e3ee; border-radius:5px; padding:6px 7px; display:flex; flex-direction:column; gap:3px; min-width:0; }
+    .wind-station-name { font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.6px; color:#637485; }
+    .wind-main { display:flex; align-items:center; gap:7px; width:100%; }
+    .wind-compass { flex-shrink:0; }
+    .wind-data { flex:1; min-width:0; }
+    .wind-speed-row { display:flex; align-items:baseline; gap:3px; }
+    .wind-kn { font-size:19px; font-weight:800; color:#1b3d5f; line-height:1; }
+    .wind-kn-unit { font-size:8px; color:#637485; font-weight:600; }
+    .wind-bft { display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:50%; font-size:9px; font-weight:800; color:#fff; }
+    .wind-dir-label { font-size:9px; font-weight:700; color:#1b3d5f; margin-top:1px; }
+    .wind-gusts { font-size:7.5px; color:#637485; }
+    .wind-source { font-size:7px; color:#94a3b8; }
+    .wind-badge-synop { background:#dcfce7; color:#166534; border-radius:3px; padding:1px 4px; font-size:7px; font-weight:700; }
+    .wind-badge-model { background:#fef9c3; color:#713f12; border-radius:3px; padding:1px 4px; font-size:7px; font-weight:700; }
+    .wind-err { color:#637485; font-size:10px; text-align:center; padding:8px; }
+    .wind-meta-row { font-size:6.5px; color:#94a3b8; text-align:right; padding-top:4px; }
+
+    /* Astro */
+    .astro-grid { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .astro-card { background:#f8fbff; border:1px solid #d6e3ee; border-radius:5px; padding:6px 7px; }
+    .astro-card-title { font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:#637485; margin-bottom:4px; }
+    .astro-big { font-size:11px; font-weight:700; color:#1b3d5f; display:flex; align-items:center; gap:5px; }
+    .astro-moon-icon { font-size:15px; line-height:1; }
+    .astro-sub { font-size:7.5px; color:#637485; line-height:1.45; margin-top:3px; }
+    .astro-sun-row { display:flex; gap:6px; margin-top:3px; margin-bottom:2px; }
+    .astro-sun-item { display:flex; align-items:center; gap:3px; font-size:10px; font-weight:700; color:#1b3d5f; }
+    .astro-sun-item span.lbl { font-size:7px; font-weight:400; color:#637485; display:block; }
+    .tidal-badge { display:inline-block; padding:1px 5px; border-radius:20px; font-size:7.5px; font-weight:700; }
+    .fd-tide-row { display:flex; gap:5px; align-items:baseline; margin-bottom:2px; }
+    .fd-tide-lbl { font-size:7.5px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; color:#637485; min-width:55px; }
+    .fd-tide-val { font-size:9.5px; color:#1b3d5f; }
+    .fd-tide-none { font-size:9.5px; color:#637485; font-style:italic; }
+
+    /* ── Right panel: charts ─────────────────────── */
+    .pdf-right { display:flex; flex-direction:column; gap:6px; }
+    .charts-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .chart-panel { background:#fff; border:1px solid #d0dce8; border-radius:6px; padding:6px 8px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+    .chart-panel-full { grid-column:1/-1; }
+    .chart-lbl { font-size:7px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#637485; margin-bottom:3px; }
   </style>
 </head><body>
-  <h2>☁️ Wetter-Report · Cuxhaven/Elbe</h2>
-  <div class="meta">Erstellt: ${fmtDt(now)} Uhr · Seelotsen-Fahrtenbuch</div>
-  <div class="wind-grid">${windInner}</div>
-  <div class="meta" style="text-align:right">${windMeta}</div>
-  <div class="astro-grid">${astroInner}</div>
-  <div class="pressure-section">
-    <div class="section-header">
-      <span class="section-title">📈 Verlaufskurven · Cuxhaven</span>
-      <span>${timeRangeBtns}</span>
+
+  <div class="pdf-hdr">
+    <div>
+      <div class="pdf-hdr-title">☁️ Wetter-Report · Cuxhaven / Elbe</div>
+      <div class="pdf-hdr-sub">Seelotsen-Fahrtenbuch · Revierbereich Cuxhaven–Hamburg</div>
     </div>
-    <div>${pressInner}</div>
+    <div class="pdf-hdr-meta">Stand: ${fmtDt(now)} Uhr<br>Verlaufskurven: ${stationLabel} · ${_pressureHours}h</div>
   </div>
+
+  <div class="pdf-body">
+    <div class="pdf-left">
+      <div class="pdf-panel">
+        <div class="sec-lbl">🌬️ Aktueller Wind</div>
+        <div class="wind-grid">${windInner}</div>
+        <div class="wind-meta-row">${windMeta}</div>
+      </div>
+      <div class="pdf-panel">
+        <div class="sec-lbl">🌍 Astronomie &amp; Umwelt</div>
+        <div class="astro-grid">${astroInner}</div>
+      </div>
+    </div>
+    <div class="pdf-right">
+      <div class="pdf-panel">
+        <div class="sec-lbl">📈 Verlaufskurven · ${stationLabel}</div>
+        <div class="charts-grid">${pressInner}</div>
+      </div>
+    </div>
+  </div>
+
   <script>window.onload=()=>window.print();<\/script>
 </body></html>`;
 
@@ -8130,8 +8283,14 @@ function renderList() {
   let bis8h = 0, ueber8h = 0, manöverCount = 0, wartestundenSum = 0, schiffsanteileSum = 0;
   const typCount = {};
   EINSATZ_OPTS.forEach(t => { typCount[t] = 0; });
+  // Pre-build set of ausgehend IDs that are paired (they'll be counted via their einkommend partner)
+  const pairedAusgehendIds = new Set();
   dateFiltered.forEach(f => {
-    if (typCount[f.artDesEinsatzes] !== undefined) typCount[f.artDesEinsatzes]++;
+    const isStandalone = (f.artDesEinsatzes === 'Radar' && !f.anspleissen) || (f.ausgehend && f.abgeschöpft);
+    if (f.ausgehend && !isStandalone && findPartnerEntry(f, fahrten)) pairedAusgehendIds.add(f.id);
+  });
+  dateFiltered.forEach(f => {
+    if (!pairedAusgehendIds.has(f.id) && typCount[f.artDesEinsatzes] !== undefined) typCount[f.artDesEinsatzes]++;
     const ms = getEinsatzdauerMs(f, fahrten);
     if (ms !== null) { if (ms <= EIGHT_H) bis8h++; else ueber8h++; }
     if (f.manöver) manöverCount++;
@@ -8230,7 +8389,7 @@ function renderList() {
         <td class="ship-name">${esc(f.schiffsname)||'<span style="opacity:.4">—</span>'}</td>
         <td>${esc(f.streckeVon)||'<span style="opacity:.4">—</span>'}</td>
         <td>${esc(f.streckeNach)||'<span style="opacity:.4">—</span>'}</td>
-        <td>${f.artDesEinsatzes ? `<span class="badge-einsatz">${esc(f.artDesEinsatzes)}</span>` : '<span style="opacity:.4">—</span>'}</td>
+        <td>${f.artDesEinsatzes ? _einsatzBadge(f.artDesEinsatzes) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.tiefgang != null && f.tiefgang !== '' ? esc(f.tiefgang)+' m' : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.personenAnBord != null && f.personenAnBord !== '' ? esc(f.personenAnBord) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.manöver ? '<span style="color:#1a7340;font-weight:700">✓</span>' : f.anspleissen ? '<span style="color:#0369a1;font-weight:700">→</span>' : '<span style="opacity:.4">—</span>'}</td>
