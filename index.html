@@ -88,6 +88,9 @@
     [data-theme="dark"] select,
     [data-theme="dark"] textarea { color-scheme: dark; }
     [data-theme="dark"] .fq-btn.active { background: #162840; color: #4a9ed8; }
+    /* Farbig hinterlegte Zeilen (Paare) im Dark Mode: schwarze Schrift für Kontrast */
+    [data-theme="dark"] .entries-table tbody tr[style] td { color: #1a2332 !important; }
+    [data-theme="dark"] .entries-table tbody tr[style] td .badge-einsatz { color: inherit !important; }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; font-size: 16px; }
@@ -3571,6 +3574,10 @@ function getEinsatzdauer(entry, allEntries) {
   // → no cross-entry matching; duration only from own times
   if ((entry.artDesEinsatzes === 'Radar' && !entry.anspleissen) ||
       (entry.ausgehend && entry.abgeschöpft)) {
+    // Fallback for Radar: use AnBord→VonBord if Abfahrt/Ankunft not set
+    if (entry.artDesEinsatzes === 'Radar' && !entry.anspleissen && entry.anBord && entry.vonBord) {
+      return { dur: calcDuration(entry.anBord, entry.vonBord), cross: false };
+    }
     return null;
   }
 
@@ -3613,6 +3620,10 @@ function getEinsatzdauerMs(entry, allEntries) {
   }
   if ((entry.artDesEinsatzes === 'Radar' && !entry.anspleissen) ||
       (entry.ausgehend && entry.abgeschöpft)) {
+    if (entry.artDesEinsatzes === 'Radar' && !entry.anspleissen && entry.anBord && entry.vonBord) {
+      const ms = new Date(entry.vonBord) - new Date(entry.anBord);
+      return ms > 0 ? ms : null;
+    }
     return null;
   }
   if (entry.einkommend && entry.ankunft && !entry.abfahrt) {
@@ -8045,13 +8056,10 @@ function renderWetterPage() {
   const title = document.getElementById('pchart-title');
   if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
+  if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
   setTimeout(() => {
-    // Winddaten nur neu laden wenn Daten fehlen oder älter als 15 min
-    const needsRefresh = !_windLastFetch || (Date.now() - _windLastFetch) >= WIND_REFRESH_MS;
-    if (needsRefresh) {
-      if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
-      fetchWindData();
-    }
+    // Immer frisch laden beim Seitenaufruf
+    fetchWindData();
     renderAstroDashboard();
     fetchPressureHistory(_pressureHours);
   }, 0);
