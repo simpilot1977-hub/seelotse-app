@@ -293,7 +293,7 @@
 
     .entries-table th {
       padding: 7px 5px;
-      text-align: left;
+      text-align: center;
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
@@ -324,7 +324,7 @@
     .ship-name { font-weight: 600; color: var(--navy); }
     .td-stack { white-space: nowrap; line-height: 1; }
     .td-stack-top { font-size: 11px; color: var(--text); }
-    .td-stack-bot { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
+    .td-stack-bot { font-size: 11px; color: var(--text); margin-top: 3px; }
 
     .dur-badge {
       display: inline-flex;
@@ -343,7 +343,9 @@
     .badge-einsatz {
       display: inline-flex;
       align-items: center;
-      padding: 3px 10px;
+      justify-content: center;
+      width: 72px;
+      padding: 3px 0;
       border-radius: 20px;
       font-size: 12px;
       font-weight: 600;
@@ -352,7 +354,11 @@
       white-space: nowrap;
     }
 
-    .actions-cell { white-space: nowrap; }
+    .actions-cell {
+      white-space: nowrap;
+      background: var(--blue-pale);
+      border-right: 2px solid var(--border-dk);
+    }
     .btn-icon {
       display: inline-flex;
       align-items: center;
@@ -818,7 +824,7 @@
     }
     .dash-grid {
       display: grid;
-      grid-template-columns: repeat(10, 1fr);
+      grid-template-columns: repeat(8, 1fr);
       gap: 8px;
     }
     .dash-card {
@@ -843,7 +849,7 @@
       .form-grid-row2 { grid-template-columns: repeat(2, 1fr); }
       .ie-grid { grid-template-columns: 1fr; }
       .search-wrap { flex: 0 0 260px; }
-      .dash-grid { grid-template-columns: repeat(5, 1fr); gap: 6px; }
+      .dash-grid { grid-template-columns: repeat(4, 1fr); gap: 6px; }
     }
 
     @media (max-width: 600px) {
@@ -3712,9 +3718,10 @@ function fmtDTShort(iso) {
     const d = new Date(iso);
     const day   = String(d.getDate()).padStart(2,'0');
     const month = String(d.getMonth()+1).padStart(2,'0');
+    const year  = d.getFullYear();
     const h     = String(d.getHours()).padStart(2,'0');
     const m     = String(d.getMinutes()).padStart(2,'0');
-    return `${day}.${month} ${h}:${m}`;
+    return `${day}.${month}.${year} ${h}:${m}`;
   } catch(e) { return '—'; }
 }
 
@@ -8258,6 +8265,15 @@ function renderList() {
       return sortDir === 'asc' ? cmp : -cmp;
     });
 
+  // Global row numbers: sort all entries same way, ignore filters
+  const allSorted = [...fahrten].sort((a,b) => {
+    const av = a[sortField]||'', bv = b[sortField]||'';
+    const cmp = av < bv ? -1 : av > bv ? 1 : 0;
+    return sortDir === 'asc' ? cmp : -cmp;
+  });
+  const rowNumMap = {};
+  allSorted.forEach((f, i) => { rowNumMap[f.id] = i + 1; });
+
   function si(field) {
     if (sortField !== field) return '<span class="sort-icon">↕</span>';
     return `<span class="sort-icon active">${sortDir==='asc'?'↑':'↓'}</span>`;
@@ -8299,11 +8315,11 @@ function renderList() {
   EINSATZ_OPTS.forEach(t => { typCount[t] = 0; });
   // Pre-build set of ausgehend IDs that are paired (they'll be counted via their einkommend partner)
   const pairedAusgehendIds = new Set();
-  dateFiltered.forEach(f => {
+  filtered.forEach(f => {
     const isStandalone = (f.artDesEinsatzes === 'Radar' && !f.anspleissen) || (f.ausgehend && f.abgeschöpft);
     if (f.ausgehend && !isStandalone && findPartnerEntry(f, fahrten)) pairedAusgehendIds.add(f.id);
   });
-  dateFiltered.forEach(f => {
+  filtered.forEach(f => {
     if (!pairedAusgehendIds.has(f.id) && typCount[f.artDesEinsatzes] !== undefined) typCount[f.artDesEinsatzes]++;
     const ms = getEinsatzdauerMs(f, fahrten);
     if (ms !== null) {
@@ -8322,7 +8338,7 @@ function renderList() {
     }
   });
   // Ø Freitörn: Zeit zwischen aufeinanderfolgenden Einsätzen (vonBord[i] → anBord[i+1])
-  const sortedForFrei = [...dateFiltered]
+  const sortedForFrei = [...filtered]
     .filter(f => f.anBord && f.vonBord)
     .sort((a, b) => new Date(a.anBord) - new Date(b.anBord));
   let freitörnSum = 0, freitörnCount = 0;
@@ -8344,10 +8360,11 @@ function renderList() {
   const dashHtml = total > 0 ? `
     <div class="dash-section">
       <div class="dash-section-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
-        <span>📊 Auswertung · ${esc(periodLabel)} · ${dfCount} ${dfCount===1?'Eintrag':'Einträge'}</span>
+        <span>📊 Auswertung · ${esc(periodLabel)}${term ? ` · „${esc(searchTerm)}"` : ''} · ${filtered.length} ${filtered.length===1?'Eintrag':'Einträge'}</span>
         <span style="display:flex;gap:8px">
           <button class="btn btn-secondary" style="height:32px;padding:0 14px;font-size:13px" onclick="exportExcelPeriod()" title="Zeitraum als Excel exportieren">📊 Excel</button>
           <button class="btn btn-secondary" style="height:32px;padding:0 14px;font-size:13px" onclick="exportPDFPeriod()" title="Zeitraum als PDF drucken">🖨️ PDF</button>
+          <button class="btn btn-secondary" style="height:32px;padding:0 14px;font-size:13px" onclick="exportSteuerberaterPDF()" title="Steuerberater-Export als PDF">📋 Steuerberater</button>
         </span>
       </div>
       <div class="dash-grid">
@@ -8441,25 +8458,61 @@ function renderList() {
       </div>`;
   } else {
     const pairMap = buildPairMap(fahrten);
-    const rows = filtered.map(f => {
+
+    // Assign a visual group index per row: pairs share one group, singles get their own
+    let _gc = 0;
+    const _pairGroup = {};
+    const _rowGroup = filtered.map(f => {
+      const pi = pairMap[f.id];
+      if (pi) {
+        if (!(_pairGroup[pi.idx] >= 0)) _pairGroup[pi.idx] = _gc++;
+        return _pairGroup[pi.idx];
+      }
+      return _gc++;
+    });
+
+    const rows = filtered.map((f, rowIdx) => {
       const isCfm = confirmingId === f.id;
       const reiseDur   = calcDuration(f.anBord, f.vonBord);
       const einsatzRes = getEinsatzdauer(f, fahrten);
       const pairInfo   = pairMap[f.id];
       const isLinkedAusgehend = !einsatzRes && pairInfo && f.ausgehend;
       const palette    = pairInfo ? PAIR_PALETTES[pairInfo.idx % PAIR_PALETTES.length] : null;
+      const stripeBg   = _rowGroup[rowIdx] % 2 === 0 ? '#f4f7fb' : '#ffffff';
       const trStyle    = palette
         ? `style="background:${palette.bg};border-left:3px solid ${palette.border}"`
-        : '';
+        : `style="background:${stripeBg}"`;
       return `<tr ${trStyle}>
-        <td>${esc(fmtDate(f.anBord))}</td>
+        <td class="actions-cell" style="padding:2px 4px">
+          <button class="btn-icon" onclick="goAktuelleReiseWith('${esc(f.id)}')" title="Ansehen" style="font-size:14px;padding:2px;width:24px;height:24px;background:none;border:none">👁</button>
+          <button class="btn-icon btn-edit" onclick="goForm('${esc(f.id)}')" title="Bearbeiten" style="font-size:14px;padding:2px;width:24px;height:24px">✏️</button>
+          ${isCfm
+            ? `<button class="btn-icon" style="background:var(--danger-bg);color:var(--danger);width:24px;height:24px;font-size:14px;padding:2px;border-radius:var(--r-sm)" onclick="confirmDelete('${esc(f.id)}')">✓</button>
+               <button class="btn-icon btn-ghost" onclick="cancelDelete()" title="Abbrechen" style="font-size:14px;width:24px;height:24px;padding:2px">✕</button>`
+            : `<button class="btn-icon btn-delete" onclick="askDelete('${esc(f.id)}')" title="Löschen" style="font-size:14px;padding:2px;width:24px;height:24px">🗑️</button>`
+          }
+        </td>
+        <td style="text-align:right;font-size:10px;color:var(--text-muted);padding-right:8px;white-space:nowrap">${rowNumMap[f.id]||''}</td>
+        <td style="white-space:nowrap;padding-left:10px">${esc(fmtDate(f.anBord))}</td>
+        <td>${f.artDesEinsatzes ? _einsatzBadge(f.artDesEinsatzes) : '<span style="opacity:.4">—</span>'}</td>
         <td class="ship-name">${esc(f.schiffsname)||'<span style="opacity:.4">—</span>'}</td>
         <td class="td-stack"><div class="td-stack-top">${esc(f.streckeVon)||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(f.streckeNach)||'—'}</div></td>
-        <td>${f.artDesEinsatzes ? _einsatzBadge(f.artDesEinsatzes) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.tiefgang != null && f.tiefgang !== '' ? esc(f.tiefgang)+' m' : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.personenAnBord != null && f.personenAnBord !== '' ? esc(f.personenAnBord) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.manöver ? '<span style="color:#1a7340;font-weight:700">✓</span>' : f.anspleissen ? '<span style="color:#0369a1;font-weight:700">→</span>' : '<span style="opacity:.4">—</span>'}</td>
-        <td>${(() => { const wt = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null); return wt ? `${wt} h` : '<span style="opacity:.4">—</span>'; })()}</td>
+        <td>${(() => {
+          const wt = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null);
+          if (f.wartestunden_von && f.wartestunden_bis) {
+            return `<div style="display:flex;align-items:center;gap:6px;white-space:nowrap">
+              <div class="td-stack">
+                <div class="td-stack-top">${esc(fmtDTShort(f.wartestunden_von))}</div>
+                <div class="td-stack-bot">${esc(fmtDTShort(f.wartestunden_bis))}</div>
+              </div>
+              ${wt ? `<span style="font-weight:700;font-size:11px;color:var(--navy)">${wt} h</span>` : ''}
+            </div>`;
+          }
+          return wt ? `${wt} h` : '<span style="opacity:.4">—</span>';
+        })()}</td>
         <td>${f.schiffsanteile != null && f.schiffsanteile !== '' ? esc(f.schiffsanteile) : '<span style="opacity:.4">—</span>'}</td>
         <td>${esc(f.agentur)||'<span style="opacity:.4">—</span>'}</td>
         <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.anBord))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.vonBord))||'—'}</div></td>
@@ -8472,15 +8525,6 @@ function renderList() {
             ? `<span class="dur-badge dur-pending" title="Ausgehende Reise – Einsatzdauer auf der Einkommend-Zeile">⬇ Ausgehend</span>`
             : '<span style="opacity:.4">—</span>'
         }</td>
-        <td class="actions-cell">
-          <button class="btn-icon" onclick="goAktuelleReiseWith('${esc(f.id)}')" title="In Aktuelle Reise ansehen" style="font-size:12px;padding:0 8px;width:auto;background:#e0f2fe;color:#0369a1;border:1px solid #7dd3fc;border-radius:6px">Ansehen</button>
-          <button class="btn-icon btn-edit" onclick="goForm('${esc(f.id)}')" title="Bearbeiten">✏️</button>
-          ${isCfm
-            ? `<button class="btn-icon" style="background:var(--danger-bg);color:var(--danger);width:auto;padding:0 10px;font-size:13px;font-weight:700;border-radius:var(--r-sm)" onclick="confirmDelete('${esc(f.id)}')">Löschen?</button>
-               <button class="btn-icon btn-ghost" onclick="cancelDelete()" title="Abbrechen" style="font-size:13px">✕</button>`
-            : `<button class="btn-icon btn-delete" onclick="askDelete('${esc(f.id)}')" title="Löschen">🗑️</button>`
-          }
-        </td>
       </tr>`;
     }).join('');
 
@@ -8488,17 +8532,19 @@ function renderList() {
       <div class="table-container">
         <table class="entries-table">
           <thead><tr>
+            <th></th>
+            <th>#</th>
             ${th('anBord','Datum')}
-            ${th('schiffsname','Schiffsname')}
-            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">Von<br><span style="font-weight:400;opacity:.7">Nach</span></span></th>
             ${th('artDesEinsatzes','Art')}
-            <th>Tiefg.</th><th>POB</th><th>Man.</th><th>Wartest.</th><th>Anteile</th>
+            ${th('schiffsname','Schiffsname')}
+            <th>Von<br>Nach</th>
+            <th>TG</th><th>POB</th><th>Man.</th><th>WS</th><th>SA</th>
             ${th('agentur','Agentur')}
-            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">An Bord<br><span style="font-weight:400;opacity:.7">Von Bord</span></span></th>
+            <th>An Bord<br>Von Bord</th>
             <th>Reise</th>
-            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">Abfahrt<br><span style="font-weight:400;opacity:.7">Ankunft</span></span></th>
+            <th>Abfahrt<br>Ankunft</th>
             <th>Abg.</th>
-            <th>Einsatz</th><th>Aktionen</th>
+            <th>Einsatz</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -8707,6 +8753,112 @@ function exportPDFPeriod() {
       <tbody>${rows}</tbody>
     </table>
     <div style="text-align:center;font-size:7px;color:#94a3b8;padding:8px 12px 4px;border-top:1px solid #e2e8f0;margin-top:8px">© ${new Date().getFullYear()} Nils Flegel · Seelotse-Fahrtenbuch · Alle Angaben ohne Gewähr</div>
+    <script>window.onload=()=>{window.print();}<\/script>
+    </body></html>`;
+
+  const blob = new Blob([html], {type: 'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  if (!w) showToast('Bitte Pop-ups für diese Seite erlauben.', 'error');
+}
+
+function exportSteuerberaterPDF() {
+  const term = searchTerm.toLowerCase();
+  const entries = fahrten
+    .filter(f => {
+      if (!filterFrom && !filterTo) return true;
+      const date = (f.anBord || '').slice(0, 10);
+      if (!date) return false;
+      if (filterFrom && date < filterFrom) return false;
+      if (filterTo   && date > filterTo)   return false;
+      return true;
+    })
+    .filter(f => !term ||
+      (f.schiffsname||'').toLowerCase().includes(term) ||
+      (f.streckeVon||'').toLowerCase().includes(term) ||
+      (f.streckeNach||'').toLowerCase().includes(term) ||
+      (f.artDesEinsatzes||'').toLowerCase().includes(term) ||
+      (f.agentur||'').toLowerCase().includes(term))
+    .sort((a,b) => (a.anBord||'') < (b.anBord||'') ? -1 : 1);
+
+  if (!entries.length) { showToast('Keine Einträge im gewählten Zeitraum.', 'error'); return; }
+
+  const periodLabel = (filterFrom || filterTo)
+    ? `${filterFrom ? fmtDateStr(filterFrom) : '…'} – ${filterTo ? fmtDateStr(filterTo) : '…'}`
+    : 'Alle Einträge';
+
+  const pad = n => String(n).padStart(2,'0');
+  const fmtDTpdf = v => {
+    if (!v) return '—';
+    const d = new Date(v); if (isNaN(d)) return '—';
+    return `${pad(d.getDate())}.${pad(d.getMonth()+1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+
+  const EIGHT_H = 8 * 3600000;
+  let bis8h = 0, ueber8h = 0;
+
+  const rows = entries.map((f, i) => {
+    const reiseDur  = calcDuration(f.anBord, f.vonBord);
+    const einsatzR  = getEinsatzdauer(f, fahrten);
+    const pairM     = buildPairMap(fahrten);
+    const pairInfo  = pairM[f.id];
+    const isLinked  = !einsatzR && pairInfo && f.ausgehend;
+    const einsatzTxt = einsatzR ? einsatzR.dur + (einsatzR.cross ? ' ↗' : '') : isLinked ? '⬇ Ausg.' : '—';
+
+    const ms = getEinsatzdauerMs(f, fahrten);
+    if (ms !== null) { if (ms <= EIGHT_H) bis8h++; else ueber8h++; }
+
+    const even = i % 2 === 0;
+    return `<tr style="${even ? '' : 'background:#f0f5fa'}">
+      <td style="text-align:center">${i + 1}</td>
+      <td>${fmtDate(f.anBord)}</td>
+      <td>${esc(f.schiffsname)||'—'}</td>
+      <td style="text-align:center">${esc(f.artDesEinsatzes)||'—'}</td>
+      <td>${esc(f.streckeVon)||'—'}</td>
+      <td>${esc(f.streckeNach)||'—'}</td>
+      <td>${fmtDTpdf(f.anBord)}</td>
+      <td>${fmtDTpdf(f.vonBord)}</td>
+      <td>${fmtDTpdf(f.abfahrt)}</td>
+      <td>${fmtDTpdf(f.ankunft)}</td>
+      <td style="text-align:center">${reiseDur||'—'}</td>
+      <td style="text-align:center">${einsatzTxt}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+    <title>Steuerberater-Export · ${esc(periodLabel)}</title>
+    <style>
+      @page { size: A4 landscape; margin: 10mm; }
+      body { font-family: Arial, sans-serif; font-size: 8px; margin: 0; color: #1a2332; }
+      h1 { font-size: 13px; margin: 0 0 2px; }
+      .sub { font-size: 8px; color: #637485; margin-bottom: 8px; }
+      table { border-collapse: collapse; width: 100%; }
+      th { background: #1b3d5f; color: white; padding: 4px 5px; text-align: left; font-size: 7.5px; white-space: nowrap; }
+      td { padding: 3px 5px; border-bottom: 1px solid #c8d6e2; white-space: nowrap; font-size: 7.5px; }
+      .summary { margin-top: 12px; border-top: 2px solid #1b3d5f; padding-top: 8px; }
+      .summary table { width: auto; }
+      .summary th { background: #2a6495; font-size: 8px; padding: 4px 10px; }
+      .summary td { font-size: 8px; font-weight: 700; padding: 4px 10px; background: #f0f5fa; border: 1px solid #c8d6e2; text-align: center; }
+      @media print { body { margin: 0; } }
+    </style></head><body>
+    <h1>⚓ Steuerberater-Export · Seelotsen-Fahrtenbuch</h1>
+    <div class="sub">Zeitraum: ${esc(periodLabel)} · ${entries.length} Einträge · Erstellt: ${new Date().toLocaleDateString('de-DE', {day:'2-digit',month:'2-digit',year:'numeric'})}</div>
+    <table>
+      <thead><tr>
+        <th>#</th><th>Datum</th><th>Schiffsname</th><th>Art</th><th>Von</th><th>Nach</th>
+        <th>An Bord</th><th>Von Bord</th><th>Abfahrt</th><th>Ankunft</th>
+        <th>Reisedauer</th><th>Einsatzdauer</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="summary">
+      <table>
+        <thead><tr><th>Einsätze ≤ 8 h</th><th>Einsätze &gt; 8 h</th><th>Gesamt</th></tr></thead>
+        <tbody><tr><td>${bis8h}</td><td>${ueber8h}</td><td>${bis8h + ueber8h}</td></tr></tbody>
+      </table>
+    </div>
+    <div style="text-align:center;font-size:7px;color:#94a3b8;padding:8px 0 4px;border-top:1px solid #e2e8f0;margin-top:12px">© ${new Date().getFullYear()} Nils Flegel · Seelotsen-Fahrtenbuch · Alle Angaben ohne Gewähr</div>
     <script>window.onload=()=>{window.print();}<\/script>
     </body></html>`;
 
