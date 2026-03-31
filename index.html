@@ -8310,7 +8310,8 @@ function renderList() {
     }
     if (f.manöver) manöverCount++;
     if (f.abgeschöpft) abgeschöpftCount++;
-    if (f.wartestunden) wartestundenSum += parseFloat(f.wartestunden) || 0;
+    const wtVal = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null);
+    if (wtVal) wartestundenSum += parseFloat(wtVal) || 0;
     if (f.schiffsanteile) schiffsanteileSum += parseFloat(f.schiffsanteile) || 0;
     if (f.anBord && f.vonBord) {
       const rdMs = new Date(f.vonBord).getTime() - new Date(f.anBord).getTime();
@@ -8456,7 +8457,7 @@ function renderList() {
         <td>${f.tiefgang != null && f.tiefgang !== '' ? esc(f.tiefgang)+' m' : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.personenAnBord != null && f.personenAnBord !== '' ? esc(f.personenAnBord) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.manöver ? '<span style="color:#1a7340;font-weight:700">✓</span>' : f.anspleissen ? '<span style="color:#0369a1;font-weight:700">→</span>' : '<span style="opacity:.4">—</span>'}</td>
-        <td>${f.wartestunden ? esc(f.wartestunden)+' h' : '<span style="opacity:.4">—</span>'}</td>
+        <td>${(() => { const wt = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null); return wt ? `${wt} h` : '<span style="opacity:.4">—</span>'; })()}</td>
         <td>${f.schiffsanteile != null && f.schiffsanteile !== '' ? esc(f.schiffsanteile) : '<span style="opacity:.4">—</span>'}</td>
         <td>${esc(f.agentur)||'<span style="opacity:.4">—</span>'}</td>
         <td style="white-space:nowrap">${esc(fmtDTShort(f.anBord))}</td>
@@ -8621,7 +8622,7 @@ function exportExcelPeriod() {
       'Tiefgang (m)':      f.tiefgang !== ''    ? f.tiefgang        : '',
       'POB':               f.personenAnBord !== '' ? f.personenAnBord : '',
       'Manöver':           f.manöver            ? 'Ja' : '',
-      'Wartestunden':      f.wartestunden       || '',
+      'Wartestunden':      f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : '') || '',
       'Schiffsanteile':    f.schiffsanteile !== '' && f.schiffsanteile != null ? parseFloat(f.schiffsanteile) : '',
       'Agentur':           f.agentur            || '',
       'An Bord':           fmtDT(f.anBord),
@@ -9892,7 +9893,7 @@ function exportExcel() {
       'Tiefgang (m)':      f.tiefgang !== ''    ? f.tiefgang        : '',
       'POB':               f.personenAnBord !== '' ? f.personenAnBord : '',
       'Manöver':           f.manöver            ? 'Ja' : '',
-      'Wartestunden':      f.wartestunden       || '',
+      'Wartestunden':      f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : '') || '',
       'Schiffsanteile':    f.schiffsanteile !== '' && f.schiffsanteile != null ? parseFloat(f.schiffsanteile) : '',
       'Agentur':           f.agentur            || '',
       'An Bord':           fmtDT(f.anBord),
