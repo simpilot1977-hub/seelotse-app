@@ -8305,7 +8305,8 @@ function renderList() {
     const ms = getEinsatzdauerMs(f, fahrten);
     if (ms !== null) {
       if (ms <= EIGHT_H) bis8h++; else ueber8h++;
-      if (!pairedAusgehendIds.has(f.id) && ms > 0) { einsatzDauerSum += ms; einsatzDauerCount++; }
+      const isWrWbEntry = f.artDesEinsatzes === 'WR' || f.artDesEinsatzes === 'WB';
+      if (!pairedAusgehendIds.has(f.id) && ms > 0 && !isWrWbEntry) { einsatzDauerSum += ms; einsatzDauerCount++; }
     }
     if (f.manöver) manöverCount++;
     if (f.abgeschöpft) abgeschöpftCount++;
@@ -9136,33 +9137,27 @@ function renderForm(f) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="17 7 12 2 7 7"/><polyline points="17 17 12 22 7 17"/></svg>
             Fahrtrichtung &amp; Optionen
           </div>
-          <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
-            <div class="richtung-group" id="richtung-group" style="margin-top:0">
-              <label class="richtung-btn${f?.ausgehend?' active':''}" id="btn-ausgehend" onclick="toggleRichtung(event,'ausgehend')">
-                <input type="checkbox" name="ausgehend" ${f?.ausgehend?'checked':''}>
-                <span class="cb-check"></span>
-                ⬆️ Ausgehend
-              </label>
-              <label class="richtung-btn${f?.einkommend?' active':''}" id="btn-einkommend" onclick="toggleRichtung(event,'einkommend')">
-                <input type="checkbox" name="einkommend" ${f?.einkommend?'checked':''}>
-                <span class="cb-check"></span>
-                ⬇️ Einkommend
-              </label>
-              <label class="richtung-btn${f?.abgeschöpft?' active':''}" id="btn-abgeschoepft" onclick="toggleAbgeschoepft(event)" style="display:none">
-                <input type="checkbox" name="abgeschöpft" ${f?.abgeschöpft?'checked':''}>
-                <span class="cb-check"></span>
-                ✂️ Abgeschöpft
-              </label>
-              <div class="field" id="wm-group" style="min-width:110px">
-                <label for="wartestunden">Wartestunden</label>
-                <input type="number" id="wartestunden" name="wartestunden" value="${v('wartestunden')}" placeholder="0" step="1" min="0" max="99">
-              </div>
-              <label class="richtung-btn${f?.manöver?' active':''}" id="btn-manoever" onclick="toggleManöver(event)">
-                <input type="checkbox" name="manöver" ${f?.manöver?'checked':''}>
-                <span class="cb-check"></span>
-                ⚙️ Manöver
-              </label>
-            </div>
+          <div class="richtung-group" id="richtung-group" style="margin-top:0;margin-bottom:0">
+            <label class="richtung-btn${f?.ausgehend?' active':''}" id="btn-ausgehend" onclick="toggleRichtung(event,'ausgehend')">
+              <input type="checkbox" name="ausgehend" ${f?.ausgehend?'checked':''}>
+              <span class="cb-check"></span>
+              ⬆️ Ausgehend
+            </label>
+            <label class="richtung-btn${f?.einkommend?' active':''}" id="btn-einkommend" onclick="toggleRichtung(event,'einkommend')">
+              <input type="checkbox" name="einkommend" ${f?.einkommend?'checked':''}>
+              <span class="cb-check"></span>
+              ⬇️ Einkommend
+            </label>
+            <label class="richtung-btn${f?.abgeschöpft?' active':''}" id="btn-abgeschoepft" onclick="toggleAbgeschoepft(event)" style="display:none">
+              <input type="checkbox" name="abgeschöpft" ${f?.abgeschöpft?'checked':''}>
+              <span class="cb-check"></span>
+              ✂️ Abgeschöpft
+            </label>
+            <label class="richtung-btn${f?.manöver?' active':''}" id="btn-manoever" onclick="toggleManöver(event)">
+              <input type="checkbox" name="manöver" ${f?.manöver?'checked':''}>
+              <span class="cb-check"></span>
+              ⚙️ Manöver
+            </label>
             <!-- Schiffsanteile -->
             <div class="field" id="field-schiffsanteile" style="min-width:70px;max-width:84px;flex-shrink:0">
               <label for="schiffsanteile" style="font-size:11px;white-space:nowrap">Anteile</label>
@@ -9177,6 +9172,7 @@ function renderForm(f) {
             </div>
           </div>
           <!-- Wartestunden Von / Bis -->
+          <input type="hidden" id="wartestunden" name="wartestunden" value="${v('wartestunden')}">
           <div id="wm-vonbis-group" style="margin-top:12px;display:none">
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
               <div class="field" style="min-width:180px">
@@ -9187,7 +9183,7 @@ function renderForm(f) {
                 <label>⏱ Bis</label>
                 <input class="datetime-input" type="datetime-local" id="wm_bis" name="wartestunden_bis" value="${dt('wartestunden_bis')}" oninput="calcWartestunden()">
               </div>
-              <div style="padding-bottom:8px;font-size:11px;color:#94a3b8">→ Wartestunden werden automatisch aufgerundet</div>
+              <div id="wm-result" style="padding-bottom:10px;font-size:13px;font-weight:700;color:#1b3d5f;display:none"></div>
             </div>
           </div>
           <!-- Anspleissen: nur bei Radar -->
@@ -9342,25 +9338,29 @@ function toggleAnspleissen(event) {
 }
 
 function calcWartestunden() {
-  const vonEl = document.getElementById('wm_von');
-  const bisEl = document.getElementById('wm_bis');
-  const wrtEl = document.getElementById('wartestunden');
-  if (!wrtEl) return;
+  const vonEl    = document.getElementById('wm_von');
+  const bisEl    = document.getElementById('wm_bis');
+  const hiddenEl = document.getElementById('wartestunden');
+  const resultEl = document.getElementById('wm-result');
   const von = vonEl?.value, bis = bisEl?.value;
+  if (!hiddenEl) return;
   if (!von || !bis) {
-    wrtEl.readOnly = false;
-    wrtEl.style.background = '';
-    wrtEl.style.color = '';
-    wrtEl.style.cursor = '';
+    hiddenEl.value = '';
+    if (resultEl) resultEl.style.display = 'none';
     return;
   }
   const ms = new Date(bis).getTime() - new Date(von).getTime();
-  if (isNaN(ms) || ms <= 0) { wrtEl.value = ''; wrtEl.readOnly = false; return; }
-  wrtEl.value = Math.ceil(ms / 3600000);
-  wrtEl.readOnly = true;
-  wrtEl.style.background = '#f0f5fa';
-  wrtEl.style.color = '#64748b';
-  wrtEl.style.cursor = 'default';
+  if (isNaN(ms) || ms <= 0) {
+    hiddenEl.value = '';
+    if (resultEl) resultEl.style.display = 'none';
+    return;
+  }
+  const hours = Math.ceil(ms / 3600000);
+  hiddenEl.value = hours;
+  if (resultEl) {
+    resultEl.textContent = `⏱ ${hours} Stunde${hours !== 1 ? 'n' : ''}`;
+    resultEl.style.display = '';
+  }
 }
 
 function updateFormVisibility() {
@@ -9412,7 +9412,6 @@ function updateFormVisibility() {
   const tiefgangField   = document.getElementById('field-tiefgang');
   const personenField   = document.getElementById('field-personenAnBord');
   const agenturField    = document.getElementById('field-agentur');
-  const wmGroup         = document.getElementById('wm-group');
   const wmVonBisGroup   = document.getElementById('wm-vonbis-group');
   const btnManoever     = document.getElementById('btn-manoever');
   const btnAbgeschoepft = document.getElementById('btn-abgeschoepft');
@@ -9426,7 +9425,6 @@ function updateFormVisibility() {
   if (tiefgangField)   tiefgangField.style.display   = (isRadar||isAGFahrt)? 'none' : '';
   if (personenField)   personenField.style.display   = hideExtra           ? 'none' : '';
   if (agenturField)    agenturField.style.display    = (isRadar||isAGFahrt)? 'none' : '';
-  if (wmGroup)         wmGroup.style.display         = hideExtra           ? 'none' : '';
   if (wmVonBisGroup)   wmVonBisGroup.style.display   = hideExtra           ? 'none' : '';
   if (richtungGroup)   richtungGroup.style.display   = isRadar             ? 'none' : '';
 
