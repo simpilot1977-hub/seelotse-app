@@ -443,7 +443,7 @@
 
     .form-grid-row2 {
       display: grid;
-      grid-template-columns: 2.5fr 1fr 1fr 1fr 2fr;
+      grid-template-columns: 2.5fr 1fr 1fr 1fr 1fr 2fr;
       gap: 16px;
     }
     .form-grid-2 {
@@ -3173,7 +3173,7 @@ function _einsatzBadge(art) {
 }
 
 const STRECKE_VON_OPTS = ['BrB', 'NOK', 'HH', 'See', 'E3'];
-const STRECKE_NACH_OPTS = ['See', 'NOK', 'BrB', 'Cux'];
+const STRECKE_NACH_OPTS = ['See', 'NOK', 'BrB', 'Cux', 'HH'];
 
 // ── Aktuelle Reise: Wegpunkte mit kumulativen NM ab E3 ──────────────────────
 // Distanzen vom Nutzer (Elblotse): Racon als Bezug
@@ -9015,17 +9015,13 @@ function renderForm(f) {
             </div>
             <div class="field" id="field-streckeVon">
               <label for="streckeVon">Von</label>
-              <select id="streckeVon" name="streckeVon">
-                <option value="" ${!f?.streckeVon?'selected':''}>Bitte wählen …</option>
-                ${STRECKE_VON_OPTS.map(o => `<option value="${esc(o)}" ${f?.streckeVon===o?'selected':''}>${esc(o)}</option>`).join('')}
-              </select>
+              <input type="text" id="streckeVon" name="streckeVon" value="${v('streckeVon')}" list="streckeVon-list" placeholder="BrB, NOK, HH …" autocomplete="off">
+              <datalist id="streckeVon-list">${STRECKE_VON_OPTS.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
             </div>
             <div class="field" id="field-streckeNach">
               <label for="streckeNach">Nach</label>
-              <select id="streckeNach" name="streckeNach" onchange="updateFormVisibility()">
-                <option value="" ${!f?.streckeNach?'selected':''}>Bitte wählen …</option>
-                ${STRECKE_NACH_OPTS.map(o => `<option value="${esc(o)}" ${f?.streckeNach===o?'selected':''}>${esc(o)}</option>`).join('')}
-              </select>
+              <input type="text" id="streckeNach" name="streckeNach" value="${v('streckeNach')}" list="streckeNach-list" placeholder="See, BrB, HH …" autocomplete="off" oninput="updateFormVisibility()">
+              <datalist id="streckeNach-list">${STRECKE_NACH_OPTS.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
             </div>
           </div>
           <div id="cux-option-group" style="margin-top:12px;display:none">
@@ -9065,6 +9061,10 @@ function renderForm(f) {
               <label for="vmax">Vmax (kn)</label>
               <input type="number" id="vmax" name="vmax" value="${v('vmax')}" placeholder="15" step="0.5" min="0" max="99">
             </div>
+            <div class="field" id="field-airdraught">
+              <label for="airdraught">Airdraught (m)</label>
+              <input type="number" id="airdraught" name="airdraught" value="${v('airdraught')}" placeholder="45.0" step="0.1" min="0" max="999">
+            </div>
             <div class="field" id="field-agentur">
               <label for="agentur">Agentur</label>
               <input type="text" id="agentur" name="agentur" value="${v('agentur')}" placeholder="Name der Agentur" list="agentur-list" autocomplete="off">
@@ -9082,9 +9082,9 @@ function renderForm(f) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="2" x2="12" y2="22"/><polyline points="17 7 12 2 7 7"/><polyline points="17 17 12 22 7 17"/></svg>
             Fahrtrichtung &amp; Optionen
           </div>
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap">
             <div class="richtung-group" id="richtung-group" style="margin-top:0">
-              <label class="richtung-btn${f?.ausgehend?' active':''}" onclick="toggleRichtung(event,'ausgehend')">
+              <label class="richtung-btn${f?.ausgehend?' active':''}" id="btn-ausgehend" onclick="toggleRichtung(event,'ausgehend')">
                 <input type="checkbox" name="ausgehend" ${f?.ausgehend?'checked':''}>
                 <span class="cb-check"></span>
                 ⬆️ Ausgehend
@@ -9101,7 +9101,7 @@ function renderForm(f) {
               </label>
               <div class="field" id="wm-group" style="min-width:110px">
                 <label for="wartestunden">Wartestunden</label>
-                <input type="number" id="wartestunden" name="wartestunden" value="${v('wartestunden')}" placeholder="0" step="0.5" min="0" max="99">
+                <input type="number" id="wartestunden" name="wartestunden" value="${v('wartestunden')}" placeholder="0" step="1" min="0" max="99">
               </div>
               <label class="richtung-btn${f?.manöver?' active':''}" id="btn-manoever" onclick="toggleManöver(event)">
                 <input type="checkbox" name="manöver" ${f?.manöver?'checked':''}>
@@ -9109,16 +9109,31 @@ function renderForm(f) {
                 ⚙️ Manöver
               </label>
             </div>
-            <!-- Schiffsanteile: schmal, in gleicher Zeile -->
-            <div class="field" id="field-schiffsanteile" style="min-width:64px;max-width:80px;flex-shrink:0">
+            <!-- Schiffsanteile -->
+            <div class="field" id="field-schiffsanteile" style="min-width:70px;max-width:84px;flex-shrink:0">
               <label for="schiffsanteile" style="font-size:11px;white-space:nowrap">Anteile</label>
-              <select id="schiffsanteile" name="schiffsanteile" onchange="updateFormVisibility()" style="padding:5px 4px;width:100%">
+              <select id="schiffsanteile" name="schiffsanteile" onchange="updateFormVisibility()" style="padding:6px 4px;width:100%">
                 <option value="" ${!v('schiffsanteile')?'selected':''}>—</option>
                 <option value="1" ${v('schiffsanteile')==='1'||v('schiffsanteile')==1?'selected':''}>1</option>
                 <option value="2" ${v('schiffsanteile')==='2'||v('schiffsanteile')==2?'selected':''}>2</option>
                 <option value="3" ${v('schiffsanteile')==='3'||v('schiffsanteile')==3?'selected':''}>3</option>
                 <option value="4" ${v('schiffsanteile')==='4'||v('schiffsanteile')==4?'selected':''}>4</option>
+                <option value="5" ${v('schiffsanteile')==='5'||v('schiffsanteile')==5?'selected':''}>5</option>
               </select>
+            </div>
+          </div>
+          <!-- Wartestunden Von / Bis -->
+          <div id="wm-vonbis-group" style="margin-top:12px;display:none">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="min-width:180px">
+                <label>⏱ Von</label>
+                <input class="datetime-input" type="datetime-local" id="wm_von" name="wartestunden_von" value="${dt('wartestunden_von')}" oninput="calcWartestunden()">
+              </div>
+              <div class="field" style="min-width:180px">
+                <label>⏱ Bis</label>
+                <input class="datetime-input" type="datetime-local" id="wm_bis" name="wartestunden_bis" value="${dt('wartestunden_bis')}" oninput="calcWartestunden()">
+              </div>
+              <div style="padding-bottom:8px;font-size:11px;color:#94a3b8">→ Wartestunden werden automatisch aufgerundet</div>
             </div>
           </div>
           <!-- Anspleissen: nur bei Radar -->
@@ -9128,6 +9143,34 @@ function renderForm(f) {
               <span class="cb-check"></span>
               → Anspleissen (Ausgehend)
             </label>
+          </div>
+        </div>
+
+        <!-- Sektion 3b: WR / WB / 2+2 Einsatzdaten -->
+        <div class="form-section" id="wr-section" style="display:none">
+          <div class="section-title">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            WR / WB / 2+2 · Einsatzdaten
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="abteilung">Abteilung</label>
+              <input type="text" id="abteilung" name="abteilung" value="${v('abteilung')}" placeholder="z. B. HH, Cux, BrB">
+            </div>
+            <div class="datetime-box">
+              <div class="datetime-label">
+                <span>🚉 Ab Station</span>
+                <button type="button" class="now-btn" onclick="setNow('abStation')">Jetzt</button>
+              </div>
+              <input class="datetime-input" type="datetime-local" name="abStation" id="dt_abStation" value="${dt('abStation')}">
+            </div>
+            <div class="datetime-box">
+              <div class="datetime-label">
+                <span>📋 Zu Buch</span>
+                <button type="button" class="now-btn" onclick="setNow('zuBuch')">Jetzt</button>
+              </div>
+              <input class="datetime-input" type="datetime-local" name="zuBuch" id="dt_zuBuch" value="${dt('zuBuch')}">
+            </div>
           </div>
         </div>
 
@@ -9241,32 +9284,59 @@ function toggleAnspleissen(event) {
   event.currentTarget.classList.toggle('active', cb.checked);
 }
 
+function calcWartestunden() {
+  const vonEl = document.getElementById('wm_von');
+  const bisEl = document.getElementById('wm_bis');
+  const wrtEl = document.getElementById('wartestunden');
+  if (!wrtEl) return;
+  const von = vonEl?.value, bis = bisEl?.value;
+  if (!von || !bis) {
+    wrtEl.readOnly = false;
+    wrtEl.style.background = '';
+    wrtEl.style.color = '';
+    wrtEl.style.cursor = '';
+    return;
+  }
+  const ms = new Date(bis).getTime() - new Date(von).getTime();
+  if (isNaN(ms) || ms <= 0) { wrtEl.value = ''; wrtEl.readOnly = false; return; }
+  wrtEl.value = Math.ceil(ms / 3600000);
+  wrtEl.readOnly = true;
+  wrtEl.style.background = '#f0f5fa';
+  wrtEl.style.color = '#64748b';
+  wrtEl.style.cursor = 'default';
+}
+
 function updateFormVisibility() {
   const art         = document.querySelector('#artDesEinsatzes')?.value;
   const isRadar     = art === 'Radar';
   const isAGFahrt   = art === 'AG-Fahrt';
   const is2plus2    = art === '2+2';
+  const isWR        = art === 'WR';
+  const isWB        = art === 'WB';
+  const isWrWb2p2   = isWR || isWB || is2plus2;
   const hideExtra   = isRadar || isAGFahrt;
   const anteileVal  = parseFloat(document.getElementById('schiffsanteile')?.value) || 0;
   const is4Anteile  = anteileVal === 4;
   const streckeNach = document.querySelector('#streckeNach')?.value;
   const isCux       = streckeNach === 'Cux';
   const cuxOpt      = document.querySelector('input[name="cuxOption"]:checked')?.value || '';
-  const isCuxBrb    = isCux && cuxOpt === 'brb';   // zurück nach BrB = alle Zeitfelder
-  const autoAus     = isAGFahrt || is2plus2 || is4Anteile;   // immer Ausgehend
+  const isCuxBrb    = isCux && cuxOpt === 'brb';
+  const autoAus     = isAGFahrt || is2plus2 || is4Anteile;
+  const autoEin     = isWR || isWB;
 
-  // ── Auto-Richtung für AG-Fahrt, 2+2 und 4 Anteile ──────────────────────
+  // ── Auto-Richtung Ausgehend (AG-Fahrt, 2+2, 4 Anteile) ─────────────────
   if (autoAus) {
     const ausCb = document.querySelector('input[name="ausgehend"]');
     const einCb = document.querySelector('input[name="einkommend"]');
-    if (ausCb && !ausCb.checked) {
-      ausCb.checked = true;
-      ausCb.closest('.richtung-btn')?.classList.add('active');
-    }
-    if (einCb && einCb.checked) {
-      einCb.checked = false;
-      einCb.closest('.richtung-btn')?.classList.remove('active');
-    }
+    if (ausCb && !ausCb.checked) { ausCb.checked = true;  ausCb.closest('.richtung-btn')?.classList.add('active'); }
+    if (einCb && einCb.checked)  { einCb.checked = false; einCb.closest('.richtung-btn')?.classList.remove('active'); }
+  }
+  // ── Auto-Richtung Einkommend (WR, WB) ───────────────────────────────────
+  if (autoEin) {
+    const ausCb = document.querySelector('input[name="ausgehend"]');
+    const einCb = document.querySelector('input[name="einkommend"]');
+    if (einCb && !einCb.checked) { einCb.checked = true;  einCb.closest('.richtung-btn')?.classList.add('active'); }
+    if (ausCb && ausCb.checked)  { ausCb.checked = false; ausCb.closest('.richtung-btn')?.classList.remove('active'); }
   }
 
   // ── Aktuellen Zustand lesen (nach Auto-Richtung) ────────────────────────
@@ -9276,6 +9346,7 @@ function updateFormVisibility() {
 
   // ── Element-Referenzen ──────────────────────────────────────────────────
   const richtungGroup   = document.getElementById('richtung-group');
+  const btnAusgehend    = document.getElementById('btn-ausgehend');
   const btnEinkommend   = document.getElementById('btn-einkommend');
   const dtAbfahrt       = document.getElementById('dtbox-abfahrt');
   const dtAnkunft       = document.getElementById('dtbox-ankunft');
@@ -9285,10 +9356,12 @@ function updateFormVisibility() {
   const personenField   = document.getElementById('field-personenAnBord');
   const agenturField    = document.getElementById('field-agentur');
   const wmGroup         = document.getElementById('wm-group');
+  const wmVonBisGroup   = document.getElementById('wm-vonbis-group');
   const btnManoever     = document.getElementById('btn-manoever');
   const btnAbgeschoepft = document.getElementById('btn-abgeschoepft');
   const ansplGroup      = document.getElementById('anspleissen-group');
   const cuxGroup        = document.getElementById('cux-option-group');
+  const wrSection       = document.getElementById('wr-section');
 
   // ── Felder ein-/ausblenden ──────────────────────────────────────────────
   if (vonField)        vonField.style.display        = isRadar             ? 'none' : '';
@@ -9297,12 +9370,18 @@ function updateFormVisibility() {
   if (personenField)   personenField.style.display   = hideExtra           ? 'none' : '';
   if (agenturField)    agenturField.style.display    = (isRadar||isAGFahrt)? 'none' : '';
   if (wmGroup)         wmGroup.style.display         = hideExtra           ? 'none' : '';
+  if (wmVonBisGroup)   wmVonBisGroup.style.display   = hideExtra           ? 'none' : '';
   if (richtungGroup)   richtungGroup.style.display   = isRadar             ? 'none' : '';
 
-  // Einkommend-Button ausblenden wenn Richtung fix (AG-Fahrt / 2+2 / 4 Anteile)
+  // Ausgehend-Button ausblenden wenn Richtung fix einkommend (WR, WB)
+  if (btnAusgehend)    btnAusgehend.style.display    = autoEin             ? 'none' : '';
+  // Einkommend-Button ausblenden wenn Richtung fix ausgehend (AG-Fahrt / 2+2 / 4 Anteile)
   if (btnEinkommend)   btnEinkommend.style.display   = autoAus             ? 'none' : '';
-  // Manöver ausblenden bei AG-Fahrt (bei Radar ist die ganze richtungGroup weg)
+  // Manöver ausblenden bei AG-Fahrt
   if (btnManoever)     btnManoever.style.display      = isAGFahrt           ? 'none' : '';
+
+  // WR / WB / 2+2 Sektion
+  if (wrSection) wrSection.style.display = isWrWb2p2 ? '' : 'none';
 
   // Anspleissen: nur bei Radar sichtbar
   if (ansplGroup) {
@@ -9326,10 +9405,13 @@ function updateFormVisibility() {
   // Cux-Option-Gruppe: nur wenn Nach = Cux
   if (cuxGroup) cuxGroup.style.display = isCux ? '' : 'none';
 
-  // Zeitfelder: bei 4 Anteilen oder Cux→BrB alle anzeigen, sonst normale Logik
-  const showAllTimes = is4Anteile || isCuxBrb;
+  // Zeitfelder: WR/WB/2+2, 4 Anteile oder Cux→BrB → alle anzeigen
+  const showAllTimes = isWrWb2p2 || is4Anteile || isCuxBrb;
   if (dtAbfahrt) dtAbfahrt.style.display = showAllTimes ? '' : ((!isRadar && einkommend) ? 'none' : '');
   if (dtAnkunft) dtAnkunft.style.display = showAllTimes ? '' : ((!isRadar && ausgehend && !isAbgeschoepft) ? 'none' : '');
+
+  // Wartestunden berechnen (falls Von/Bis bereits gesetzt)
+  calcWartestunden();
 }
 
 function setNow(field) {
@@ -9351,17 +9433,23 @@ function handleSubmit(e) {
     streckeNach:    fd.get('streckeNach') || '',
     artDesEinsatzes:fd.get('artDesEinsatzes') || '',
     tiefgang:       fd.get('tiefgang') || '',
+    airdraught:     fd.get('airdraught') || '',
     personenAnBord: fd.get('personenAnBord') || '',
     vmax:           fd.get('vmax') || '',
     agentur:        fd.get('agentur')?.trim() || '',
+    abteilung:      fd.get('abteilung')?.trim() || '',
+    abStation:      fromDTInput(fd.get('abStation')),
+    zuBuch:         fromDTInput(fd.get('zuBuch')),
     einkommend:     fd.get('einkommend') === 'on',
     ausgehend:      fd.get('ausgehend') === 'on',
     abgeschöpft:    fd.get('abgeschöpft') === 'on',
     manöver:        fd.get('manöver') === 'on',
     anspleissen:    fd.get('anspleissen') === 'on',
     cuxOption:      fd.get('cuxOption') || '',
-    wartestunden:   fd.get('wartestunden') || '',
-    schiffsanteile: fd.get('schiffsanteile') || '',
+    wartestunden:     fd.get('wartestunden') || '',
+    wartestunden_von: fromDTInput(fd.get('wartestunden_von')),
+    wartestunden_bis: fromDTInput(fd.get('wartestunden_bis')),
+    schiffsanteile:   fd.get('schiffsanteile') || '',
     anBord:         fromDTInput(fd.get('anBord')),
     vonBord:        fromDTInput(fd.get('vonBord')),
     abfahrt:        fromDTInput(fd.get('abfahrt')),
