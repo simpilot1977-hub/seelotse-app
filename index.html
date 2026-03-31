@@ -322,6 +322,9 @@
     .entries-table tbody tr:last-child td { border-bottom: none; }
 
     .ship-name { font-weight: 600; color: var(--navy); }
+    .td-stack { white-space: nowrap; line-height: 1; }
+    .td-stack-top { font-size: 11px; color: var(--text); }
+    .td-stack-bot { font-size: 10px; color: var(--text-muted); margin-top: 3px; }
 
     .dur-badge {
       display: inline-flex;
@@ -8451,8 +8454,7 @@ function renderList() {
       return `<tr ${trStyle}>
         <td>${esc(fmtDate(f.anBord))}</td>
         <td class="ship-name">${esc(f.schiffsname)||'<span style="opacity:.4">—</span>'}</td>
-        <td>${esc(f.streckeVon)||'<span style="opacity:.4">—</span>'}</td>
-        <td>${esc(f.streckeNach)||'<span style="opacity:.4">—</span>'}</td>
+        <td class="td-stack"><div class="td-stack-top">${esc(f.streckeVon)||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(f.streckeNach)||'—'}</div></td>
         <td>${f.artDesEinsatzes ? _einsatzBadge(f.artDesEinsatzes) : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.tiefgang != null && f.tiefgang !== '' ? esc(f.tiefgang)+' m' : '<span style="opacity:.4">—</span>'}</td>
         <td>${f.personenAnBord != null && f.personenAnBord !== '' ? esc(f.personenAnBord) : '<span style="opacity:.4">—</span>'}</td>
@@ -8460,11 +8462,9 @@ function renderList() {
         <td>${(() => { const wt = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null); return wt ? `${wt} h` : '<span style="opacity:.4">—</span>'; })()}</td>
         <td>${f.schiffsanteile != null && f.schiffsanteile !== '' ? esc(f.schiffsanteile) : '<span style="opacity:.4">—</span>'}</td>
         <td>${esc(f.agentur)||'<span style="opacity:.4">—</span>'}</td>
-        <td style="white-space:nowrap">${esc(fmtDTShort(f.anBord))}</td>
-        <td style="white-space:nowrap">${esc(fmtDTShort(f.vonBord))}</td>
+        <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.anBord))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.vonBord))||'—'}</div></td>
         <td>${reiseDur ? `<span class="dur-badge dur-reise">${esc(reiseDur)}</span>` : '<span style="opacity:.4">—</span>'}</td>
-        <td style="white-space:nowrap">${esc(fmtDTShort(f.abfahrt))}</td>
-        <td style="white-space:nowrap">${esc(fmtDTShort(f.ankunft))}</td>
+        <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.abfahrt))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.ankunft))||'—'}</div></td>
         <td>${f.abgeschöpft ? '<span style="color:#1a7340;font-weight:700">✓</span>' : '<span style="opacity:.4">—</span>'}</td>
         <td>${einsatzRes
           ? `<span class="dur-badge ${einsatzRes.cross?'dur-cross':'dur-einsatz'}" title="${einsatzRes.cross?'Eintragsübergreifend (Ausgehend → Einkommend)':''}">${esc(einsatzRes.dur)}${einsatzRes.cross?' ↗':''}</span>`
@@ -8490,14 +8490,14 @@ function renderList() {
           <thead><tr>
             ${th('anBord','Datum')}
             ${th('schiffsname','Schiffsname')}
-            ${th('streckeVon','Von')}
-            ${th('streckeNach','Nach')}
+            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">Von<br><span style="font-weight:400;opacity:.7">Nach</span></span></th>
             ${th('artDesEinsatzes','Art')}
             <th>Tiefg.</th><th>POB</th><th>Man.</th><th>Wartest.</th><th>Anteile</th>
             ${th('agentur','Agentur')}
-            ${th('anBord','An Bord')}
-            <th>Von Bord</th><th>Reise</th>
-            <th>Abfahrt</th><th>Ankunft</th><th>Abg.</th>
+            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">An Bord<br><span style="font-weight:400;opacity:.7">Von Bord</span></span></th>
+            <th>Reise</th>
+            <th style="white-space:nowrap"><span style="display:block;line-height:1.2">Abfahrt<br><span style="font-weight:400;opacity:.7">Ankunft</span></span></th>
+            <th>Abg.</th>
             <th>Einsatz</th><th>Aktionen</th>
           </tr></thead>
           <tbody>${rows}</tbody>
