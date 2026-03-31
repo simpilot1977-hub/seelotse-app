@@ -9886,13 +9886,50 @@ function renderFahrtDashboard(entry) {
             <div class="fd-field"><div class="fd-lbl">Art des Einsatzes</div><div class="fd-val">${esc(entry.artDesEinsatzes)||'—'}</div></div>
             <div class="fd-field"><div class="fd-lbl">Von → Nach</div><div class="fd-val">${esc(entry.streckeVon)||'—'} → ${esc(entry.streckeNach)||'—'}</div></div>
             <div class="fd-field"><div class="fd-lbl">Tiefgang</div><div class="fd-val">${entry.tiefgang ? entry.tiefgang+' m' : '—'}</div></div>
+            ${entry.airdraught != null && entry.airdraught !== '' ? `<div class="fd-field"><div class="fd-lbl">Airdraught</div><div class="fd-val">${entry.airdraught} m</div></div>` : ''}
             <div class="fd-field"><div class="fd-lbl">Personen</div><div class="fd-val">${entry.personenAnBord||'—'}</div></div>
             <div class="fd-field"><div class="fd-lbl">Vmax</div><div class="fd-val">${entry.vmax ? entry.vmax+' kn' : '—'}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Agentur</div><div class="fd-val">${esc(entry.agentur)||'—'}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Schiffsanteile</div><div class="fd-val">${entry.schiffsanteile||'—'}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Richtung</div><div class="fd-val">${entry.ausgehend ? 'Ausgehend' : entry.einkommend ? 'Einkommend' : '—'}${entry.abgeschöpft ? ' · Abgeschöpft' : ''}</div></div>
+            ${entry.manöver ? `<div class="fd-field"><div class="fd-lbl">Manöver</div><div class="fd-val" style="color:var(--success)">✓ Ja</div></div>` : ''}
+            ${entry.anspleissen ? `<div class="fd-field"><div class="fd-lbl">Anspleissen</div><div class="fd-val" style="color:#0369a1">✓ Ja</div></div>` : ''}
+          </div>
+        </div>
+
+        <!-- Zeiten -->
+        <div class="fd-card">
+          <div class="fd-card-title">Zeiten</div>
+          <div class="fd-ship-grid">
             <div class="fd-field"><div class="fd-lbl">An Bord</div><div class="fd-val">${fmtDT(entry.anBord)}</div></div>
             <div class="fd-field"><div class="fd-lbl">Von Bord</div><div class="fd-val">${fmtDT(entry.vonBord)}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Abfahrt Haustür</div><div class="fd-val">${fmtDT(entry.abfahrt)}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Ankunft Haustür</div><div class="fd-val">${fmtDT(entry.ankunft)}</div></div>
+            ${entry.abteilung ? `<div class="fd-field"><div class="fd-lbl">Abteilung</div><div class="fd-val">${fmtDT(entry.abteilung)}</div></div>` : ''}
+            ${entry.abStation ? `<div class="fd-field"><div class="fd-lbl">Ab Station</div><div class="fd-val">${fmtDT(entry.abStation)}</div></div>` : ''}
+            ${entry.zuBuch ? `<div class="fd-field"><div class="fd-lbl">Zu Buch</div><div class="fd-val">${fmtDT(entry.zuBuch)}</div></div>` : ''}
+            ${(() => {
+              const wt = entry.wartestunden || (entry.wartestunden_von && entry.wartestunden_bis ? Math.ceil((new Date(entry.wartestunden_bis)-new Date(entry.wartestunden_von))/3600000) : null);
+              if (!wt) return '';
+              const vonBis = entry.wartestunden_von && entry.wartestunden_bis
+                ? ` (${fmtDT(entry.wartestunden_von)} – ${fmtDT(entry.wartestunden_bis)})`
+                : '';
+              return `<div class="fd-field" style="grid-column:1/-1"><div class="fd-lbl">Wartestunden</div><div class="fd-val">${wt} h${vonBis}</div></div>`;
+            })()}
           </div>
-          <!-- Manuelle Geschwindigkeit -->
-          <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        </div>
+
+        ${entry.bemerkungen ? `
+        <!-- Bemerkungen -->
+        <div class="fd-card">
+          <div class="fd-card-title">Bemerkungen</div>
+          <div style="font-size:13px;color:var(--text);white-space:pre-wrap;line-height:1.5">${esc(entry.bemerkungen)}</div>
+        </div>` : ''}
+
+        <!-- Manuelle Geschwindigkeit -->
+        <div class="fd-card">
+          <div class="fd-card-title">Geschwindigkeit</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <label style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Manuelle Geschwindigkeit</label>
             <input type="number" step="0.5" min="0.5" max="30" placeholder="${entry.vmax||'kn'}"
               value="${arManuelleV}"
