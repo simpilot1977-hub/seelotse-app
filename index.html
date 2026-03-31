@@ -8289,6 +8289,9 @@ function renderList() {
   // ── Dashboard ─────────────────────────────────────────────────────────
   const EIGHT_H = 8 * 3600000;
   let bis8h = 0, ueber8h = 0, manöverCount = 0, wartestundenSum = 0, schiffsanteileSum = 0;
+  let abgeschöpftCount = 0;
+  let reiseDauerSum = 0, reiseDauerCount = 0;
+  let einsatzDauerSum = 0, einsatzDauerCount = 0;
   const typCount = {};
   EINSATZ_OPTS.forEach(t => { typCount[t] = 0; });
   // Pre-build set of ausgehend IDs that are paired (they'll be counted via their einkommend partner)
@@ -8300,11 +8303,38 @@ function renderList() {
   dateFiltered.forEach(f => {
     if (!pairedAusgehendIds.has(f.id) && typCount[f.artDesEinsatzes] !== undefined) typCount[f.artDesEinsatzes]++;
     const ms = getEinsatzdauerMs(f, fahrten);
-    if (ms !== null) { if (ms <= EIGHT_H) bis8h++; else ueber8h++; }
+    if (ms !== null) {
+      if (ms <= EIGHT_H) bis8h++; else ueber8h++;
+      if (!pairedAusgehendIds.has(f.id) && ms > 0) { einsatzDauerSum += ms; einsatzDauerCount++; }
+    }
     if (f.manöver) manöverCount++;
+    if (f.abgeschöpft) abgeschöpftCount++;
     if (f.wartestunden) wartestundenSum += parseFloat(f.wartestunden) || 0;
     if (f.schiffsanteile) schiffsanteileSum += parseFloat(f.schiffsanteile) || 0;
+    if (f.anBord && f.vonBord) {
+      const rdMs = new Date(f.vonBord).getTime() - new Date(f.anBord).getTime();
+      if (!isNaN(rdMs) && rdMs > 0) { reiseDauerSum += rdMs; reiseDauerCount++; }
+    }
   });
+  // Ø Freitörn: Zeit zwischen aufeinanderfolgenden Einsätzen (vonBord[i] → anBord[i+1])
+  const sortedForFrei = [...dateFiltered]
+    .filter(f => f.anBord && f.vonBord)
+    .sort((a, b) => new Date(a.anBord) - new Date(b.anBord));
+  let freitörnSum = 0, freitörnCount = 0;
+  for (let i = 0; i < sortedForFrei.length - 1; i++) {
+    const gap = new Date(sortedForFrei[i+1].anBord).getTime() - new Date(sortedForFrei[i].vonBord).getTime();
+    if (!isNaN(gap) && gap > 0 && gap < 30 * 24 * 3600000) { freitörnSum += gap; freitörnCount++; }
+  }
+  // Formatierungshilfe für Stunden
+  const fmtAvgH = ms => {
+    if (!ms || ms <= 0) return '—';
+    const totalMin = Math.round(ms / 60000);
+    const h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return m === 0 ? `${h} h` : `${h}:${String(m).padStart(2,'0')} h`;
+  };
+  const avgReiseDauerMs   = reiseDauerCount   > 0 ? reiseDauerSum   / reiseDauerCount   : null;
+  const avgEinsatzDauerMs = einsatzDauerCount > 0 ? einsatzDauerSum / einsatzDauerCount : null;
+  const avgFreitörnMs     = freitörnCount     > 0 ? freitörnSum     / freitörnCount     : null;
 
   const dashHtml = total > 0 ? `
     <div class="dash-section">
@@ -8345,8 +8375,20 @@ function renderList() {
           <div class="dash-label">2+2</div>
         </div>
         <div class="dash-card">
+          <div class="dash-num">${typCount['WR']}</div>
+          <div class="dash-label">WR</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-num">${typCount['WB']}</div>
+          <div class="dash-label">WB</div>
+        </div>
+        <div class="dash-card">
           <div class="dash-num">${manöverCount}</div>
           <div class="dash-label">Manöver</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-num">${abgeschöpftCount}</div>
+          <div class="dash-label">Abgeschöpft</div>
         </div>
         <div class="dash-card">
           <div class="dash-num">${wartestundenSum % 1 === 0 ? wartestundenSum : wartestundenSum.toFixed(1)}</div>
@@ -8355,6 +8397,18 @@ function renderList() {
         <div class="dash-card">
           <div class="dash-num">${schiffsanteileSum % 1 === 0 ? schiffsanteileSum : schiffsanteileSum.toFixed(2)}</div>
           <div class="dash-label">Schiffsanteile</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-num" style="font-size:${avgReiseDauerMs?'18px':'22px'}">${fmtAvgH(avgReiseDauerMs)}</div>
+          <div class="dash-label">Ø Reisedauer</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-num" style="font-size:${avgEinsatzDauerMs?'18px':'22px'}">${fmtAvgH(avgEinsatzDauerMs)}</div>
+          <div class="dash-label">Ø Einsatzdauer</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-num" style="font-size:${avgFreitörnMs?'18px':'22px'}">${fmtAvgH(avgFreitörnMs)}</div>
+          <div class="dash-label">Ø Freitörn</div>
         </div>
       </div>
     </div>` : '';
@@ -9153,9 +9207,12 @@ function renderForm(f) {
             WR / WB / 2+2 · Einsatzdaten
           </div>
           <div class="form-grid">
-            <div class="field">
-              <label for="abteilung">Abteilung</label>
-              <input type="text" id="abteilung" name="abteilung" value="${v('abteilung')}" placeholder="z. B. HH, Cux, BrB">
+            <div class="datetime-box">
+              <div class="datetime-label">
+                <span>🏢 Abteilung</span>
+                <button type="button" class="now-btn" onclick="setNow('abteilung')">Jetzt</button>
+              </div>
+              <input class="datetime-input" type="datetime-local" name="abteilung" id="dt_abteilung" value="${dt('abteilung')}">
             </div>
             <div class="datetime-box">
               <div class="datetime-label">
@@ -9437,7 +9494,7 @@ function handleSubmit(e) {
     personenAnBord: fd.get('personenAnBord') || '',
     vmax:           fd.get('vmax') || '',
     agentur:        fd.get('agentur')?.trim() || '',
-    abteilung:      fd.get('abteilung')?.trim() || '',
+    abteilung:      fromDTInput(fd.get('abteilung')),
     abStation:      fromDTInput(fd.get('abStation')),
     zuBuch:         fromDTInput(fd.get('zuBuch')),
     einkommend:     fd.get('einkommend') === 'on',
