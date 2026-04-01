@@ -6081,6 +6081,9 @@ function goKarte() {
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-wind" onchange="karteToggleOverlay('wind',this.checked)"> Wind
         </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer" title="Klick auf Karte → Windvorhersage für diesen Punkt">
+          <input type="checkbox" id="karte-toggle-windvh" onchange="karteWindVhToggle(this.checked)"> <span style="color:#7c3aed;font-weight:600">🌬️ Windvorhersage</span>
+        </label>
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-tide" onchange="karteToggleOverlay('tide',this.checked)"> Hoch-/Niedrigwasser
         </label>
@@ -6146,6 +6149,13 @@ function goKarte() {
           <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:10px;height:10px;background:#7c3aed;border-radius:50%"></span><span>Wegpunkte</span></div>
         </div>
         <div style="margin-top:6px;font-size:9px;color:#94a3b8">OpenSeaMap · WSV BWaStr-Locator · Pegelonline</div>
+      </div>
+
+      <!-- Windvorhersage-Panel (Karte) -->
+      <div id="karte-windvh-hint" style="display:none;position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:1001;background:rgba(124,58,237,.92);color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:600;pointer-events:none">
+        🌬️ Auf Karte klicken für Windvorhersage
+      </div>
+      <div id="karte-windvh-panel" style="display:none;position:absolute;bottom:28px;left:12px;right:210px;z-index:1001;background:#ffffff;border:1.5px solid #7c3aed44;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.2);flex-direction:column;max-width:520px">
       </div>
 
       <!-- Strömungslegende (wird via JS ein-/ausgeblendet) -->
@@ -6810,6 +6820,108 @@ function _karteLoadStroem() {
   if (_karteOverlays.stroem) {
     _karteStroemTimer = setTimeout(_karteLoadStroem, 10 * 60 * 1000);
   }
+}
+
+// ── Karten-Windvorhersage ─────────────────────────────────────────────────────
+let _karteWindVhActive = false;
+let _karteWindVhClickHandler = null;
+
+function karteWindVhToggle(active) {
+  _karteWindVhActive = active;
+  if (!_karteMap) return;
+  const canvas = _karteMap.getCanvas();
+  if (active) {
+    canvas.style.cursor = 'crosshair';
+    _karteWindVhClickHandler = e => _karteWindVhClick(e);
+    _karteMap.on('click', _karteWindVhClickHandler);
+    // Show hint panel
+    const hint = document.getElementById('karte-windvh-hint');
+    if (hint) hint.style.display = '';
+  } else {
+    canvas.style.cursor = '';
+    if (_karteWindVhClickHandler) { _karteMap.off('click', _karteWindVhClickHandler); _karteWindVhClickHandler = null; }
+    const panel = document.getElementById('karte-windvh-panel');
+    if (panel) panel.style.display = 'none';
+    const hint = document.getElementById('karte-windvh-hint');
+    if (hint) hint.style.display = 'none';
+  }
+}
+
+async function _karteWindVhClick(e) {
+  const lat = e.lngLat.lat.toFixed(4), lon = e.lngLat.lng.toFixed(4);
+  const panel = document.getElementById('karte-windvh-panel');
+  if (!panel) return;
+  panel.style.display = 'flex';
+  panel.innerHTML = `<div style="padding:12px;color:var(--text-muted);font-size:12px">⏳ Lade Vorhersage für ${lat}°N, ${lon}°O …</div>`;
+  const hint = document.getElementById('karte-windvh-hint');
+  if (hint) hint.style.display = 'none';
+  try {
+    // Fetch all active models (or default to icon_d2)
+    const models = _vhModels?.size ? [..._vhModels] : ['icon_d2', 'icon_eu'];
+    const results = await Promise.all(models.map(async model => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_10m,winddirection_10m,windgusts_10m&models=${model}&timezone=Europe%2FBerlin&forecast_days=5&wind_speed_unit=kn`;
+      try {
+        const r = await fetch(url); if (!r.ok) return null;
+        const j = await r.json();
+        return { model, times: j.hourly?.time, speed: j.hourly?.windspeed_10m, dir: j.hourly?.winddirection_10m, gusts: j.hourly?.windgusts_10m };
+      } catch { return null; }
+    }));
+    _karteWindVhRender(results.filter(Boolean), parseFloat(lat), parseFloat(lon));
+  } catch(err) {
+    panel.innerHTML = `<div style="padding:12px;color:var(--danger);font-size:12px">Fehler: ${err.message}</div>`;
+  }
+}
+
+function _karteWindVhRender(results, lat, lon) {
+  const panel = document.getElementById('karte-windvh-panel');
+  if (!panel) return;
+  const tMin = Date.now(), tMax = tMin + 120 * 3600000; // 5 days
+  const W = 440, H = 160, pL = 38, pR = 8, pT = 10, pB = 28;
+  let sMax = 5;
+  const lines = {};
+  results.forEach(({model, times, speed, gusts}) => {
+    const pts = [];
+    (times || []).forEach((t, i) => {
+      const ms = new Date(t).getTime();
+      if (ms < tMin || ms > tMax) return;
+      const v = speed?.[i], g = gusts?.[i];
+      if (v != null) { pts.push({t:ms, v, g:g??v}); sMax = Math.max(sMax, v, g??v); }
+    });
+    lines[model] = pts;
+  });
+  sMax = Math.ceil(sMax * 1.1 / 5) * 5;
+  const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
+  const yOf = v => pT + (1 - v / sMax) * (H - pT - pB);
+  const BFT = [{f:0,t:4,c:'#86efac'},{f:4,t:7,c:'#4ade80'},{f:7,t:11,c:'#a3e635'},{f:11,t:17,c:'#facc15'},{f:17,t:22,c:'#fb923c'},{f:22,t:34,c:'#ef4444'},{f:34,t:999,c:'#9f1239'}];
+  let bands=''; BFT.forEach((b,i)=>{ const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT>0&&vB<sMax){const yT=yOf(vT),yB=yOf(vB);if(yT<yB)bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".13"/>`;} });
+  let grid='',yL=''; for(let i=0;i<=4;i++){const v=sMax*i/4,y=yOf(v).toFixed(1);grid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;yL+=`<text x="${pL-3}" y="${parseFloat(y)+3}" text-anchor="end" font-size="8" fill="#637485">${v.toFixed(0)}</text>`;}
+  let xL=''; const step=24*3600000; let ts0=Math.ceil(tMin/step)*step;
+  for(let t=ts0;t<=tMax;t+=step){const x=xOf(t).toFixed(1),d=new Date(t);xL+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width=".8"/>`;xL+=`<text x="${x}" y="${H-pB+11}" text-anchor="middle" font-size="8" fill="#1d6fa5" font-weight="700">${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</text>`;}
+  let modelSvg='';
+  Object.entries(lines).forEach(([k,pts])=>{ if(!pts.length)return; const m=VORHERSAGE_MODELS[k]; if(!m)return;
+    const gp=pts.map((p,i)=>`${i===0?'M':'L'}${xOf(p.t).toFixed(1)} ${yOf(p.g).toFixed(1)}`).join(' ')+' '+[...pts].reverse().map(p=>`L${xOf(p.t).toFixed(1)} ${yOf(p.v).toFixed(1)}`).join(' ')+' Z';
+    modelSvg+=`<path d="${gp}" fill="${m.color}" opacity=".12"/>`;
+    const sp=pts.map((p,i)=>`${i===0?'M':'L'}${xOf(p.t).toFixed(1)} ${yOf(p.v).toFixed(1)}`).join(' ');
+    modelSvg+=`<path d="${sp}" fill="none" stroke="${m.color}" stroke-width="2" stroke-linejoin="round"/>`; });
+  const nowX=xOf(tMin).toFixed(1);
+  const legend=Object.entries(lines).filter(([k,p])=>p.length).map(([k])=>{ const m=VORHERSAGE_MODELS[k]; return `<span style="font-size:9px;color:${m.color};font-weight:700">— ${m.label}</span>`; }).join(' ');
+  panel.innerHTML = `
+    <div style="padding:10px 12px;flex:1;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--navy)">🌬️ Windvorhersage · 5 Tage</div>
+          <div style="font-size:9px;color:var(--text-muted)">${lat}°N, ${lon}°O · ${legend}</div>
+        </div>
+        <button onclick="document.getElementById('karte-windvh-panel').style.display='none'" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;color:var(--text-muted);flex-shrink:0">✕</button>
+      </div>
+      <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
+        <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="var(--bg-alt,#f8fafc)"/>
+        ${bands}${grid}${yL}${xL}${modelSvg}
+        <line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2"/>
+        <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".7"/>
+      </svg>
+      <div style="font-size:8px;color:var(--text-muted);margin-top:2px">Y-Achse: kn · Beaufort-Bänder: grün=leicht, gelb=frisch, orange=stark, rot=Sturm</div>
+    </div>`;
 }
 
 function karteToggleOverlay(type, visible) {
@@ -8136,7 +8248,14 @@ const VH_CACHE_KEY = 'seelotse_vorhersage_v1';
 let _vhLoc    = 'cuxhaven';
 let _vhModels = new Set(['icon_d2', 'icon_eu', 'ecmwf_ifs04']);
 let _vhHours  = 72;
+let _vhUnit   = 'kn'; // 'kn' | 'bft' | 'ms' | 'kmh'
 let _vhCache  = {};
+
+const VH_UNITS = { kn: { label: 'Knoten (kn)', factor: 1, fmt: v => v.toFixed(1)+' kn' }, bft: { label: 'Beaufort', factor: null, fmt: v => 'Bft '+_knToBft(v) }, ms: { label: 'm/s', factor: 0.51444, fmt: v => (v*0.51444).toFixed(1)+' m/s' }, kmh: { label: 'km/h', factor: 1.852, fmt: v => (v*1.852).toFixed(0)+' km/h' } };
+function _knToBft(kn) { const b=[1,4,7,11,17,22,28,34,41,48,56,64]; for(let i=0;i<b.length;i++) if(kn<b[i]) return i; return 12; }
+function _knToUnit(kn) { if(!kn&&kn!==0)return null; if(_vhUnit==='bft')return _knToBft(kn); if(_vhUnit==='ms')return kn*0.51444; if(_vhUnit==='kmh')return kn*1.852; return kn; }
+function _unitLabel() { return {kn:'kn',bft:'Bft',ms:'m/s',kmh:'km/h'}[_vhUnit]||'kn'; }
+function setVhUnit(u) { _vhUnit = u; renderVorhersageUI(); }
 
 function _loadVhCache() {
   try { const r = localStorage.getItem(VH_CACHE_KEY); if (r) _vhCache = JSON.parse(r); } catch(e) { _vhCache = {}; }
@@ -8278,6 +8397,10 @@ function renderVorhersageUI() {
         return `<button onclick="toggleVhModel('${k}')" style="${bs(active,m.color)}">${loading?'⏳ ':''}${m.label} <span style="font-size:9px;opacity:.7">${m.desc}</span></button>`;
       }).join('')}
     </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">Einheit:</span>
+      ${Object.entries(VH_UNITS).map(([k,u]) => `<button onclick="setVhUnit('${k}')" style="padding:3px 10px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit;border:1.5px solid ${_vhUnit===k?'var(--blue)':'var(--border)'};background:${_vhUnit===k?'var(--blue)':'var(--bg)'};color:${_vhUnit===k?'#fff':'var(--text)'}">${k==='bft'?'Beaufort':u.label.split(' ')[0]}</button>`).join('')}
+    </div>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">Zeitraum:</span>
       ${[[24,'24h'],[48,'48h'],[72,'72h'],[120,'5d'],[168,'7d']].map(([h,l]) =>
@@ -8306,18 +8429,24 @@ function _renderVhSpeedChart(modelData) {
     for (let i = 0; i < data.times.length; i++) {
       const t = new Date(data.times[i]).getTime();
       if (t < tMin - 3600000 || t > tMax) continue;
-      const v = data.speed?.[i], g = data.gusts?.[i];
-      if (v != null) { pts.push({t, v, g: g??v}); sMax = Math.max(sMax, v, g??v); }
+      const vKn = data.speed?.[i], gKn = data.gusts?.[i];
+      if (vKn != null) {
+        const v = _vhUnit==='bft'?_knToBft(vKn):_vhUnit==='ms'?vKn*0.51444:_vhUnit==='kmh'?vKn*1.852:vKn;
+        const g = gKn!=null?(_vhUnit==='bft'?_knToBft(gKn):_vhUnit==='ms'?gKn*0.51444:_vhUnit==='kmh'?gKn*1.852:gKn):v;
+        pts.push({t, v, g, vKn}); sMax = Math.max(sMax, v, g);
+      }
     }
     lines[k] = pts;
   }
   if (!Object.values(lines).some(p=>p.length)) return '<div style="color:var(--text-muted);font-size:12px;padding:20px 0;text-align:center">Keine Daten verfügbar – Modelle laden…</div>';
-  sMax = Math.ceil(sMax * 1.12 / 5) * 5;
+  sMax = _vhUnit==='bft' ? Math.min(12, Math.ceil(sMax)+1) : Math.ceil(sMax * 1.12 / 5) * 5;
   const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
   const yOf = v => pT + (1 - v / sMax) * (H - pT - pB);
-  const BFT = [{f:0,t:1,c:'#94a3b8'},{f:1,t:4,c:'#86efac'},{f:4,t:7,c:'#4ade80'},
-    {f:7,t:11,c:'#a3e635'},{f:11,t:17,c:'#facc15'},{f:17,t:22,c:'#fb923c'},
-    {f:22,t:28,c:'#f97316'},{f:28,t:34,c:'#ef4444'},{f:34,t:999,c:'#dc2626'}];
+  // Beaufort thresholds in kn → convert to display unit
+  const cv = kn => _vhUnit==='bft'?_knToBft(kn):_vhUnit==='ms'?kn*0.51444:_vhUnit==='kmh'?kn*1.852:kn;
+  const BFT_KN = [{f:0,t:1},{f:1,t:4},{f:4,t:7},{f:7,t:11},{f:11,t:17},{f:17,t:22},{f:22,t:28},{f:28,t:34},{f:34,t:999}];
+  const BFT_COL = ['#94a3b8','#86efac','#4ade80','#a3e635','#facc15','#fb923c','#f97316','#ef4444','#dc2626'];
+  const BFT = BFT_KN.map((b,i)=>({f:cv(b.f),t:cv(b.t),c:BFT_COL[i]}));
   let bands='',bLbl='';
   BFT.forEach((b,i)=>{
     const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT<=0||vB>=sMax)return;
@@ -8325,14 +8454,31 @@ function _renderVhSpeedChart(modelData) {
     bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".12"/>`;
     if(yB-yT>11)bLbl+=`<text x="${W-pR-3}" y="${((yT+yB)/2+3).toFixed(1)}" font-size="7" fill="${b.c}" opacity=".7" text-anchor="end" font-weight="700">Bft ${i}</text>`;
   });
+  const uLbl = _unitLabel();
   let grid='',yLbls='';
-  for(let i=0;i<=5;i++){const v=sMax*i/5,y=yOf(v).toFixed(1);grid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;yLbls+=`<text x="${pL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(0)} kn</text>`;}
+  const steps = _vhUnit==='bft'?sMax:5;
+  for(let i=0;i<=steps;i++){const v=sMax*i/steps,y=yOf(v).toFixed(1);grid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;const lbl=_vhUnit==='bft'?`Bft ${Math.round(v)}`:_vhUnit==='ms'?v.toFixed(1):v.toFixed(0);yLbls+=`<text x="${pL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${lbl}</text>`;}
   let xLbls='',xTicks='';
-  const step=6*3600000; let ts0=Math.ceil(tMin/step)*step;
-  for(let t=ts0;t<=tMax;t+=step){const x=xOf(t).toFixed(1),d=new Date(t),h=d.getHours();
-    xTicks+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width="${h===0?'1':'.4'}"/>`;
-    const lbl=h===0?d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}):`${String(h).padStart(2,'0')}h`;
-    xLbls+=`<text x="${x}" y="${H-pB+12}" text-anchor="middle" font-size="${h===0?9:8}" fill="${h===0?'#1d6fa5':'#94a3b8'}" font-weight="${h===0?700:400}">${lbl}</text>`;}
+  // Adaptive tick spacing: denser for short ranges, sparser for long ranges
+  const stepH = _vhHours <= 48 ? 3 : _vhHours <= 96 ? 6 : _vhHours <= 168 ? 12 : 24;
+  const step=stepH*3600000; let ts0=Math.ceil(tMin/step)*step;
+  for(let t=ts0;t<=tMax;t+=step){
+    const x=xOf(t).toFixed(1), d=new Date(t), h=d.getHours();
+    const isMidnight = h===0;
+    const isNoon = h===12;
+    xTicks+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width="${isMidnight?'1.2':'.4'}"/>`;
+    // For large ranges (5d/7d): show date on midnight, time on noon; hide other ticks
+    let lbl = '';
+    if (isMidnight) {
+      // Full date on day boundaries
+      lbl = d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'});
+      xLbls+=`<text x="${x}" y="${H-pB+13}" text-anchor="middle" font-size="9" fill="#1d6fa5" font-weight="700">${lbl}</text>`;
+    } else if (stepH <= 6 || (stepH === 12 && isNoon)) {
+      // Sub-day labels only for smaller ranges or noon on 12h-step
+      lbl = `${String(h).padStart(2,'0')}h`;
+      xLbls+=`<text x="${x}" y="${H-pB+12}" text-anchor="middle" font-size="7.5" fill="#94a3b8">${lbl}</text>`;
+    }
+  }
   const nowX=xOf(tMin).toFixed(1);
   const nowLine=`<line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${parseFloat(nowX)+3}" y="${pT+10}" font-size="8" fill="#ef4444" font-weight="700">Jetzt</text>`;
   let modelSvg='';
@@ -8347,7 +8493,7 @@ function _renderVhSpeedChart(modelData) {
   const legendHtml=Object.entries(lines).filter(([k,p])=>p.length).map(([k])=>{const m=VORHERSAGE_MODELS[k];return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px"><span style="display:inline-block;width:20px;height:2.5px;background:${m.color};border-radius:2px"></span><span style="color:${m.color};font-weight:700">${m.label}</span><span style="color:var(--text-muted)">${m.desc}</span></span>`;}).join('');
   return `<div style="margin-bottom:12px">
     <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
-      <span>💨 Windstärke &amp; Böen (kn)</span>${legendHtml}
+      <span>💨 Windstärke &amp; Böen (${uLbl})</span>${legendHtml}
     </div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
       ${bands}${bLbl}${grid}${yLbls}${xTicks}${xLbls}${nowLine}${modelSvg}
@@ -8356,59 +8502,85 @@ function _renderVhSpeedChart(modelData) {
   </div>`;
 }
 
+// Draw official meteorological wind barb at (cx, cy), dir=from-direction in degrees, speedKn=speed in kn
+function _windBarb(cx, cy, dir, speedKn, color, sz) {
+  const L = sz || 18; // shaft length
+  const rad = dir * Math.PI / 180;
+  // Shaft points FROM obs toward where wind originates (meteorological standard)
+  const sdx = Math.sin(rad) * L;   // For N-wind (dir=0): sin(0)=0
+  const sdy = -Math.cos(rad) * L;  // For N-wind: -cos(0)=-L → upward in SVG
+  const tipX = cx + sdx, tipY = cy + sdy;
+  // Perpendicular (left side Northern Hemisphere): rotate shaft 90° counterclockwise
+  const pMag = L * 0.55;
+  const nx = (-sdy / L), ny = (sdx / L); // normalized perp
+  let s = '';
+  if (speedKn < 3) {
+    return `<circle cx="${cx}" cy="${cy}" r="${(sz*0.28||5).toFixed(1)}" fill="none" stroke="${color}" stroke-width="1.5"/>`;
+  }
+  // Shaft
+  s += `<line x1="${cx.toFixed(1)}" y1="${cy.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="${color}" stroke-width="1.8" stroke-linecap="round"/>`;
+  // Decompose speed: pennants=50kn, long=10kn, short=5kn
+  let kn = Math.round(speedKn);
+  const pennants = Math.floor(kn / 50); kn %= 50;
+  const longs    = Math.floor(kn / 10); kn %= 10;
+  const shorts   = Math.floor(kn / 5);
+  const step = L / 5.5;
+  let pos = 0;
+  // Pennants (filled triangle flags)
+  for (let i = 0; i < pennants; i++) {
+    const b1x = tipX - sdx/L * pos * step,       b1y = tipY - sdy/L * pos * step;
+    const b2x = tipX - sdx/L * (pos+1.1) * step, b2y = tipY - sdy/L * (pos+1.1) * step;
+    const px  = b1x + nx * pMag,                  py  = b1y + ny * pMag;
+    s += `<polygon points="${b1x.toFixed(1)},${b1y.toFixed(1)} ${b2x.toFixed(1)},${b2y.toFixed(1)} ${px.toFixed(1)},${py.toFixed(1)}" fill="${color}"/>`;
+    pos += 1.3;
+  }
+  if (pennants > 0) pos += 0.4;
+  // Long barbs (full = 10 kn)
+  for (let i = 0; i < longs; i++) {
+    const bx = tipX - sdx/L * pos * step, by = tipY - sdy/L * pos * step;
+    s += `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx+nx*pMag).toFixed(1)}" y2="${(by+ny*pMag).toFixed(1)}" stroke="${color}" stroke-width="1.6"/>`;
+    pos++;
+  }
+  // Short barbs (half = 5 kn) – placed at end if only barb, else after longs
+  for (let i = 0; i < shorts; i++) {
+    const bx = tipX - sdx/L * pos * step, by = tipY - sdy/L * pos * step;
+    s += `<line x1="${bx.toFixed(1)}" y1="${by.toFixed(1)}" x2="${(bx+nx*pMag*0.5).toFixed(1)}" y2="${(by+ny*pMag*0.5).toFixed(1)}" stroke="${color}" stroke-width="1.6"/>`;
+    pos++;
+  }
+  return s;
+}
+
 function _renderVhDirChart(modelData) {
   const tMin = Date.now(), tMax = tMin + _vhHours * 3600000;
   const models = Object.entries(modelData).filter(([k,d])=>d&&_vhModels.has(k));
   if (!models.length) return '';
-  const W=900, pL=46, pR=12, pT=10, pB=20, rowH=36;
+  const W=900, pL=46, pR=12, pT=14, pB=24, rowH=44;
   const H = pT + models.length * rowH + pB;
   const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
-  const STEP = 3 * 3600000;
+  // Step: every 3h for ≤72h, every 6h for longer
+  const STEP = (_vhHours <= 72 ? 3 : 6) * 3600000;
   let svg = '';
-  // Cardinal direction labels at x-axis ticks for reference
-  const CARDINALS = {0:'N',45:'NE',90:'O',135:'SO',180:'S',225:'SW',270:'W',315:'NW',360:'N'};
   models.forEach(([k,data],mi) => {
     const m = VORHERSAGE_MODELS[k];
     const yMid = pT + mi * rowH + rowH / 2;
-    // Row background alternating
     if (mi % 2 === 0) svg += `<rect x="${pL}" y="${(pT+mi*rowH).toFixed(1)}" width="${W-pL-pR}" height="${rowH}" fill="${m.color}" opacity=".04"/>`;
     svg += `<text x="${pL-4}" y="${(yMid+3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="${m.color}" font-weight="700">${m.label}</text>`;
     const t0 = Math.ceil(tMin / STEP) * STEP;
     for (let t = t0; t <= tMax; t += STEP) {
       let ci = 0, cd = Infinity;
-      for (let i = 0; i < data.times.length; i++) {
-        const d = Math.abs(new Date(data.times[i]).getTime() - t);
-        if (d < cd) { cd = d; ci = i; }
-      }
-      if (data.dir[ci] == null) continue;
-      const x = xOf(t), dir = data.dir[ci];
-      const rad = dir * Math.PI / 180;
-      // Arrow: tail at (x, yMid), tip offset in "to" direction
-      const len = 13;
-      const dx = -Math.sin(rad)*len, dy = Math.cos(rad)*len;
-      const tipX = x+dx, tipY = yMid+dy;
-      // Shaft with wider stroke
-      svg += `<line x1="${x.toFixed(1)}" y1="${yMid.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="${m.color}" stroke-width="2.2" stroke-linecap="round"/>`;
-      // Arrowhead (larger, filled)
-      const hrad = rad+Math.PI, hl=6;
-      const ax1=tipX+Math.sin(hrad+0.5)*hl, ay1=tipY-Math.cos(hrad+0.5)*hl;
-      const ax2=tipX+Math.sin(hrad-0.5)*hl, ay2=tipY-Math.cos(hrad-0.5)*hl;
-      svg += `<polygon points="${tipX.toFixed(1)},${tipY.toFixed(1)} ${ax1.toFixed(1)},${ay1.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}" fill="${m.color}"/>`;
-      // Wind speed label (if speed data available)
-      const spd = data.speed?.[ci];
-      if (spd != null && spd > 0) {
-        svg += `<text x="${x.toFixed(1)}" y="${(yMid+rowH/2-4).toFixed(1)}" text-anchor="middle" font-size="7" fill="${m.color}" opacity=".8">${spd.toFixed(0)}</text>`;
-      }
+      for (let i = 0; i < data.times.length; i++) { const d = Math.abs(new Date(data.times[i]).getTime()-t); if(d<cd){cd=d;ci=i;} }
+      if (data.dir[ci] == null || data.speed?.[ci] == null) continue;
+      const x = xOf(t);
+      svg += _windBarb(x, yMid, data.dir[ci], data.speed[ci], m.color, rowH * 0.46);
     }
-    if (mi < models.length - 1) svg += `<line x1="${pL}" y1="${(pT+(mi+1)*rowH).toFixed(1)}" x2="${W-pR}" y2="${(pT+(mi+1)*rowH).toFixed(1)}" stroke="#c8d6e2" stroke-width=".6"/>`;
+    if (mi < models.length-1) svg += `<line x1="${pL}" y1="${(pT+(mi+1)*rowH).toFixed(1)}" x2="${W-pR}" y2="${(pT+(mi+1)*rowH).toFixed(1)}" stroke="#c8d6e2" stroke-width=".6"/>`;
   });
-  // Now line
   const nowX = xOf(tMin).toFixed(1);
   svg += `<line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 3"/>`;
   return `<div style="margin-top:8px">
-    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">🧭 Windrichtung (alle 3 h) · Pfeil zeigt wohin der Wind weht · Zahl = kn</div>
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">🧭 Windrichtung &amp; -stärke · Windpfeil (Fahne=50 kn, Strich=10 kn, Halbstrich=5 kn) · Stiel zeigt woher der Wind kommt</div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
-      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="var(--bg-alt,#f8fafc)" rx="2"/>
+      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="#f8fafc" rx="2"/>
       ${svg}
       <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".8" rx="2"/>
     </svg>
@@ -8460,7 +8632,7 @@ function renderWetterPage() {
     </div>
     <!-- Vorhersage-Modal -->
     <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.85);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
-      <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:1100px;padding:24px 28px 28px;box-shadow:0 24px 64px rgba(0,0,0,.5);margin:auto;opacity:1;position:relative;z-index:10000">
+      <div style="background:var(--surface,#fff);border:1.5px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:1100px;padding:24px 28px 28px;box-shadow:0 24px 64px rgba(0,0,0,.5);margin:auto;position:relative;z-index:10000">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
           <div>
             <div style="font-size:17px;font-weight:700;color:var(--text)">📈 Wettervorhersage</div>
