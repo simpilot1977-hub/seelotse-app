@@ -1569,9 +1569,9 @@ function getElbeCurrent(ataDt, waypointKey) {
   const ataMs = ataDt instanceof Date ? ataDt.getTime() : new Date(ataDt).getTime();
   if (isNaN(ataMs)) return null;
   const nearest = hwEvents.reduce((a, b) =>
-    Math.abs(new Date(a.dt) - ataMs) < Math.abs(new Date(b.dt) - ataMs) ? a : b
+    Math.abs(bshDtMs(a.dt) - ataMs) < Math.abs(bshDtMs(b.dt) - ataMs) ? a : b
   );
-  const offsetH = (ataMs - new Date(nearest.dt).getTime()) / 3600000;
+  const offsetH = (ataMs - bshDtMs(nearest.dt)) / 3600000;
   if (offsetH < -6.5 || offsetH > 6.25) return null;
   let idx;
   if      (offsetH < 0)    idx = Math.floor((offsetH + 6.5) / 0.25);
@@ -1892,10 +1892,10 @@ function renderAstroDashboard() {
 }
 
 const WEATHER_STATIONS = {
-  helgoland:    { label: 'Helgoland',    apiParam: 'lat=54.1745&lon=7.8887' },
-  cuxhaven:     { label: 'Cuxhaven',     apiParam: 'dwd_station_id=00891' },
-  brunsbuettel: { label: 'Brunsbüttel',  apiParam: 'lat=53.9196&lon=9.1417' },
-  hamburg:      { label: 'Hamburg',      apiParam: 'lat=53.545&lon=9.966'  },
+  helgoland:    { label: 'Helgoland',    apiParam: 'lat=54.1745&lon=7.8887'  },
+  cuxhaven:     { label: 'Cuxhaven',     apiParam: 'lat=53.8628&lon=8.6956'  },
+  brunsbuettel: { label: 'Brunsbüttel',  apiParam: 'lat=53.9196&lon=9.1417'  },
+  hamburg:      { label: 'Hamburg',      apiParam: 'lat=53.6330&lon=10.0000' },
 };
 
 // ── Pegelstände (Pegel Online WSV) ───────────────────────────────────────────
@@ -2675,7 +2675,7 @@ function _renderPegelChart(tRange) {
     const tideEventsAll = (tideDbs[st.tideDb] || []);
     const maxima = [], minima = [];
     for (const e of tideEventsAll) {
-      const ems = new Date(e.dt).getTime();
+      const ems = bshDtMs(e.dt);
       const win = pts.filter(p => Math.abs(p.t.getTime() - ems) <= ANCHOR_WIN_MS);
       if (!win.length) continue;
       if (e.type === 'HW') maxima.push(win.reduce((a, b) => b.v > a.v ? b : a));
@@ -2722,9 +2722,9 @@ function _renderPegelChart(tRange) {
     // ── Berechnete Gezeitenzeiten aus tideDbs (senkrechte Linien) ──────────
     let tidePredSvg = '';
     const tideEvents = (tideDbs[st.tideDb] || [])
-      .filter(e => { const ms = new Date(e.dt).getTime(); return ms >= tMin && ms <= tMax; });
+      .filter(e => { const ms = bshDtMs(e.dt); return ms >= tMin && ms <= tMax; });
     for (const e of tideEvents) {
-      const ms = new Date(e.dt).getTime();
+      const ms = bshDtMs(e.dt);
       const xT  = xOf(ms);
       if (xT < padL || xT > xR) continue;
       const isHW = e.type === 'HW';
@@ -2788,8 +2788,8 @@ function getElbeCurrentFromDb(ataDt, wpKey) {
   const ataMs = (ataDt instanceof Date ? ataDt : new Date(ataDt)).getTime();
   if (isNaN(ataMs)) return null;
   const nearest = tides.reduce((a,b) =>
-    Math.abs(new Date(a.dt)-ataMs) < Math.abs(new Date(b.dt)-ataMs) ? a : b);
-  const offsetH = (ataMs - new Date(nearest.dt).getTime()) / 3600000;
+    Math.abs(bshDtMs(a.dt)-ataMs) < Math.abs(bshDtMs(b.dt)-ataMs) ? a : b);
+  const offsetH = (ataMs - bshDtMs(nearest.dt)) / 3600000;
   if (offsetH < -6.5 || offsetH > 6.25) return null;
   let idx = offsetH < 0 ? Math.floor((offsetH+6.5)/0.25)
           : offsetH < 0.25 ? 26
@@ -2845,8 +2845,8 @@ function arTideStatusAtTime(dbKey, refMs) {
   if (!db.length) return null;
   const STAU_MS = 15 * 60 * 1000;
   const offset = { Cuxhaven:0, Brunsbuettel:3600000, Hamburg:0 }[dbKey] || 0;
-  const sorted = [...db].sort((a,b) => new Date(a.dt)-new Date(b.dt));
-  const shifted = sorted.map(e => ({ t: new Date(e.dt).getTime()+offset, type:e.type, orig:e }));
+  const sorted = [...db].sort((a,b) => bshDtMs(a.dt)-bshDtMs(b.dt));
+  const shifted = sorted.map(e => ({ t: bshDtMs(e.dt)+offset, type:e.type, orig:e }));
   for (const ev of shifted) if (Math.abs(ev.t-refMs) <= STAU_MS) return 'stau';
   let last = null;
   for (const ev of shifted) if (ev.t <= refMs) last = ev;
@@ -2857,7 +2857,7 @@ function arTideStatusAtTime(dbKey, refMs) {
 // Zeitformatierung: nur Uhrzeit wenn gleicher Tag, sonst "DD.MM. HH:MM Uhr"
 function fmtTideTime(isoStr, refMs) {
   if (!isoStr) return '—';
-  const d = new Date(isoStr), ref = new Date(refMs);
+  const d = new Date(bshDtMs(isoStr)), ref = new Date(refMs);
   if (isNaN(d)) return '—';
   const p = n => String(n).padStart(2,'0');
   const sameDay = d.getFullYear()===ref.getFullYear()
@@ -2992,15 +2992,15 @@ function exportFahrtPDF(entryId) {
       const db = tideDbs[loc]||[];
       if (!db.length) return `<div class="tc-card"><div class="tc-name">${stnLbl[loc]}</div><div style="color:#94a3b8;font-size:8px;padding:4px 0">Keine Daten</div></div>`;
       const STAU_MS=15*60*1000, off={Cuxhaven:0,Brunsbuettel:3600000,Hamburg:0}[loc]||0;
-      const sorted=[...db].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+      const sorted=[...db].sort((a,b)=>bshDtMs(a.dt)-bshDtMs(b.dt));
       let bef=null, aft=null;
-      for(let i=sorted.length-1;i>=0;i--){ if(new Date(sorted[i].dt).getTime()<=refMs){bef=sorted[i];break;} }
-      for(let i=0;i<sorted.length;i++){ if(new Date(sorted[i].dt).getTime()>refMs){aft=sorted[i];break;} }
-      const shifted=sorted.map(e=>({t:new Date(e.dt).getTime()+off,type:e.type}));
+      for(let i=sorted.length-1;i>=0;i--){ if(bshDtMs(sorted[i].dt)<=refMs){bef=sorted[i];break;} }
+      for(let i=0;i<sorted.length;i++){ if(bshDtMs(sorted[i].dt)>refMs){aft=sorted[i];break;} }
+      const shifted=sorted.map(e=>({t:bshDtMs(e.dt)+off,type:e.type}));
       let st=null;
       for(const ev of shifted) if(Math.abs(ev.t-refMs)<=STAU_MS){st='stau';break;}
       if(!st){let last=null;for(const ev of shifted)if(ev.t<=refMs)last=ev; if(last)st=last.type==='HW'?'ebbe':'flut'; else if(shifted[0])st=shifted[0].type==='HW'?'flut':'ebbe';}
-      const fE = e => { if(!e)return'—'; const d=new Date(e.dt); return `${e.type} · ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr${e.ws?' · '+e.ws+' cm':''}`; };
+      const fE = e => { if(!e)return'—'; const d=new Date(bshDtMs(e.dt)); return `${e.type} · ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr${e.ws?' · '+e.ws+' cm':''}`; };
       return `<div class="tc-card">
         <div class="tc-head"><span class="tc-name">${stnLbl[loc]}</span>${tbadge(st)}</div>
         <div class="tc-row"><span class="tc-lbl">Vorheriges</span><span class="tc-val">${fE(bef)}</span></div>
@@ -3313,6 +3313,15 @@ function saveTideDbs() {
   _idbPutAll('tideDbs', Object.entries(tideDbs).map(([station, entries]) => ({ station, entries }))).catch(() => {});
 }
 
+// BSH VB2 Tide-Zeiten sind in MEZ (UTC+1) – ohne Zeitzonenangabe gespeichert.
+// Diese Funktion wandelt den gespeicherten String korrekt in UTC-Millisekunden um,
+// sodass Sommer- und Winterzeitumstellung automatisch berücksichtigt wird.
+function bshDtMs(dt) {
+  if (!dt) return NaN;
+  if (dt.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(dt)) return new Date(dt).getTime();
+  return new Date(dt + '+01:00').getTime(); // MEZ = UTC+1 ganzjährig
+}
+
 function parseBSHTideFile(text) {
   const entries = [];
   const p2 = n => String(n).padStart(2, '0');
@@ -3394,7 +3403,7 @@ function autoFillTidesFromDb() {
     if (isNaN(refDt)) return;
     const refTs = refDt.getTime();
     // Zwei nächste zukünftige Ereignisse (>= refTs) anzeigen
-    const upcoming = db.filter(e => new Date(e.dt).getTime() >= refTs);
+    const upcoming = db.filter(e => bshDtMs(e.dt) >= refTs);
     if (upcoming.length >= 1) eppTiden[loc][0] = Object.assign({}, upcoming[0]);
     if (upcoming.length >= 2) eppTiden[loc][1] = Object.assign({}, upcoming[1]);
   });
@@ -3894,7 +3903,7 @@ function makeTideCurveSVG(tideEntries, refTs) {
   const W = 200, H = 72;
   const valid = (tideEntries || [])
     .filter(e => e.dt)
-    .map(e => ({ t: new Date(e.dt).getTime(), type: e.type }))
+    .map(e => ({ t: bshDtMs(e.dt), type: e.type }))
     .filter(e => !isNaN(e.t))
     .sort((a, b) => a.t - b.t);
   if (valid.length < 2) return '';
@@ -4079,7 +4088,7 @@ function renderEPPPage() {
     // Ereigniszeiten werden um den Stationsversatz verschoben
     const valid   = eppTiden[loc]
       .filter(e => e.dt)
-      .map(e => ({ t: new Date(e.dt).getTime() + _stauOffset, type: e.type }))
+      .map(e => ({ t: bshDtMs(e.dt) + _stauOffset, type: e.type }))
       .filter(e => !isNaN(e.t))
       .sort((a, b) => a.t - b.t);
 
@@ -4787,7 +4796,7 @@ function eppGetTideStatus(ataDt, waypointKey) {
     const entries = eppTiden[tideLoc] || [];
     entries.forEach(e => {
       if (!e.dt) return;
-      const t = new Date(new Date(e.dt).getTime() + offsetMs);
+      const t = new Date(bshDtMs(e.dt) + offsetMs);
       if (!isNaN(t)) events.push({ t, afterState: e.type === 'HW' ? hwAfter : nwAfter });
     });
   };
@@ -6441,7 +6450,7 @@ function _hwOffsetFromDb(dbKey) {
   const db = tideDbs[dbKey];
   if (!db || !db.length) return null;
   const now = Date.now();
-  const all = db.map(e => ({ type: e.type, t: new Date(e.dt) })).sort((a, b) => a.t - b.t);
+  const all = db.map(e => ({ type: e.type, t: new Date(bshDtMs(e.dt)) })).sort((a, b) => a.t - b.t);
 
   // Letztes vergangenes HW und nächstes zukünftiges HW
   const pastHW = [...all].filter(e => e.type === 'HW' && e.t.getTime() <= now).pop();
@@ -7098,7 +7107,7 @@ async function _karteLoadTides() {
       if (dbEntries.length) {
         const now = Date.now();
         const upcoming = dbEntries
-          .map(e => ({ type: e.type, t: new Date(e.dt), v: parseInt(e.ws) || 0, estimated: false }))
+          .map(e => ({ type: e.type, t: new Date(bshDtMs(e.dt)), v: parseInt(e.ws) || 0, estimated: false }))
           .filter(e => e.t.getTime() >= now)
           .sort((a, b) => a.t - b.t);
         display = upcoming.slice(0, 2);
@@ -8018,6 +8027,226 @@ async function _karteLoadSeamarks() {
   }
 }
 
+// ── Wetter-Vorhersage ─────────────────────────────────────────────────────────
+const VORHERSAGE_MODELS = {
+  icon_d2:       { label: 'ICON-D2',   color: '#1d6fa5', desc: 'DWD · 2 km' },
+  icon_eu:       { label: 'ICON-EU',   color: '#16a34a', desc: 'DWD · 7 km' },
+  ecmwf_ifs04:   { label: 'ECMWF',     color: '#dc2626', desc: '0.4° · Global' },
+  gfs_seamless:  { label: 'GFS',       color: '#7c3aed', desc: 'NOAA · Global' },
+  ukmo_seamless: { label: 'UKMO',      color: '#ea580c', desc: 'Met Office' },
+};
+const VORHERSAGE_LOCS = {
+  helgoland:    { label: 'Helgoland',    lat: 54.1745, lon: 7.8887  },
+  cuxhaven:     { label: 'Cuxhaven',    lat: 53.8628, lon: 8.6956  },
+  brunsbuettel: { label: 'Brunsbüttel', lat: 53.9196, lon: 9.1417  },
+  hamburg:      { label: 'Hamburg',     lat: 53.5530, lon: 10.0153 },
+};
+const VH_CACHE_KEY = 'seelotse_vorhersage_v1';
+let _vhLoc    = 'cuxhaven';
+let _vhModels = new Set(['icon_d2', 'icon_eu', 'ecmwf_ifs04']);
+let _vhHours  = 72;
+let _vhCache  = {};
+
+function _loadVhCache() {
+  try { const r = localStorage.getItem(VH_CACHE_KEY); if (r) _vhCache = JSON.parse(r); } catch(e) { _vhCache = {}; }
+}
+function _saveVhCache() {
+  try { localStorage.setItem(VH_CACHE_KEY, JSON.stringify(_vhCache)); } catch(e) {}
+}
+
+function openVorhersage() {
+  _loadVhCache();
+  document.getElementById('vh-modal').style.display = 'flex';
+  renderVorhersageUI();
+  _fetchMissingVh();
+}
+function closeVorhersage() {
+  document.getElementById('vh-modal').style.display = 'none';
+}
+
+async function _fetchOneModel(locKey, modelKey) {
+  const loc = VORHERSAGE_LOCS[locKey];
+  if (!loc) return null;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lon}&hourly=windspeed_10m,winddirection_10m,windgusts_10m&models=${modelKey}&timezone=Europe%2FBerlin&forecast_days=7&wind_speed_unit=kn`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const h = j.hourly;
+    if (!h?.time) return null;
+    return { ts: Date.now(), times: h.time, speed: h.windspeed_10m, dir: h.winddirection_10m, gusts: h.windgusts_10m };
+  } catch(e) { return null; }
+}
+
+async function _fetchMissingVh() {
+  const now = Date.now(), maxAge = 3 * 3600000;
+  const missing = [..._vhModels].filter(k => { const c = _vhCache[`${_vhLoc}_${k}`]; return !c || (now - c.ts) > maxAge; });
+  if (!missing.length) return;
+  renderVorhersageUI();
+  await Promise.all(missing.map(k => _fetchOneModel(_vhLoc, k).then(d => { if (d) { _vhCache[`${_vhLoc}_${k}`] = d; _saveVhCache(); } })));
+  renderVorhersageUI();
+}
+
+function selectVhLoc(key) { _vhLoc = key; renderVorhersageUI(); _fetchMissingVh(); }
+function toggleVhModel(key) {
+  if (_vhModels.has(key)) { if (_vhModels.size <= 1) return; _vhModels.delete(key); }
+  else _vhModels.add(key);
+  renderVorhersageUI(); _fetchMissingVh();
+}
+function setVhHours(h) { _vhHours = h; renderVorhersageUI(); }
+function refreshVorhersage() {
+  [..._vhModels].forEach(k => delete _vhCache[`${_vhLoc}_${k}`]);
+  _saveVhCache(); _fetchMissingVh();
+}
+
+function renderVorhersageUI() {
+  const el = document.getElementById('vh-content');
+  if (!el) return;
+  const now = Date.now(), maxAge = 3 * 3600000;
+  const modelData = {};
+  let anyLoading = false, oldestTs = Infinity;
+  for (const k of _vhModels) {
+    const c = _vhCache[`${_vhLoc}_${k}`];
+    if (!c) { modelData[k] = null; anyLoading = true; }
+    else { modelData[k] = c; if (c.ts < oldestTs) oldestTs = c.ts; }
+  }
+  const ageStr  = oldestTs < Infinity ? `Stand: ${new Date(oldestTs).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr` : '';
+  const stale   = oldestTs < Infinity && (now - oldestTs) > maxAge;
+  const bs = (active, color) => `padding:4px 12px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit;border:1.5px solid ${active?color:'var(--border)'};background:${active?color+'22':'var(--bg)'};color:${active?color:'var(--text-muted)'};font-weight:${active?700:400}`;
+
+  el.innerHTML = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+      ${Object.entries(VORHERSAGE_LOCS).map(([k,v]) =>
+        `<button onclick="selectVhLoc('${k}')" style="padding:5px 14px;font-size:12px;border-radius:20px;cursor:pointer;font-family:inherit;
+          border:1.5px solid ${_vhLoc===k?'var(--blue)':'var(--border)'};background:${_vhLoc===k?'var(--blue)':'var(--bg)'};color:${_vhLoc===k?'#fff':'var(--text)'}">${v.label}</button>`
+      ).join('')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">Modell:</span>
+      ${Object.entries(VORHERSAGE_MODELS).map(([k,m]) => {
+        const active = _vhModels.has(k), loading = active && !_vhCache[`${_vhLoc}_${k}`];
+        return `<button onclick="toggleVhModel('${k}')" style="${bs(active,m.color)}">${loading?'⏳ ':''}${m.label} <span style="font-size:9px;opacity:.7">${m.desc}</span></button>`;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center;margin-bottom:18px;flex-wrap:wrap">
+      <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">Zeitraum:</span>
+      ${[[24,'24h'],[48,'48h'],[72,'72h'],[120,'5d'],[168,'7d']].map(([h,l]) =>
+        `<button onclick="setVhHours(${h})" style="padding:3px 10px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit;
+          border:1.5px solid ${_vhHours===h?'var(--blue)':'var(--border)'};background:${_vhHours===h?'var(--blue)':'var(--bg)'};color:${_vhHours===h?'#fff':'var(--text)'}">${l}</button>`
+      ).join('')}
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        ${ageStr?`<span style="font-size:10px;color:${stale?'#dc2626':'var(--text-muted)'}">${stale?'⚠️ ':' '}${ageStr}</span>`:''}
+        <button onclick="refreshVorhersage()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">↻ Aktualisieren</button>
+      </div>
+    </div>
+    ${anyLoading?'<div style="color:var(--text-muted);font-size:12px;padding:8px 0">⏳ Vorhersagedaten werden geladen…</div>':''}
+    ${_renderVhSpeedChart(modelData)}
+    ${_renderVhDirChart(modelData)}
+  `;
+}
+
+function _renderVhSpeedChart(modelData) {
+  const tMin = Date.now(), tMax = tMin + _vhHours * 3600000;
+  const W = 900, H = 280, pL = 46, pR = 12, pT = 14, pB = 32;
+  let sMax = 6;
+  const lines = {};
+  for (const [k, data] of Object.entries(modelData)) {
+    if (!data) continue;
+    const pts = [];
+    for (let i = 0; i < data.times.length; i++) {
+      const t = new Date(data.times[i]).getTime();
+      if (t < tMin - 3600000 || t > tMax) continue;
+      const v = data.speed?.[i], g = data.gusts?.[i];
+      if (v != null) { pts.push({t, v, g: g??v}); sMax = Math.max(sMax, v, g??v); }
+    }
+    lines[k] = pts;
+  }
+  if (!Object.values(lines).some(p=>p.length)) return '<div style="color:var(--text-muted);font-size:12px;padding:20px 0;text-align:center">Keine Daten verfügbar – Modelle laden…</div>';
+  sMax = Math.ceil(sMax * 1.12 / 5) * 5;
+  const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
+  const yOf = v => pT + (1 - v / sMax) * (H - pT - pB);
+  const BFT = [{f:0,t:1,c:'#94a3b8'},{f:1,t:4,c:'#86efac'},{f:4,t:7,c:'#4ade80'},
+    {f:7,t:11,c:'#a3e635'},{f:11,t:17,c:'#facc15'},{f:17,t:22,c:'#fb923c'},
+    {f:22,t:28,c:'#f97316'},{f:28,t:34,c:'#ef4444'},{f:34,t:999,c:'#dc2626'}];
+  let bands='',bLbl='';
+  BFT.forEach((b,i)=>{
+    const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT<=0||vB>=sMax)return;
+    const yT=yOf(vT),yB=yOf(vB); if(yT>=yB)return;
+    bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".12"/>`;
+    if(yB-yT>11)bLbl+=`<text x="${W-pR-3}" y="${((yT+yB)/2+3).toFixed(1)}" font-size="7" fill="${b.c}" opacity=".7" text-anchor="end" font-weight="700">Bft ${i}</text>`;
+  });
+  let grid='',yLbls='';
+  for(let i=0;i<=5;i++){const v=sMax*i/5,y=yOf(v).toFixed(1);grid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;yLbls+=`<text x="${pL-4}" y="${parseFloat(y)+3}" text-anchor="end" font-size="9" fill="#637485">${v.toFixed(0)} kn</text>`;}
+  let xLbls='',xTicks='';
+  const step=6*3600000; let ts0=Math.ceil(tMin/step)*step;
+  for(let t=ts0;t<=tMax;t+=step){const x=xOf(t).toFixed(1),d=new Date(t),h=d.getHours();
+    xTicks+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width="${h===0?'1':'.4'}"/>`;
+    const lbl=h===0?d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}):`${String(h).padStart(2,'0')}h`;
+    xLbls+=`<text x="${x}" y="${H-pB+12}" text-anchor="middle" font-size="${h===0?9:8}" fill="${h===0?'#1d6fa5':'#94a3b8'}" font-weight="${h===0?700:400}">${lbl}</text>`;}
+  const nowX=xOf(tMin).toFixed(1);
+  const nowLine=`<line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 3"/><text x="${parseFloat(nowX)+3}" y="${pT+10}" font-size="8" fill="#ef4444" font-weight="700">Jetzt</text>`;
+  let modelSvg='';
+  for(const [k,pts] of Object.entries(lines)){
+    if(!pts.length)continue;
+    const m=VORHERSAGE_MODELS[k];
+    const gustP=pts.map((p,i)=>{const x=xOf(p.t).toFixed(1),y=yOf(p.g).toFixed(1);return i===0?`M${x} ${y}`:`L${x} ${y}`;}).join(' ')+' '+[...pts].reverse().map(p=>`L${xOf(p.t).toFixed(1)} ${yOf(p.v).toFixed(1)}`).join(' ')+' Z';
+    modelSvg+=`<path d="${gustP}" fill="${m.color}" opacity=".12"/>`;
+    const spd=pts.map((p,i)=>`${i===0?'M':'L'}${xOf(p.t).toFixed(1)} ${yOf(p.v).toFixed(1)}`).join(' ');
+    modelSvg+=`<path d="${spd}" fill="none" stroke="${m.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  const legendHtml=Object.entries(lines).filter(([k,p])=>p.length).map(([k])=>{const m=VORHERSAGE_MODELS[k];return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10px"><span style="display:inline-block;width:20px;height:2.5px;background:${m.color};border-radius:2px"></span><span style="color:${m.color};font-weight:700">${m.label}</span><span style="color:var(--text-muted)">${m.desc}</span></span>`;}).join('');
+  return `<div style="margin-bottom:12px">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:6px;display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <span>💨 Windstärke &amp; Böen (kn)</span>${legendHtml}
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      ${bands}${bLbl}${grid}${yLbls}${xTicks}${xLbls}${nowLine}${modelSvg}
+      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".8"/>
+    </svg>
+  </div>`;
+}
+
+function _renderVhDirChart(modelData) {
+  const tMin = Date.now(), tMax = tMin + _vhHours * 3600000;
+  const models = Object.entries(modelData).filter(([k,d])=>d&&_vhModels.has(k));
+  if (!models.length) return '';
+  const W=900, pL=46, pR=12, pT=8, pB=18, rowH=26;
+  const H = pT + models.length * rowH + pB;
+  const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
+  const STEP = 3 * 3600000;
+  let svg = '';
+  models.forEach(([k,data],mi) => {
+    const m = VORHERSAGE_MODELS[k];
+    const yMid = pT + mi * rowH + rowH / 2;
+    svg += `<text x="${pL-4}" y="${(yMid+3).toFixed(1)}" text-anchor="end" font-size="8" fill="${m.color}" font-weight="700">${m.label}</text>`;
+    const t0 = Math.ceil(tMin / STEP) * STEP;
+    for (let t = t0; t <= tMax; t += STEP) {
+      let ci = 0, cd = Infinity;
+      for (let i = 0; i < data.times.length; i++) {
+        const d = Math.abs(new Date(data.times[i]).getTime() - t);
+        if (d < cd) { cd = d; ci = i; }
+      }
+      if (data.dir[ci] == null) continue;
+      const x = xOf(t), dir = data.dir[ci];
+      const rad = dir * Math.PI / 180;
+      const len = 9, dx = -Math.sin(rad)*len, dy = Math.cos(rad)*len;
+      const hrad = rad+Math.PI, hl=4;
+      const ax1=x+dx+Math.sin(hrad+0.45)*hl, ay1=yMid+dy-Math.cos(hrad+0.45)*hl;
+      const ax2=x+dx+Math.sin(hrad-0.45)*hl, ay2=yMid+dy-Math.cos(hrad-0.45)*hl;
+      svg += `<line x1="${x.toFixed(1)}" y1="${yMid.toFixed(1)}" x2="${(x+dx).toFixed(1)}" y2="${(yMid+dy).toFixed(1)}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>`;
+      svg += `<polygon points="${(x+dx).toFixed(1)},${(yMid+dy).toFixed(1)} ${ax1.toFixed(1)},${ay1.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}" fill="${m.color}"/>`;
+    }
+    if (mi < models.length - 1) svg += `<line x1="${pL}" y1="${(pT+(mi+1)*rowH).toFixed(1)}" x2="${W-pR}" y2="${(pT+(mi+1)*rowH).toFixed(1)}" stroke="#c8d6e2" stroke-width=".4"/>`;
+  });
+  return `<div>
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">🧭 Windrichtung (alle 3 h) · Pfeil zeigt Windrichtung</div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      ${svg}
+      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".6"/>
+    </svg>
+  </div>`;
+}
+
 function renderWetterPage() {
   const btnStyle = 'padding:2px 9px;font-size:11px;border:1.5px solid var(--border);border-radius:20px;background:var(--bg);cursor:pointer;font-family:inherit';
   document.getElementById('app-main').innerHTML = `
@@ -8027,6 +8256,7 @@ function renderWetterPage() {
           <span>🌬️ Aktueller Wind</span>
           <div style="display:flex;gap:8px;align-items:center">
             <button onclick="fetchWindData()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);display:flex;align-items:center;gap:4px" id="ar-wind-refresh-btn">↻ Aktualisieren</button>
+            <button onclick="openVorhersage()" style="padding:3px 10px;font-size:11px;border:1px solid #7c3aed;border-radius:var(--r-sm);background:#7c3aed22;cursor:pointer;color:#7c3aed;font-weight:700;display:flex;align-items:center;gap:4px">📈 Vorhersage</button>
             <button onclick="exportWetterPDF()" style="padding:3px 10px;font-size:11px;border:1px solid var(--blue);border-radius:var(--r-sm);background:var(--blue);cursor:pointer;color:#fff;display:flex;align-items:center;gap:4px">↓ PDF Export</button>
           </div>
         </div>
@@ -8058,6 +8288,19 @@ function renderWetterPage() {
           </div>
           <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
         </div>
+      </div>
+    </div>
+    <!-- Vorhersage-Modal -->
+    <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.72);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
+      <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:1100px;padding:24px 28px 28px;box-shadow:0 24px 64px rgba(0,0,0,.4);margin:auto">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
+          <div>
+            <div style="font-size:17px;font-weight:700;color:var(--text)">📈 Wettervorhersage</div>
+            <div style="font-size:10px;color:var(--text-muted);margin-top:3px">Open-Meteo · ICON-D2 · ICON-EU · ECMWF IFS · GFS · UKMO</div>
+          </div>
+          <button onclick="closeVorhersage()" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0">✕</button>
+        </div>
+        <div id="vh-content"><div style="color:var(--text-muted);font-size:12px">Wird geladen…</div></div>
       </div>
     </div>`;
   // Sync dropdown to current station state
@@ -9708,11 +9951,11 @@ function renderFahrtDashboard(entry) {
     if (!db.length || !ts) return null;
     const STAU_MS = 15*60*1000;
     const offset = { Cuxhaven:0, Brunsbuettel:3600000, Hamburg:0 }[locKey]||0;
-    const sorted = [...db].sort((a,b)=>new Date(a.dt)-new Date(b.dt));
+    const sorted = [...db].sort((a,b)=>bshDtMs(a.dt)-bshDtMs(b.dt));
     let before=null, after=null;
-    for (let i=sorted.length-1;i>=0;i--) { if (new Date(sorted[i].dt).getTime()<=ts){before=sorted[i];break;} }
-    for (let i=0;i<sorted.length;i++) { if (new Date(sorted[i].dt).getTime()>ts){after=sorted[i];break;} }
-    const shifted = sorted.map(e=>({t:new Date(e.dt).getTime()+offset,type:e.type}));
+    for (let i=sorted.length-1;i>=0;i--) { if (bshDtMs(sorted[i].dt)<=ts){before=sorted[i];break;} }
+    for (let i=0;i<sorted.length;i++) { if (bshDtMs(sorted[i].dt)>ts){after=sorted[i];break;} }
+    const shifted = sorted.map(e=>({t:bshDtMs(e.dt)+offset,type:e.type}));
     let status=null;
     for (const ev of shifted) if(Math.abs(ev.t-ts)<=STAU_MS){status='stau';break;}
     if (!status) {
