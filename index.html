@@ -1803,6 +1803,96 @@ function getMoonData() {
   return { phase, ageDays, phaseName, phaseIcon, illumination: illum.fraction, lastEventName, lastEventDate, fmtEvent };
 }
 
+function _renderTidalTimeline() {
+  if (typeof SunCalc === 'undefined') return '';
+  const SPRING_DELAY = 1.5; // Springverspätung Deutsche Bucht in Tagen
+  const SYNODIC = 29.53059;
+  const DAYS = 21;
+  const now = new Date();
+  const dayStart = new Date(now); dayStart.setHours(0,0,0,0);
+  const tMin = dayStart.getTime();
+  const tMax = tMin + DAYS * 86400000;
+
+  // Moon age with spring delay applied → classify tide type
+  const tidalClass = t => {
+    const phase = SunCalc.getMoonIllumination(new Date(t)).phase;
+    const ageDays = phase * SYNODIC;
+    const adj = ageDays - SPRING_DELAY;
+    const pos = ((adj % 14.7653) + 14.7653) % 14.7653;
+    const dist = Math.min(pos, 14.7653 - pos);
+    if (dist <= 2)  return { label:'Springtide', c:'#dc2626', bg:'rgba(239,68,68,.22)' };
+    if (dist >= 5)  return { label:'Nipptide',   c:'#16a34a', bg:'rgba(34,197,94,.18)' };
+    return               { label:'Mittide',    c:'#ca8a04', bg:'rgba(234,179,8,.18)' };
+  };
+
+  // Detect moon phase events within window (hourly scan)
+  const evNames  = ['🌑 Neumond','🌓 Ers. Viertel','🌕 Vollmond','🌗 Ltz. Viertel'];
+  const evSpring = [true, false, true, false]; // NM/VM → triggers spring tide
+  const events = [];
+  let prevQ = Math.floor(SunCalc.getMoonIllumination(new Date(tMin - 3600000)).phase * 4) % 4;
+  for (let t = tMin; t <= tMax; t += 3600000) {
+    const q = Math.floor(SunCalc.getMoonIllumination(new Date(t)).phase * 4) % 4;
+    if (q !== prevQ) { events.push({ t, q, name: evNames[q], isSpring: evSpring[q] }); prevQ = q; }
+  }
+
+  const W = 560, H = 66, pT = 6, pB = 22, barH = H - pT - pB;
+  const xOf = t => (t - tMin) / (tMax - tMin) * W;
+
+  let rects = '', separators = '', dayLbls = '', evMarkers = '';
+
+  // Daily colored segments
+  for (let d = 0; d < DAYS; d++) {
+    const tMid = tMin + d * 86400000 + 43200000;
+    const tt = tidalClass(tMid);
+    const x1 = xOf(tMin + d * 86400000), x2 = xOf(tMin + (d+1) * 86400000);
+    rects += `<rect x="${x1.toFixed(1)}" y="${pT}" width="${(x2-x1).toFixed(1)}" height="${barH}" fill="${tt.bg}"/>`;
+    if (d > 0) separators += `<line x1="${x1.toFixed(1)}" y1="${pT}" x2="${x1.toFixed(1)}" y2="${pT+barH}" stroke="rgba(255,255,255,0.45)" stroke-width=".5"/>`;
+    const date = new Date(tMin + d * 86400000);
+    const isWe = date.getDay() === 0 || date.getDay() === 6;
+    const xM = ((x1+x2)/2).toFixed(1);
+    if (d === 0 || d % 3 === 0) {
+      dayLbls += `<text x="${xM}" y="${H-5}" text-anchor="middle" font-size="7.5" fill="${isWe?'#1d6fa5':'#94a3b8'}" font-weight="${isWe?700:400}">${date.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})}</text>`;
+    }
+  }
+
+  // Phase event markers + Springverspätungs-Pfeil
+  for (const ev of events) {
+    const x = xOf(ev.t).toFixed(1);
+    evMarkers += `<line x1="${x}" y1="${pT}" x2="${x}" y2="${pT+barH}" stroke="${ev.isSpring?'#dc2626':'#16a34a'}" stroke-width="1.5" stroke-dasharray="${ev.isSpring?'none':'3 2'}"/>`;
+    const icon = ev.name.split(' ')[0];
+    evMarkers += `<text x="${parseFloat(x)+2}" y="${pT+9}" font-size="9">${icon}</text>`;
+    // Spring delay arrow: dashed line → solid line for actual spring tide peak
+    if (ev.isSpring) {
+      const xSp = xOf(ev.t + SPRING_DELAY * 86400000);
+      evMarkers += `<path d="M${x},${(pT+barH/2).toFixed(1)} L${xSp.toFixed(1)},${(pT+barH/2).toFixed(1)}" fill="none" stroke="#dc2626" stroke-width="1" stroke-dasharray="3 2"/>`;
+      evMarkers += `<polygon points="${xSp.toFixed(1)},${(pT+barH/2).toFixed(1)} ${(xSp-4).toFixed(1)},${(pT+barH/2-3).toFixed(1)} ${(xSp-4).toFixed(1)},${(pT+barH/2+3).toFixed(1)}" fill="#dc2626"/>`;
+      evMarkers += `<line x1="${xSp.toFixed(1)}" y1="${pT}" x2="${xSp.toFixed(1)}" y2="${pT+barH}" stroke="#dc262644" stroke-width="1"/>`;
+    }
+  }
+
+  // Now-marker
+  const nowX = xOf(now.getTime()).toFixed(1);
+  evMarkers += `<line x1="${nowX}" y1="${pT-2}" x2="${nowX}" y2="${pT+barH+2}" stroke="#7c3aed" stroke-width="2.5"/>`;
+  evMarkers += `<text x="${parseFloat(nowX)+2}" y="${pT+barH-3}" font-size="7" fill="#7c3aed" font-weight="700">Jetzt</text>`;
+
+  return `<div style="margin-top:8px;border-top:1px solid var(--border);padding-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px;flex-wrap:wrap;gap:4px">
+      <span style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">🗓️ Gezeitenkalender · 3 Wochen</span>
+      <div style="display:flex;gap:8px;font-size:8px;flex-wrap:wrap">
+        <span style="color:#dc2626;font-weight:700">■ Springtide</span>
+        <span style="color:#ca8a04;font-weight:700">■ Mittide</span>
+        <span style="color:#16a34a;font-weight:700">■ Nipptide</span>
+        <span style="color:#dc2626">╌→ Springverspätung ${SPRING_DELAY} d</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      <rect x="0" y="${pT}" width="${W}" height="${barH}" fill="var(--bg-alt,#f8fafc)" rx="3"/>
+      ${rects}${separators}${evMarkers}${dayLbls}
+      <rect x="0" y="${pT}" width="${W}" height="${barH}" fill="none" stroke="#c8d6e2" stroke-width=".7" rx="3"/>
+    </svg>
+  </div>`;
+}
+
 function getTidalAge(moonAgeDays) {
   const cyclePos = moonAgeDays % 14.765;
   const dist = Math.min(cyclePos, 14.765 - cyclePos);
@@ -1853,6 +1943,7 @@ function renderAstroDashboard() {
         <div style="font-size:13px;font-weight:700;color:${tidal.color};margin-top:2px">${tidal.label}</div>
         <div style="margin-top:3px"><span class="tidal-badge" style="background:${tidal.bg};color:${tidal.color}">${tidalContext}</span></div>
       </div>
+      ${_renderTidalTimeline()}
     </div>
     <div class="astro-card" id="ar-pegel-bar-card">
       <div class="astro-card-title">📊 Pegel Elbe · aktuell</div>
@@ -8054,6 +8145,59 @@ function _saveVhCache() {
   try { localStorage.setItem(VH_CACHE_KEY, JSON.stringify(_vhCache)); } catch(e) {}
 }
 
+function exportVorhersagePDF() {
+  const loc = VORHERSAGE_LOCS[_vhLoc];
+  const now = new Date();
+  const fmtDt = d => d.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const activeModels = [..._vhModels].filter(k => _vhCache[`${_vhLoc}_${k}`]);
+  if (!activeModels.length) { showToast('Keine Daten geladen – bitte zuerst aktualisieren.','error'); return; }
+
+  // Grab SVG content from current chart
+  const chartArea = document.getElementById('vh-chart-area');
+  const svgs = chartArea ? chartArea.querySelectorAll('svg') : [];
+  let svgContent = '';
+  svgs.forEach(s => { svgContent += `<div style="margin-bottom:12px">${s.outerHTML}</div>`; });
+
+  const modelInfo = activeModels.map(k => {
+    const m = VORHERSAGE_MODELS[k];
+    const c = _vhCache[`${_vhLoc}_${k}`];
+    const age = c ? Math.round((Date.now()-c.ts)/60000) : '?';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;margin-right:8px"><span style="display:inline-block;width:16px;height:3px;background:${m.color}"></span><b style="color:${m.color}">${m.label}</b> <span style="color:#637485">${m.desc} · Stand: ${age} Min. alt</span></span>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="de"><head><meta charset="UTF-8">
+  <title>Wettervorhersage ${loc.label} – ${fmtDt(now)}</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:9px; color:#1e293b; background:#fff; padding:14px; print-color-adjust:exact; -webkit-print-color-adjust:exact; }
+    svg text { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+    .hdr { background:linear-gradient(135deg,#0a1f35,#1b3d5f); color:#fff; border-radius:6px; padding:10px 14px; display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; }
+    .hdr-title { font-size:15px; font-weight:800; }
+    .hdr-sub { font-size:9px; opacity:.8; margin-top:2px; }
+    .hdr-meta { text-align:right; font-size:8px; opacity:.8; line-height:1.7; }
+    .models { background:#f8fafc; border:1px solid #d0dce8; border-radius:6px; padding:8px 12px; margin-bottom:10px; font-size:9px; line-height:1.8; }
+    .chart { background:#fff; border:1px solid #d0dce8; border-radius:6px; padding:10px; margin-bottom:8px; }
+    svg { width:100%; display:block; }
+    @media print { body { padding:0; } .no-print { display:none; } }
+  </style></head><body>
+  <div class="hdr">
+    <div><div class="hdr-title">📈 Wettervorhersage · ${loc.label}</div>
+    <div class="hdr-sub">Zeitraum: ${_vhHours <= 72 ? _vhHours+'h' : (_vhHours/24)+'d'} · Open-Meteo API</div></div>
+    <div class="hdr-meta">Erstellt: ${fmtDt(now)}<br>Koordinaten: ${loc.lat}°N, ${loc.lon}°E</div>
+  </div>
+  <div class="models"><b>Verwendete Modelle:</b><br>${modelInfo}</div>
+  <div class="chart">${svgContent}</div>
+  <div style="font-size:8px;color:#94a3b8;text-align:center;margin-top:8px">Seelotsen-Fahrtenbuch · Daten: Open-Meteo (api.open-meteo.com) · Kein Gewähr für Richtigkeit</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`;
+
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  if (!w) showToast('Bitte Pop-ups erlauben.','error');
+}
+
 function openVorhersage() {
   _loadVhCache();
   document.getElementById('vh-modal').style.display = 'flex';
@@ -8078,9 +8222,9 @@ async function _fetchOneModel(locKey, modelKey) {
   } catch(e) { return null; }
 }
 
-async function _fetchMissingVh() {
-  const now = Date.now(), maxAge = 3 * 3600000;
-  const missing = [..._vhModels].filter(k => { const c = _vhCache[`${_vhLoc}_${k}`]; return !c || (now - c.ts) > maxAge; });
+async function _fetchMissingVh(forceRefresh) {
+  // Only auto-fetch if NO cached data exists; otherwise keep showing old data until manual refresh
+  const missing = [..._vhModels].filter(k => forceRefresh || !_vhCache[`${_vhLoc}_${k}`]);
   if (!missing.length) return;
   renderVorhersageUI();
   await Promise.all(missing.map(k => _fetchOneModel(_vhLoc, k).then(d => { if (d) { _vhCache[`${_vhLoc}_${k}`] = d; _saveVhCache(); } })));
@@ -8096,7 +8240,7 @@ function toggleVhModel(key) {
 function setVhHours(h) { _vhHours = h; renderVorhersageUI(); }
 function refreshVorhersage() {
   [..._vhModels].forEach(k => delete _vhCache[`${_vhLoc}_${k}`]);
-  _saveVhCache(); _fetchMissingVh();
+  _saveVhCache(); _fetchMissingVh(true);
 }
 
 function renderVorhersageUI() {
@@ -8110,8 +8254,14 @@ function renderVorhersageUI() {
     if (!c) { modelData[k] = null; anyLoading = true; }
     else { modelData[k] = c; if (c.ts < oldestTs) oldestTs = c.ts; }
   }
-  const ageStr  = oldestTs < Infinity ? `Stand: ${new Date(oldestTs).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})} Uhr` : '';
-  const stale   = oldestTs < Infinity && (now - oldestTs) > maxAge;
+  const ageStr  = oldestTs < Infinity ? (() => {
+    const d = new Date(oldestTs), today = new Date(now);
+    const sameDay = d.toDateString() === today.toDateString();
+    const timeStr = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+    const dateStr = sameDay ? timeStr : d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}) + ' ' + timeStr;
+    return `Stand: ${dateStr} Uhr`;
+  })() : '';
+  const stale   = oldestTs < Infinity && (now - oldestTs) > 3 * 3600000;
   const bs = (active, color) => `padding:4px 12px;font-size:11px;border-radius:20px;cursor:pointer;font-family:inherit;border:1.5px solid ${active?color:'var(--border)'};background:${active?color+'22':'var(--bg)'};color:${active?color:'var(--text-muted)'};font-weight:${active?700:400}`;
 
   el.innerHTML = `
@@ -8210,15 +8360,19 @@ function _renderVhDirChart(modelData) {
   const tMin = Date.now(), tMax = tMin + _vhHours * 3600000;
   const models = Object.entries(modelData).filter(([k,d])=>d&&_vhModels.has(k));
   if (!models.length) return '';
-  const W=900, pL=46, pR=12, pT=8, pB=18, rowH=26;
+  const W=900, pL=46, pR=12, pT=10, pB=20, rowH=36;
   const H = pT + models.length * rowH + pB;
   const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
   const STEP = 3 * 3600000;
   let svg = '';
+  // Cardinal direction labels at x-axis ticks for reference
+  const CARDINALS = {0:'N',45:'NE',90:'O',135:'SO',180:'S',225:'SW',270:'W',315:'NW',360:'N'};
   models.forEach(([k,data],mi) => {
     const m = VORHERSAGE_MODELS[k];
     const yMid = pT + mi * rowH + rowH / 2;
-    svg += `<text x="${pL-4}" y="${(yMid+3).toFixed(1)}" text-anchor="end" font-size="8" fill="${m.color}" font-weight="700">${m.label}</text>`;
+    // Row background alternating
+    if (mi % 2 === 0) svg += `<rect x="${pL}" y="${(pT+mi*rowH).toFixed(1)}" width="${W-pL-pR}" height="${rowH}" fill="${m.color}" opacity=".04"/>`;
+    svg += `<text x="${pL-4}" y="${(yMid+3).toFixed(1)}" text-anchor="end" font-size="8.5" fill="${m.color}" font-weight="700">${m.label}</text>`;
     const t0 = Math.ceil(tMin / STEP) * STEP;
     for (let t = t0; t <= tMax; t += STEP) {
       let ci = 0, cd = Infinity;
@@ -8229,20 +8383,34 @@ function _renderVhDirChart(modelData) {
       if (data.dir[ci] == null) continue;
       const x = xOf(t), dir = data.dir[ci];
       const rad = dir * Math.PI / 180;
-      const len = 9, dx = -Math.sin(rad)*len, dy = Math.cos(rad)*len;
-      const hrad = rad+Math.PI, hl=4;
-      const ax1=x+dx+Math.sin(hrad+0.45)*hl, ay1=yMid+dy-Math.cos(hrad+0.45)*hl;
-      const ax2=x+dx+Math.sin(hrad-0.45)*hl, ay2=yMid+dy-Math.cos(hrad-0.45)*hl;
-      svg += `<line x1="${x.toFixed(1)}" y1="${yMid.toFixed(1)}" x2="${(x+dx).toFixed(1)}" y2="${(yMid+dy).toFixed(1)}" stroke="${m.color}" stroke-width="1.4" stroke-linecap="round"/>`;
-      svg += `<polygon points="${(x+dx).toFixed(1)},${(yMid+dy).toFixed(1)} ${ax1.toFixed(1)},${ay1.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}" fill="${m.color}"/>`;
+      // Arrow: tail at (x, yMid), tip offset in "to" direction
+      const len = 13;
+      const dx = -Math.sin(rad)*len, dy = Math.cos(rad)*len;
+      const tipX = x+dx, tipY = yMid+dy;
+      // Shaft with wider stroke
+      svg += `<line x1="${x.toFixed(1)}" y1="${yMid.toFixed(1)}" x2="${tipX.toFixed(1)}" y2="${tipY.toFixed(1)}" stroke="${m.color}" stroke-width="2.2" stroke-linecap="round"/>`;
+      // Arrowhead (larger, filled)
+      const hrad = rad+Math.PI, hl=6;
+      const ax1=tipX+Math.sin(hrad+0.5)*hl, ay1=tipY-Math.cos(hrad+0.5)*hl;
+      const ax2=tipX+Math.sin(hrad-0.5)*hl, ay2=tipY-Math.cos(hrad-0.5)*hl;
+      svg += `<polygon points="${tipX.toFixed(1)},${tipY.toFixed(1)} ${ax1.toFixed(1)},${ay1.toFixed(1)} ${ax2.toFixed(1)},${ay2.toFixed(1)}" fill="${m.color}"/>`;
+      // Wind speed label (if speed data available)
+      const spd = data.speed?.[ci];
+      if (spd != null && spd > 0) {
+        svg += `<text x="${x.toFixed(1)}" y="${(yMid+rowH/2-4).toFixed(1)}" text-anchor="middle" font-size="7" fill="${m.color}" opacity=".8">${spd.toFixed(0)}</text>`;
+      }
     }
-    if (mi < models.length - 1) svg += `<line x1="${pL}" y1="${(pT+(mi+1)*rowH).toFixed(1)}" x2="${W-pR}" y2="${(pT+(mi+1)*rowH).toFixed(1)}" stroke="#c8d6e2" stroke-width=".4"/>`;
+    if (mi < models.length - 1) svg += `<line x1="${pL}" y1="${(pT+(mi+1)*rowH).toFixed(1)}" x2="${W-pR}" y2="${(pT+(mi+1)*rowH).toFixed(1)}" stroke="#c8d6e2" stroke-width=".6"/>`;
   });
-  return `<div>
-    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">🧭 Windrichtung (alle 3 h) · Pfeil zeigt Windrichtung</div>
+  // Now line
+  const nowX = xOf(tMin).toFixed(1);
+  svg += `<line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  return `<div style="margin-top:8px">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted);margin-bottom:4px">🧭 Windrichtung (alle 3 h) · Pfeil zeigt wohin der Wind weht · Zahl = kn</div>
     <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible">
+      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="var(--bg-alt,#f8fafc)" rx="2"/>
       ${svg}
-      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".6"/>
+      <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".8" rx="2"/>
     </svg>
   </div>`;
 }
@@ -8291,14 +8459,17 @@ function renderWetterPage() {
       </div>
     </div>
     <!-- Vorhersage-Modal -->
-    <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.72);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
-      <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:1100px;padding:24px 28px 28px;box-shadow:0 24px 64px rgba(0,0,0,.4);margin:auto">
+    <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.85);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
+      <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:1100px;padding:24px 28px 28px;box-shadow:0 24px 64px rgba(0,0,0,.5);margin:auto;opacity:1;position:relative;z-index:10000">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px">
           <div>
             <div style="font-size:17px;font-weight:700;color:var(--text)">📈 Wettervorhersage</div>
             <div style="font-size:10px;color:var(--text-muted);margin-top:3px">Open-Meteo · ICON-D2 · ICON-EU · ECMWF IFS · GFS · UKMO</div>
           </div>
-          <button onclick="closeVorhersage()" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0">✕</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button onclick="exportVorhersagePDF()" style="padding:5px 12px;font-size:11px;border:1px solid var(--blue);border-radius:var(--r-sm);background:var(--blue);cursor:pointer;color:#fff;font-family:inherit;font-weight:600">↓ PDF</button>
+            <button onclick="closeVorhersage()" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--border);background:var(--bg);cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);flex-shrink:0">✕</button>
+          </div>
         </div>
         <div id="vh-content"><div style="color:var(--text-muted);font-size:12px">Wird geladen…</div></div>
       </div>
