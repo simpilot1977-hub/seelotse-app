@@ -8332,7 +8332,8 @@ function renderList() {
     const wtVal = f.wartestunden || (f.wartestunden_von && f.wartestunden_bis ? Math.ceil((new Date(f.wartestunden_bis)-new Date(f.wartestunden_von))/3600000) : null);
     if (wtVal) wartestundenSum += parseFloat(wtVal) || 0;
     if (f.schiffsanteile) schiffsanteileSum += parseFloat(f.schiffsanteile) || 0;
-    if (f.anBord && f.vonBord) {
+    const isWrWbForRd = f.artDesEinsatzes === 'WR' || f.artDesEinsatzes === 'WB';
+    if (!isWrWbForRd && f.anBord && f.vonBord) {
       const rdMs = new Date(f.vonBord).getTime() - new Date(f.anBord).getTime();
       if (!isNaN(rdMs) && rdMs > 0) { reiseDauerSum += rdMs; reiseDauerCount++; }
     }
@@ -8422,11 +8423,11 @@ function renderList() {
         </div>
         <div class="dash-card">
           <div class="dash-num" style="font-size:${avgReiseDauerMs?'18px':'22px'}">${fmtAvgH(avgReiseDauerMs)}</div>
-          <div class="dash-label">Ø Reisedauer</div>
+          <div class="dash-label">Ø Reisedauer<br><span style="font-size:9px;opacity:.6;font-weight:400">ohne WR/WB</span></div>
         </div>
         <div class="dash-card">
           <div class="dash-num" style="font-size:${avgEinsatzDauerMs?'18px':'22px'}">${fmtAvgH(avgEinsatzDauerMs)}</div>
-          <div class="dash-label">Ø Einsatzdauer</div>
+          <div class="dash-label">Ø Einsatzdauer<br><span style="font-size:9px;opacity:.6;font-weight:400">ohne WR/WB</span></div>
         </div>
         <div class="dash-card">
           <div class="dash-num" style="font-size:${avgFreitörnMs?'18px':'22px'}">${fmtAvgH(avgFreitörnMs)}</div>
@@ -9323,20 +9324,23 @@ function renderForm(f) {
                 <option value="5" ${v('schiffsanteile')==='5'||v('schiffsanteile')==5?'selected':''}>5</option>
               </select>
             </div>
-          </div>
-          <!-- Wartestunden Von / Bis -->
-          <input type="hidden" id="wartestunden" name="wartestunden" value="${v('wartestunden')}">
-          <div id="wm-vonbis-group" style="margin-top:12px;display:none">
-            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
-              <div class="field" style="min-width:180px">
-                <label>⏱ Von</label>
-                <input class="datetime-input" type="datetime-local" id="wm_von" name="wartestunden_von" value="${dt('wartestunden_von')}" oninput="calcWartestunden()">
+            <!-- Wartestunden Von / Bis – inline rechts neben Anteile -->
+            <input type="hidden" id="wartestunden" name="wartestunden" value="${v('wartestunden')}">
+            <div id="wm-vonbis-group" style="display:none;align-items:flex-end;gap:8px;flex-wrap:nowrap;border-left:2px solid var(--border);padding-left:12px;margin-left:4px">
+              <div style="display:flex;flex-direction:column;gap:0">
+                <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:4px;white-space:nowrap">⏱ Wartestunden</div>
+                <div style="display:flex;gap:8px;align-items:flex-end">
+                  <div class="field" style="min-width:160px">
+                    <label style="font-size:10px">Von</label>
+                    <input class="datetime-input" type="datetime-local" id="wm_von" name="wartestunden_von" value="${dt('wartestunden_von')}" oninput="calcWartestunden()" style="font-size:12px;padding:5px 6px">
+                  </div>
+                  <div class="field" style="min-width:160px">
+                    <label style="font-size:10px">Bis</label>
+                    <input class="datetime-input" type="datetime-local" id="wm_bis" name="wartestunden_bis" value="${dt('wartestunden_bis')}" oninput="calcWartestunden()" style="font-size:12px;padding:5px 6px">
+                  </div>
+                  <div id="wm-result" style="padding-bottom:6px;font-size:13px;font-weight:700;color:#1b3d5f;display:none;white-space:nowrap"></div>
+                </div>
               </div>
-              <div class="field" style="min-width:180px">
-                <label>⏱ Bis</label>
-                <input class="datetime-input" type="datetime-local" id="wm_bis" name="wartestunden_bis" value="${dt('wartestunden_bis')}" oninput="calcWartestunden()">
-              </div>
-              <div id="wm-result" style="padding-bottom:10px;font-size:13px;font-weight:700;color:#1b3d5f;display:none"></div>
             </div>
           </div>
           <!-- Anspleissen: nur bei Radar -->
@@ -9353,7 +9357,7 @@ function renderForm(f) {
         <div class="form-section" id="wr-section" style="display:none">
           <div class="section-title">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            WR / WB / 2+2 · Einsatzdaten
+            Reisedaten
           </div>
           <div class="form-grid">
             <div class="datetime-box">
@@ -9578,7 +9582,7 @@ function updateFormVisibility() {
   if (tiefgangField)   tiefgangField.style.display   = (isRadar||isAGFahrt)? 'none' : '';
   if (personenField)   personenField.style.display   = hideExtra           ? 'none' : '';
   if (agenturField)    agenturField.style.display    = (isRadar||isAGFahrt)? 'none' : '';
-  if (wmVonBisGroup)   wmVonBisGroup.style.display   = hideExtra           ? 'none' : '';
+  if (wmVonBisGroup)   wmVonBisGroup.style.display   = hideExtra           ? 'none' : 'flex';
   if (richtungGroup)   richtungGroup.style.display   = isRadar             ? 'none' : '';
 
   // Ausgehend-Button ausblenden wenn Richtung fix einkommend (WR, WB)
@@ -9918,6 +9922,28 @@ function renderFahrtDashboard(entry) {
             })()}
           </div>
         </div>
+
+        <!-- Berechnungen -->
+        ${(() => {
+          const reiseDur   = calcDuration(entry.anBord, entry.vonBord);
+          const einsatzRes = getEinsatzdauer(entry, fahrten);
+          const wt = entry.wartestunden || (entry.wartestunden_von && entry.wartestunden_bis
+            ? Math.ceil((new Date(entry.wartestunden_bis)-new Date(entry.wartestunden_von))/3600000)
+            : null);
+          const badge = (label, val, color) => val
+            ? `<div class="fd-field"><div class="fd-lbl">${label}</div><div class="fd-val"><span style="background:${color}1a;color:${color};border:1.5px solid ${color}33;border-radius:20px;padding:2px 12px;font-weight:700;font-size:13px">${val}</span></div></div>`
+            : '';
+          const reiseBadge   = badge('Reisedauer',   reiseDur, '#1b3d5f');
+          const einsatzBadge = einsatzRes
+            ? badge('Einsatzdauer', einsatzRes.dur + (einsatzRes.cross ? ' ↗' : ''), einsatzRes.cross ? '#7c3aed' : '#0369a1')
+            : '';
+          const wtBadge = wt ? badge('Wartestunden', wt + ' h', '#92400e') : '';
+          if (!reiseBadge && !einsatzBadge && !wtBadge) return '';
+          return `<div class="fd-card">
+            <div class="fd-card-title">Berechnungen</div>
+            <div class="fd-ship-grid">${reiseBadge}${einsatzBadge}${wtBadge}</div>
+          </div>`;
+        })()}
 
         ${entry.bemerkungen ? `
         <!-- Bemerkungen -->
