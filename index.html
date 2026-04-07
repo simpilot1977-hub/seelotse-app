@@ -5011,7 +5011,8 @@ function goWetter() {
   currentView = 'wetter';
   setNavActive('nav-wetter');
   document.getElementById('new-btn').style.display = 'none';
-  _wetterMap2 = null; // reset so map re-initializes
+  _wetterMap2 = null;
+  _wfColorCanvas = null; _wfColorCtx = null; _wfColorHour = -1;
   if (_wfFrame) { cancelAnimationFrame(_wfFrame); _wfFrame = null; }
   renderWetterPage();
   setTimeout(() => _initWetterWindMap(), 80);
@@ -8341,8 +8342,12 @@ let _wfCanvas      = null;
 let _wfCtx         = null;
 let _wfTrailCanvas = null;
 let _wfTrailCtx    = null;
-let _wfCustom   = null;  // {lat,lon} from map click
-let _wfMarkerEl = null;
+let _wfCustom      = null;  // {lat,lon} from map click
+let _wfMarkerEl    = null;
+let _wfColorMode   = false; // Farbflächen-Overlay
+let _wfColorCanvas = null;
+let _wfColorCtx    = null;
+let _wfColorHour   = -1;    // letzter gezeichneter Stunden-Index
 
 function _loadWfCache() {
   try { const r = localStorage.getItem(WF_CACHE_KEY); if (r) { _wfData = JSON.parse(r); } } catch(e) {}
@@ -8423,6 +8428,60 @@ function _initWfAnim() {
   const W = _wfCanvas.width, H = _wfCanvas.height;
   _wfParticles = Array.from({length: 180}, () => _wfNewParticle(W, H));
   _updateWfTimeLabel();
+  _wfColorHour = -1;
+  _drawWfColorLayer();
+}
+
+function _drawWfColorLayer() {
+  if (!_wfColorCanvas || !_wfColorCtx || !_wfData) return;
+  const W = _wfColorCanvas.width, H = _wfColorCanvas.height;
+  const ctx = _wfColorCtx;
+  if (!_wfColorMode) { ctx.clearRect(0, 0, W, H); _wfColorHour = -1; return; }
+  if (_wfColorHour === _wfHourIdx) return; // unverändert, kein Neuzeichnen nötig
+  _wfColorHour = _wfHourIdx;
+
+  // Bilinear-interpoliertes Farbbild in 50×34 px, dann hochskaliert (weiche Übergänge)
+  const cols = 50, rows = 34;
+  const scratch = document.createElement('canvas');
+  scratch.width = cols; scratch.height = rows;
+  const sctx = scratch.getContext('2d');
+  const id = sctx.createImageData(cols, rows);
+
+  // WF_BFT_COLORS hex → RGB-Array
+  const bftRGB = WF_BFT_COLORS.map(hex => [
+    parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)
+  ]);
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const lat = WF_BOUNDS.maxLat - (r+0.5)/rows*(WF_BOUNDS.maxLat-WF_BOUNDS.minLat);
+      const lon = WF_BOUNDS.minLon + (c+0.5)/cols*(WF_BOUNDS.maxLon-WF_BOUNDS.minLon);
+      const [u, v] = _wfInterp(lat, lon, _wfHourIdx);
+      const bft = Math.min(12, _knToBft(Math.sqrt(u*u + v*v)));
+      const [R, G, B] = bftRGB[bft];
+      const i = (r*cols + c)*4;
+      id.data[i]=R; id.data[i+1]=G; id.data[i+2]=B; id.data[i+3]=105; // ~41% alpha
+    }
+  }
+  sctx.putImageData(id, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(scratch, 0, 0, W, H);
+  ctx.restore();
+}
+
+function toggleWfColorLayer() {
+  _wfColorMode = !_wfColorMode;
+  _wfColorHour = -1;
+  const btn = document.getElementById('wf-color-btn');
+  if (btn) {
+    btn.style.background = _wfColorMode ? 'var(--blue)' : 'var(--bg)';
+    btn.style.color = _wfColorMode ? '#fff' : 'var(--text-muted)';
+    btn.style.borderColor = _wfColorMode ? 'var(--blue)' : 'var(--border)';
+  }
+  _drawWfColorLayer();
 }
 
 function _wfAnimLoop() {
@@ -8485,6 +8544,7 @@ function _wfAnimLoop() {
       const maxH = Math.min((_wfData?.times?.length || 120) - 1, 119);
       _wfHourIdx = (_wfHourIdx + 1) % (maxH + 1);
       _updateWfTimeLabel();
+      if (_wfColorMode) _drawWfColorLayer();
     }
   }
   _wfFrame = requestAnimationFrame(_wfAnimLoop);
@@ -8507,6 +8567,7 @@ function toggleWfAnim() { _wfPlaying ? stopWfAnim() : startWfAnim(); }
 function setWfHour(idx) {
   _wfHourIdx = parseInt(idx);
   _updateWfTimeLabel();
+  if (_wfColorMode) _drawWfColorLayer();
   if (!_wfFrame) { _wfFrame = requestAnimationFrame(_wfAnimLoop); }
 }
 
@@ -8525,7 +8586,10 @@ function _initWetterWindMap() {
   if (!window.maplibregl) return;
   const container = document.getElementById('wf-map-container');
   if (!container || _wetterMap2) return;
-  // Setup canvas overlay for particles
+  // Farbflächen-Canvas (z-index:1, unter Partikel)
+  _wfColorCanvas = document.createElement('canvas');
+  _wfColorCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:1;border-radius:8px';
+  // Partikel-Canvas (z-index:2, über Farbflächen)
   _wfCanvas = document.createElement('canvas');
   _wfCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;border-radius:8px';
   container.style.position = 'relative';
@@ -8537,7 +8601,11 @@ function _initWetterWindMap() {
     attributionControl: false,
   });
   _wetterMap2.on('load', () => {
+    container.appendChild(_wfColorCanvas);
     container.appendChild(_wfCanvas);
+    _wfColorCanvas.width  = container.clientWidth;
+    _wfColorCanvas.height = container.clientHeight;
+    _wfColorCtx = _wfColorCanvas.getContext('2d');
     _wfCanvas.width  = container.clientWidth;
     _wfCanvas.height = container.clientHeight;
     _wfCtx = _wfCanvas.getContext('2d');
@@ -8548,8 +8616,11 @@ function _initWetterWindMap() {
     else fetchWindField(false);
     // Resize canvas on map resize
     _wetterMap2.on('resize', () => {
+      _wfColorCanvas.width  = container.clientWidth;
+      _wfColorCanvas.height = container.clientHeight;
       _wfCanvas.width  = container.clientWidth;
       _wfCanvas.height = container.clientHeight;
+      _wfColorHour = -1;
       _initWfAnim();
     });
     // Click handler for custom location
@@ -8964,6 +9035,7 @@ function renderWetterPage() {
             <div style="font-size:10px;color:var(--text-muted)">ICON-D2 · Animiertes Windfeld · Auf Karte klicken für Standortvorhersage</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
+            <button id="wf-color-btn" onclick="toggleWfColorLayer()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">🎨 Farbflächen</button>
             <button id="wf-refresh-btn" onclick="fetchWindField(true)" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">↻ Aktualisieren</button>
           </div>
         </div>
