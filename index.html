@@ -1750,8 +1750,8 @@ async function fetchWindData() {
   // Wetterdaten für Umwelt-Dashboard speichern und Kacheln aktualisieren
   if (results.cux) {
     _arMeteo = { temp: results.cux.temp, dewpoint: results.cux.dewpoint, pressure: results.cux.pressure, visibility: results.cux.visibility, ts: results.cux.ts };
-    renderAstroDashboard();
   }
+  renderAstroDashboard();
 
   _windLastFetch = Date.now();
 
@@ -4970,6 +4970,9 @@ function eppCalculate() {
 }
 
 function goList() {
+  if (_wfFrame) { cancelAnimationFrame(_wfFrame); _wfFrame = null; }
+  if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
+  if (_pressureRefreshTimer) { clearTimeout(_pressureRefreshTimer); _pressureRefreshTimer = null; }
   currentView = 'list';
   editingId = null;
   setNavActive('nav-list');
@@ -4994,7 +4997,10 @@ function goWetter() {
   currentView = 'wetter';
   setNavActive('nav-wetter');
   document.getElementById('new-btn').style.display = 'none';
+  _wetterMap2 = null; // reset so map re-initializes
+  if (_wfFrame) { cancelAnimationFrame(_wfFrame); _wfFrame = null; }
   renderWetterPage();
+  setTimeout(() => _initWetterWindMap(), 80);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -6050,6 +6056,7 @@ function goKarte() {
   // AIS NICHT trennen – damit Schiffsdaten für das Karte-Overlay verfügbar bleiben
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
+  if (_wfFrame) { cancelAnimationFrame(_wfFrame); _wfFrame = null; }
   currentView = 'karte';
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
@@ -6155,7 +6162,7 @@ function goKarte() {
       <div id="karte-windvh-hint" style="display:none;position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:1001;background:rgba(124,58,237,.92);color:#fff;border-radius:20px;padding:6px 16px;font-size:12px;font-weight:600;pointer-events:none">
         🌬️ Auf Karte klicken für Windvorhersage
       </div>
-      <div id="karte-windvh-panel" style="display:none;position:absolute;bottom:28px;left:12px;right:210px;z-index:1001;background:#ffffff;border:1.5px solid #7c3aed44;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.2);flex-direction:column;max-width:520px">
+      <div id="karte-windvh-panel" style="display:none;position:absolute;bottom:28px;left:12px;right:210px;z-index:1001;background:var(--surface,#fff);border:1.5px solid #7c3aed44;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.2);flex-direction:column;max-width:520px;max-height:calc(100% - 56px);overflow-y:auto">
       </div>
 
       <!-- Strömungslegende (wird via JS ein-/ausgeblendet) -->
@@ -6872,11 +6879,11 @@ async function _karteWindVhClick(e) {
   }
 }
 
-function _karteWindVhRender(results, lat, lon) {
-  const panel = document.getElementById('karte-windvh-panel');
+function _karteWindVhRender(results, lat, lon, panelId) {
+  const panel = document.getElementById(panelId || 'karte-windvh-panel');
   if (!panel) return;
   const tMin = Date.now(), tMax = tMin + 120 * 3600000; // 5 days
-  const W = 440, H = 160, pL = 38, pR = 8, pT = 10, pB = 28;
+  const W = 440, H = 160, pL = 38, pR = 42, pT = 10, pB = 28;
   let sMax = 5;
   const lines = {};
   results.forEach(({model, times, speed, gusts}) => {
@@ -6892,8 +6899,10 @@ function _karteWindVhRender(results, lat, lon) {
   sMax = Math.ceil(sMax * 1.1 / 5) * 5;
   const xOf = t => pL + (t - tMin) / (tMax - tMin) * (W - pL - pR);
   const yOf = v => pT + (1 - v / sMax) * (H - pT - pB);
-  const BFT = [{f:0,t:4,c:'#86efac'},{f:4,t:7,c:'#4ade80'},{f:7,t:11,c:'#a3e635'},{f:11,t:17,c:'#facc15'},{f:17,t:22,c:'#fb923c'},{f:22,t:34,c:'#ef4444'},{f:34,t:999,c:'#9f1239'}];
-  let bands=''; BFT.forEach((b,i)=>{ const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT>0&&vB<sMax){const yT=yOf(vT),yB=yOf(vB);if(yT<yB)bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".13"/>`;} });
+  const BFT_THRESHOLDS = [1,4,7,11,17,22,28,34,41,48,56,64];
+  const BFT = [{f:0,t:4,c:'#86efac',label:'Bft 1-2'},{f:4,t:7,c:'#4ade80',label:'Bft 3'},{f:7,t:11,c:'#a3e635',label:'Bft 4'},{f:11,t:17,c:'#facc15',label:'Bft 5-6'},{f:17,t:22,c:'#fb923c',label:'Bft 7'},{f:22,t:28,c:'#f97316',label:'Bft 8'},{f:28,t:34,c:'#ef4444',label:'Bft 9'},{f:34,t:999,c:'#9f1239',label:'Bft 10+'}];
+  let bands='',bftR='';
+  BFT.forEach((b,i)=>{ const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT>0&&vB<sMax){const yT=yOf(vT),yB=yOf(vB);if(yT<yB){bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".13"/>`; const yMid=((yT+yB)/2+3).toFixed(1); if(yB-yT>11) bftR+=`<text x="${W-pR+2}" y="${yMid}" font-size="7.5" fill="${b.c}" font-weight="700" text-anchor="start">${b.label}</text>`;}} });
   let grid='',yL=''; for(let i=0;i<=4;i++){const v=sMax*i/4,y=yOf(v).toFixed(1);grid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`;yL+=`<text x="${pL-3}" y="${parseFloat(y)+3}" text-anchor="end" font-size="8" fill="#637485">${v.toFixed(0)}</text>`;}
   let xL=''; const step=24*3600000; let ts0=Math.ceil(tMin/step)*step;
   for(let t=ts0;t<=tMax;t+=step){const x=xOf(t).toFixed(1),d=new Date(t);xL+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width=".8"/>`;xL+=`<text x="${x}" y="${H-pB+11}" text-anchor="middle" font-size="8" fill="#1d6fa5" font-weight="700">${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</text>`;}
@@ -6905,6 +6914,36 @@ function _karteWindVhRender(results, lat, lon) {
     modelSvg+=`<path d="${sp}" fill="none" stroke="${m.color}" stroke-width="2" stroke-linejoin="round"/>`; });
   const nowX=xOf(tMin).toFixed(1);
   const legend=Object.entries(lines).filter(([k,p])=>p.length).map(([k])=>{ const m=VORHERSAGE_MODELS[k]; return `<span style="font-size:9px;color:${m.color};font-weight:700">— ${m.label}</span>`; }).join(' ');
+
+  // Wind direction barb chart
+  const DW = W, rowH = 38, dpB = 18, DH = results.length * rowH + 10 + dpB;
+  const STEP = 6 * 3600000;
+  let dirSvg = '';
+  results.forEach(({model, times, speed, dir}, ri) => {
+    const m = VORHERSAGE_MODELS[model]; if (!m) return;
+    const yMid = 5 + ri * rowH + rowH / 2;
+    dirSvg += `<rect x="${pL}" y="${5+ri*rowH}" width="${DW-pL-pR}" height="${rowH}" fill="${m.color}" opacity="${ri%2===0?.04:.02}"/>`;
+    dirSvg += `<text x="${pL-3}" y="${yMid+3}" text-anchor="end" font-size="8" fill="${m.color}" font-weight="700">${m.label.split(' ')[0]}</text>`;
+    const t0 = Math.ceil(tMin / STEP) * STEP;
+    for (let t = t0; t <= tMax; t += STEP) {
+      let ci = 0, cd = Infinity;
+      for (let i = 0; i < (times||[]).length; i++) { const d = Math.abs(new Date(times[i]).getTime()-t); if(d<cd){cd=d;ci=i;} }
+      if (dir?.[ci]==null || speed?.[ci]==null) continue;
+      dirSvg += _windBarb(xOf(t), yMid, dir[ci], speed[ci], m.color, rowH * 0.44);
+    }
+  });
+  // X-axis date labels for direction chart
+  const rowsBottom = 5 + results.length * rowH;
+  dirSvg += `<line x1="${pL}" y1="${rowsBottom}" x2="${DW-pR}" y2="${rowsBottom}" stroke="#c8d6e2" stroke-width=".8"/>`;
+  const dayStep = 24 * 3600000;
+  for (let t = Math.ceil(tMin / dayStep) * dayStep; t <= tMax; t += dayStep) {
+    const x = xOf(t).toFixed(1), d = new Date(t), h = d.getHours();
+    dirSvg += `<line x1="${x}" y1="5" x2="${x}" y2="${rowsBottom}" stroke="#c8d6e2" stroke-width="1" stroke-dasharray="2 2"/>`;
+    dirSvg += `<text x="${x}" y="${rowsBottom+13}" text-anchor="middle" font-size="8" fill="#1d6fa5" font-weight="700">${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</text>`;
+  }
+  dirSvg += `<line x1="${nowX}" y1="5" x2="${nowX}" y2="${rowsBottom}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="3 2"/>`;
+
+  const closePanelId = panelId || 'karte-windvh-panel';
   panel.innerHTML = `
     <div style="padding:10px 12px;flex:1;overflow:hidden">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
@@ -6912,15 +6951,19 @@ function _karteWindVhRender(results, lat, lon) {
           <div style="font-size:12px;font-weight:700;color:var(--navy)">🌬️ Windvorhersage · 5 Tage</div>
           <div style="font-size:9px;color:var(--text-muted)">${lat}°N, ${lon}°O · ${legend}</div>
         </div>
-        <button onclick="document.getElementById('karte-windvh-panel').style.display='none'" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;color:var(--text-muted);flex-shrink:0">✕</button>
+        <button onclick="document.getElementById('${closePanelId}').style.display='none'" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;color:var(--text-muted);flex-shrink:0">✕</button>
       </div>
       <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
         <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="var(--bg-alt,#f8fafc)"/>
-        ${bands}${grid}${yL}${xL}${modelSvg}
+        ${bands}${grid}${yL}${xL}${modelSvg}${bftR}
         <line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${H-pB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2"/>
         <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="none" stroke="#c8d6e2" stroke-width=".7"/>
       </svg>
-      <div style="font-size:8px;color:var(--text-muted);margin-top:2px">Y-Achse: kn · Beaufort-Bänder: grün=leicht, gelb=frisch, orange=stark, rot=Sturm</div>
+      <div style="font-size:8px;color:var(--text-muted);margin-top:2px;margin-bottom:6px">Y-Achse: kn · Beaufort-Bänder: grün=leicht, gelb=frisch, orange=stark, rot=Sturm</div>
+      <svg viewBox="0 0 ${DW} ${DH}" width="100%" style="display:block">
+        ${dirSvg}
+      </svg>
+      <div style="font-size:8px;color:var(--text-muted);margin-top:2px">Windrichtung · Fahne=50 kn, Strich=10 kn, Halbstrich=5 kn · Stiel zeigt woher der Wind kommt</div>
     </div>`;
 }
 
@@ -8264,6 +8307,271 @@ function _saveVhCache() {
   try { localStorage.setItem(VH_CACHE_KEY, JSON.stringify(_vhCache)); } catch(e) {}
 }
 
+// ── Windfeld-Karte (Wetter-Seite) ────────────────────────────────────────────
+const WF_BOUNDS   = { minLat:53.2, maxLat:55.6, minLon:6.8, maxLon:11.0 };
+const WF_LATS     = [53.5, 54.0, 54.5, 55.0, 55.5];
+const WF_LONS     = [7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5];
+const WF_MODEL    = 'icon_d2';
+const WF_CACHE_KEY = 'seelotse_windfield_v1';
+const WF_SCALE    = 0.00085; // degrees per kn per animation frame
+const WF_BFT_COLORS = ['#bae6fd','#7dd3fc','#38bdf8','#0ea5e9','#0284c7','#16a34a','#86efac','#facc15','#fb923c','#f97316','#ef4444','#dc2626','#7f1d1d'];
+
+let _wfData     = null;  // {times:[], grid:[[{u,v}]], fetchedAt}
+let _wfFrame    = null;  // rAF id
+let _wfPlaying  = false;
+let _wfTick     = 0;
+let _wfHourIdx  = 0;
+let _wfParticles= [];
+let _wetterMap2 = null;  // MapLibre instance for Wetter-Seite
+let _wfCanvas      = null;
+let _wfCtx         = null;
+let _wfTrailCanvas = null;
+let _wfTrailCtx    = null;
+let _wfCustom   = null;  // {lat,lon} from map click
+let _wfMarkerEl = null;
+
+function _loadWfCache() {
+  try { const r = localStorage.getItem(WF_CACHE_KEY); if (r) { _wfData = JSON.parse(r); } } catch(e) {}
+}
+function _saveWfCache() {
+  try { localStorage.setItem(WF_CACHE_KEY, JSON.stringify(_wfData)); } catch(e) {}
+}
+
+async function fetchWindField(force) {
+  const AGE_LIMIT = 3 * 3600000;
+  if (!force && _wfData && (Date.now() - _wfData.fetchedAt) < AGE_LIMIT) { _initWfAnim(); return; }
+  const btn = document.getElementById('wf-refresh-btn');
+  if (btn) btn.textContent = '⏳ Laden…';
+  const points = [];
+  WF_LATS.forEach(lat => WF_LONS.forEach(lon => points.push({lat, lon})));
+  try {
+    const results = await Promise.all(points.map(async ({lat, lon}) => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_10m,winddirection_10m&models=${WF_MODEL}&timezone=UTC&forecast_days=5&wind_speed_unit=kn`;
+      const r = await fetch(url); if (!r.ok) return null;
+      const j = await r.json();
+      const times  = j.hourly?.time   || [];
+      const speeds = j.hourly?.windspeed_10m    || [];
+      const dirs   = j.hourly?.winddirection_10m || [];
+      const u = speeds.map((s,i) => s == null ? 0 : -s * Math.sin(dirs[i] * Math.PI/180));
+      const v = speeds.map((s,i) => s == null ? 0 : -s * Math.cos(dirs[i] * Math.PI/180));
+      return { lat, lon, times, u, v };
+    }));
+    const times = results.find(r => r)?.times || [];
+    const grid = WF_LATS.map((lat,li) => WF_LONS.map((lon,lj) => {
+      const d = results[li * WF_LONS.length + lj];
+      return d ? {u: d.u, v: d.v} : {u: times.map(()=>0), v: times.map(()=>0)};
+    }));
+    _wfData = { times, grid, fetchedAt: Date.now() };
+    _saveWfCache();
+  } catch(e) { console.error('Wind field fetch error', e); }
+  if (btn) btn.textContent = '↻ Aktualisieren';
+  _wfHourIdx = 0;
+  _initWfAnim();
+  _updateWfTimeLabel();
+}
+
+function _wfInterp(lat, lon, hi) {
+  if (!_wfData) return [0, 0];
+  const lats = WF_LATS, lons = WF_LONS;
+  let li = Math.max(0, lats.length - 2);
+  for (let i = 0; i < lats.length - 1; i++) if (lat >= lats[i] && lat <= lats[i+1]) { li = i; break; }
+  let lj = Math.max(0, lons.length - 2);
+  for (let j = 0; j < lons.length - 1; j++) if (lon >= lons[j] && lon <= lons[j+1]) { lj = j; break; }
+  const t = Math.max(0, Math.min(1, (lat - lats[li]) / (lats[li+1] - lats[li])));
+  const s = Math.max(0, Math.min(1, (lon - lons[lj]) / (lons[lj+1] - lons[lj])));
+  const g = _wfData.grid;
+  const uv = (a, b, c, d) => (1-t)*(1-s)*a + t*(1-s)*b + (1-t)*s*c + t*s*d;
+  const i2 = Math.min(hi, (_wfData.grid[0][0].u.length || 1) - 1);
+  return [
+    uv(g[li][lj].u[i2], g[li+1]?.[lj]?.u[i2]??0, g[li][lj+1]?.u[i2]??0, g[li+1]?.[lj+1]?.u[i2]??0),
+    uv(g[li][lj].v[i2], g[li+1]?.[lj]?.v[i2]??0, g[li][lj+1]?.v[i2]??0, g[li+1]?.[lj+1]?.v[i2]??0),
+  ];
+}
+
+function _wfLatLonToXY(lat, lon, W, H) {
+  const x = (lon - WF_BOUNDS.minLon) / (WF_BOUNDS.maxLon - WF_BOUNDS.minLon) * W;
+  const y = (WF_BOUNDS.maxLat - lat)  / (WF_BOUNDS.maxLat - WF_BOUNDS.minLat) * H;
+  return [x, y];
+}
+function _wfXYToLatLon(x, y, W, H) {
+  return [
+    WF_BOUNDS.maxLat - (y / H) * (WF_BOUNDS.maxLat - WF_BOUNDS.minLat),
+    WF_BOUNDS.minLon + (x / W) * (WF_BOUNDS.maxLon - WF_BOUNDS.minLon),
+  ];
+}
+
+function _wfNewParticle(W, H) {
+  return { x: Math.random() * W, y: Math.random() * H, age: Math.floor(Math.random() * 25), maxAge: 20 + Math.floor(Math.random() * 20) };
+}
+
+function _initWfAnim() {
+  if (!_wfCanvas || !_wfData) return;
+  const W = _wfCanvas.width, H = _wfCanvas.height;
+  _wfParticles = Array.from({length: 180}, () => _wfNewParticle(W, H));
+  _updateWfTimeLabel();
+}
+
+function _wfAnimLoop() {
+  if (!_wfCanvas || !_wfCtx || !_wfData) return;
+  const W = _wfCanvas.width, H = _wfCanvas.height;
+
+  // Ensure offscreen trail canvas exists and matches size
+  if (!_wfTrailCanvas || _wfTrailCanvas.width !== W || _wfTrailCanvas.height !== H) {
+    _wfTrailCanvas = document.createElement('canvas');
+    _wfTrailCanvas.width = W; _wfTrailCanvas.height = H;
+    _wfTrailCtx = _wfTrailCanvas.getContext('2d');
+  }
+  const tctx = _wfTrailCtx;
+
+  // 1) Fade the trail canvas (destination-in: reduces existing pixels' alpha)
+  tctx.save();
+  tctx.globalCompositeOperation = 'destination-in';
+  tctx.globalAlpha = 0.78;
+  tctx.fillStyle = '#000';
+  tctx.fillRect(0, 0, W, H);
+  tctx.restore();
+
+  // 2) Draw new particle segments onto trail canvas
+  _wfParticles.forEach(p => {
+    const [lat, lon] = _wfXYToLatLon(p.x, p.y, W, H);
+    if (lat < WF_BOUNDS.minLat || lat > WF_BOUNDS.maxLat || lon < WF_BOUNDS.minLon || lon > WF_BOUNDS.maxLon) {
+      delete p.px; delete p.py; Object.assign(p, _wfNewParticle(W, H)); return;
+    }
+    const [u, v] = _wfInterp(lat, lon, _wfHourIdx);
+    const cosLat = Math.cos(lat * Math.PI / 180);
+    const dx =  u * WF_SCALE / cosLat * W / (WF_BOUNDS.maxLon - WF_BOUNDS.minLon);
+    const dy = -v * WF_SCALE         * H / (WF_BOUNDS.maxLat - WF_BOUNDS.minLat);
+    const speed = Math.sqrt(u*u + v*v);
+    const bft = Math.min(12, _knToBft(speed));
+    const px0 = p.px ?? p.x, py0 = p.py ?? p.y;
+    p.px = p.x; p.py = p.y;
+    p.x += dx; p.y += dy; p.age++;
+    const lifeRatio = p.age / p.maxAge;
+    const alpha = lifeRatio < 0.15 ? lifeRatio / 0.15 : lifeRatio > 0.8 ? (1 - lifeRatio) / 0.2 : 1;
+    tctx.globalAlpha = Math.max(0, Math.min(0.65, alpha * 0.65));
+    tctx.strokeStyle = WF_BFT_COLORS[bft] || '#94a3b8';
+    tctx.lineWidth = 1.5;
+    tctx.beginPath();
+    tctx.moveTo(px0, py0);
+    tctx.lineTo(p.x, p.y);
+    tctx.stroke();
+    if (p.age > p.maxAge) { delete p.px; delete p.py; Object.assign(p, _wfNewParticle(W, H)); }
+  });
+  tctx.globalAlpha = 1;
+
+  // 3) Composite trail canvas over transparent main canvas (map shows through)
+  const ctx = _wfCtx;
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(_wfTrailCanvas, 0, 0);
+
+  // Auto-advance time when playing: 1 hour every ~1.5s at 60fps
+  if (_wfPlaying) {
+    _wfTick++;
+    if (_wfTick % 90 === 0) {
+      const maxH = Math.min((_wfData?.times?.length || 120) - 1, 119);
+      _wfHourIdx = (_wfHourIdx + 1) % (maxH + 1);
+      _updateWfTimeLabel();
+    }
+  }
+  _wfFrame = requestAnimationFrame(_wfAnimLoop);
+}
+
+function startWfAnim() {
+  _wfPlaying = true;
+  _wfTick = 0;
+  const btn = document.getElementById('wf-play-btn');
+  if (btn) btn.textContent = '⏸';
+  if (!_wfFrame) _wfFrame = requestAnimationFrame(_wfAnimLoop);
+}
+function stopWfAnim() {
+  _wfPlaying = false;
+  const btn = document.getElementById('wf-play-btn');
+  if (btn) btn.textContent = '▶';
+}
+function toggleWfAnim() { _wfPlaying ? stopWfAnim() : startWfAnim(); }
+
+function setWfHour(idx) {
+  _wfHourIdx = parseInt(idx);
+  _updateWfTimeLabel();
+  if (!_wfFrame) { _wfFrame = requestAnimationFrame(_wfAnimLoop); }
+}
+
+function _updateWfTimeLabel() {
+  const el = document.getElementById('wf-time-label');
+  if (!el || !_wfData?.times) return;
+  const t = _wfData.times[Math.min(_wfHourIdx, _wfData.times.length-1)];
+  if (!t) return;
+  const d = new Date(t + 'Z'); // grid stored in UTC
+  el.textContent = d.toLocaleString('de-DE', {weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) + ' Uhr (UTC+1)';
+  const slider = document.getElementById('wf-time-slider');
+  if (slider) slider.value = _wfHourIdx;
+}
+
+function _initWetterWindMap() {
+  if (!window.maplibregl) return;
+  const container = document.getElementById('wf-map-container');
+  if (!container || _wetterMap2) return;
+  // Setup canvas overlay for particles
+  _wfCanvas = document.createElement('canvas');
+  _wfCanvas.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2;border-radius:8px';
+  container.style.position = 'relative';
+  // Init MapLibre
+  _wetterMap2 = new maplibregl.Map({
+    container,
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: [8.9, 54.3], zoom: 7.2,
+    attributionControl: false,
+  });
+  _wetterMap2.on('load', () => {
+    container.appendChild(_wfCanvas);
+    _wfCanvas.width  = container.clientWidth;
+    _wfCanvas.height = container.clientHeight;
+    _wfCtx = _wfCanvas.getContext('2d');
+    _wfCtx.fillStyle = 'transparent';
+    _wfCtx.clearRect(0, 0, _wfCanvas.width, _wfCanvas.height);
+    _loadWfCache();
+    if (_wfData) { _initWfAnim(); _wfFrame = requestAnimationFrame(_wfAnimLoop); }
+    else fetchWindField(false);
+    // Resize canvas on map resize
+    _wetterMap2.on('resize', () => {
+      _wfCanvas.width  = container.clientWidth;
+      _wfCanvas.height = container.clientHeight;
+      _initWfAnim();
+    });
+    // Click handler for custom location
+    _wetterMap2.on('click', e => {
+      const lat = +e.lngLat.lat.toFixed(4), lon = +e.lngLat.lng.toFixed(4);
+      _wfCustom = {lat, lon};
+      // Remove old marker
+      if (_wfMarkerEl) _wfMarkerEl.remove();
+      const el = document.createElement('div');
+      el.innerHTML = '<div style="width:14px;height:14px;background:#7c3aed;border:2px solid #fff;border-radius:50%;box-shadow:0 2px 8px rgba(0,0,0,.4)"></div>';
+      _wfMarkerEl = new maplibregl.Marker({element: el}).setLngLat([lon, lat]).addTo(_wetterMap2);
+      // Fetch forecast for this point
+      _fetchWfCustomForecast(lat, lon);
+    });
+  });
+}
+
+async function _fetchWfCustomForecast(lat, lon) {
+  const panel = document.getElementById('wf-custom-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  panel.innerHTML = `<div style="padding:10px 0;color:var(--text-muted);font-size:12px">⏳ Lade Vorhersage für ${lat}°N, ${lon}°O…</div>`;
+  try {
+    const models = [..._vhModels].slice(0, 3);
+    const results = await Promise.all(models.map(async k => {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_10m,winddirection_10m,windgusts_10m&models=${k}&timezone=Europe%2FBerlin&forecast_days=5&wind_speed_unit=kn`;
+      const r = await fetch(url); if (!r.ok) return null;
+      const j = await r.json();
+      return { model: k, times: j.hourly?.time, speed: j.hourly?.windspeed_10m, dir: j.hourly?.winddirection_10m, gusts: j.hourly?.windgusts_10m };
+    }));
+    _karteWindVhRender(results.filter(Boolean), lat, lon, 'wf-custom-panel');
+  } catch(e) {
+    panel.innerHTML = `<div style="padding:10px 0;color:var(--danger);font-size:12px">Fehler: ${e.message}</div>`;
+  }
+}
+
 function exportVorhersagePDF() {
   const loc = VORHERSAGE_LOCS[_vhLoc];
   const now = new Date();
@@ -8394,7 +8702,13 @@ function renderVorhersageUI() {
       <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-muted)">Modell:</span>
       ${Object.entries(VORHERSAGE_MODELS).map(([k,m]) => {
         const active = _vhModels.has(k), loading = active && !_vhCache[`${_vhLoc}_${k}`];
-        return `<button onclick="toggleVhModel('${k}')" style="${bs(active,m.color)}">${loading?'⏳ ':''}${m.label} <span style="font-size:9px;opacity:.7">${m.desc}</span></button>`;
+        const c = _vhCache[`${_vhLoc}_${k}`];
+        const ts = c ? (() => {
+          const d = new Date(c.ts), today = new Date();
+          const t = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'});
+          return d.toDateString()===today.toDateString() ? t+' Uhr' : d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'})+' '+t+' Uhr';
+        })() : null;
+        return `<button onclick="toggleVhModel('${k}')" style="${bs(active,m.color)}">${loading?'⏳ ':''}${m.label} <span style="font-size:9px;opacity:.7">${m.desc}</span>${ts?`<span style="font-size:8px;opacity:.65;margin-left:4px;font-weight:400">· ${ts}</span>`:''}${!c&&active&&!loading?'<span style="font-size:8px;opacity:.5;margin-left:4px">· nicht geladen</span>':''}</button>`;
       }).join('')}
     </div>
     <div style="display:flex;gap:6px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
@@ -8420,7 +8734,7 @@ function renderVorhersageUI() {
 
 function _renderVhSpeedChart(modelData) {
   const tMin = Date.now(), tMax = tMin + _vhHours * 3600000;
-  const W = 900, H = 280, pL = 46, pR = 12, pT = 14, pB = 32;
+  const W = 900, H = 280, pL = 46, pR = 42, pT = 14, pB = 32;
   let sMax = 6;
   const lines = {};
   for (const [k, data] of Object.entries(modelData)) {
@@ -8452,7 +8766,7 @@ function _renderVhSpeedChart(modelData) {
     const vT=Math.min(b.t,sMax),vB=Math.max(b.f,0); if(vT<=0||vB>=sMax)return;
     const yT=yOf(vT),yB=yOf(vB); if(yT>=yB)return;
     bands+=`<rect x="${pL}" y="${yT.toFixed(1)}" width="${W-pL-pR}" height="${(yB-yT).toFixed(1)}" fill="${b.c}" opacity=".12"/>`;
-    if(yB-yT>11)bLbl+=`<text x="${W-pR-3}" y="${((yT+yB)/2+3).toFixed(1)}" font-size="7" fill="${b.c}" opacity=".7" text-anchor="end" font-weight="700">Bft ${i}</text>`;
+    if(yB-yT>11)bLbl+=`<text x="${W-pR+3}" y="${((yT+yB)/2+3).toFixed(1)}" font-size="8" fill="${b.c}" font-weight="700">Bft ${i}</text>`;
   });
   const uLbl = _unitLabel();
   let grid='',yLbls='';
@@ -8464,13 +8778,12 @@ function _renderVhSpeedChart(modelData) {
   const step=stepH*3600000; let ts0=Math.ceil(tMin/step)*step;
   for(let t=ts0;t<=tMax;t+=step){
     const x=xOf(t).toFixed(1), d=new Date(t), h=d.getHours();
-    const isMidnight = h===0;
-    const isNoon = h===12;
+    // isMidnight: first tick of a new local calendar day (robust against DST/timezone offset)
+    const isMidnight = d.getDate() !== new Date(t - step).getDate();
+    const isNoon = !isMidnight && h >= 11 && h <= 13;
     xTicks+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${H-pB}" stroke="#c8d6e2" stroke-width="${isMidnight?'1.2':'.4'}"/>`;
-    // For large ranges (5d/7d): show date on midnight, time on noon; hide other ticks
     let lbl = '';
     if (isMidnight) {
-      // Full date on day boundaries
       lbl = d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'});
       xLbls+=`<text x="${x}" y="${H-pB+13}" text-anchor="middle" font-size="9" fill="#1d6fa5" font-weight="700">${lbl}</text>`;
     } else if (stepH <= 6 || (stepH === 12 && isNoon)) {
@@ -8629,6 +8942,29 @@ function renderWetterPage() {
           <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
         </div>
       </div>
+      <!-- Windfeld-Karte -->
+      <div class="fd-card" style="margin-top:16px;padding:16px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="fd-card-title" style="margin-bottom:2px">🗺️ Windfeld-Karte</div>
+            <div style="font-size:10px;color:var(--text-muted)">ICON-D2 · Animiertes Windfeld · Auf Karte klicken für Standortvorhersage</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="wf-refresh-btn" onclick="fetchWindField(true)" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">↻ Aktualisieren</button>
+          </div>
+        </div>
+        <div style="position:relative;border-radius:8px;overflow:hidden;height:380px" id="wf-map-container"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <button id="wf-play-btn" onclick="toggleWfAnim()" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0">▶</button>
+          <input type="range" id="wf-time-slider" min="0" max="119" value="0" oninput="setWfHour(this.value)" style="flex:1;min-width:120px;accent-color:var(--blue)">
+          <span id="wf-time-label" style="font-size:11px;color:var(--text-muted);white-space:nowrap;min-width:180px">–</span>
+          <div style="display:flex;gap:4px;font-size:9px;color:var(--text-muted);align-items:center">
+            ${[0,1,2,3,4,5,6,7,8,9,10,11,12].map((b,i) => `<span style="display:inline-flex;align-items:center;gap:2px"><span style="width:8px;height:8px;border-radius:50%;background:${['#bae6fd','#7dd3fc','#38bdf8','#0ea5e9','#0284c7','#16a34a','#86efac','#facc15','#fb923c','#f97316','#ef4444','#dc2626','#7f1d1d'][b]}"></span>${b}</span>`).join('')}
+            <span style="margin-left:4px">Bft</span>
+          </div>
+        </div>
+        <div id="wf-custom-panel" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px"></div>
+      </div>
     </div>
     <!-- Vorhersage-Modal -->
     <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.85);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
@@ -8655,8 +8991,8 @@ function renderWetterPage() {
   if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
   setTimeout(() => {
     // Immer frisch laden beim Seitenaufruf
+    // renderAstroDashboard() wird von fetchWindData() aufgerufen sobald Daten da sind
     fetchWindData();
-    renderAstroDashboard();
     fetchPressureHistory(_pressureHours);
   }, 0);
 }
@@ -8801,6 +9137,9 @@ function goAktuelleReiseWith(id) {
 }
 
 function goAktuelleReise() {
+  if (_wfFrame) { cancelAnimationFrame(_wfFrame); _wfFrame = null; }
+  if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
+  if (_pressureRefreshTimer) { clearTimeout(_pressureRefreshTimer); _pressureRefreshTimer = null; }
   currentView = 'aktuelle-reise';
   setNavActive('nav-ar');
   document.getElementById('new-btn').style.display = 'none';
