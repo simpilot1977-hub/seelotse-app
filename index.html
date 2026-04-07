@@ -5221,7 +5221,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.25, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
@@ -5427,7 +5427,7 @@ function _aisLoadFilters() {
       minLen:       d.minLen       ?? 0,
       minSog:       d.minSog       ?? 0,
       maxAge:       d.maxAge       ?? 30,
-      fahrwasserNm: d.fahrwasserNm ?? 0.25,
+      fahrwasserNm: d.fahrwasserNm ?? 0.27,
       zoneFilter:   d.zoneFilter   ?? 'fahrwasser',
       hideAnc:      d.hideAnc      ?? false,
       sortIn:       d.sortIn       ?? null,
@@ -5440,7 +5440,7 @@ function _aisLoadFilters() {
   } catch {}
 }
 function _aisResetAllFilters() {
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.25, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisSaveFilters(); _aisRenderTable();
@@ -5472,7 +5472,7 @@ function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? nu
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisSaveFilters(); _aisRenderTable(); }
 function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetMaxAge(v)        { _aisFilter.maxAge        = parseInt(v)   || 0;   _aisSaveFilters(); _aisRenderTable(); }
-function _aisSetFahrwasserNm(v)  { _aisFilter.fahrwasserNm  = parseFloat(v) || 0.25; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetFahrwasserNm(v)  { _aisFilter.fahrwasserNm  = parseFloat(v) || 0.27; _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetZoneFilter(v)    { _aisFilter.zoneFilter    = v;                     _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
@@ -5798,7 +5798,7 @@ function goVerkehr() {
   _aisShips.clear();
   _aisInitialLoaded = false;
   // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.25, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisLoadFilters();
