@@ -5174,6 +5174,22 @@ function _elbeProject(lat, lon) {
 // Rückwärtskompatibel: gibt nur trackNm zurück
 function _elbeNm(lat, lon) { return _elbeProject(lat, lon).trackNm; }
 
+// Dynamische Fahrrinnen-Halbbreite je Position:
+// Westlich Tonne 1 (offene See) → 500 m Fallback (kein Tonnenstrich)
+// Ab Tonne 1 nach Hamburg → tatsächliche Elbe-Fahrrinnenbreite (halbe Breite von Mittelline)
+// Quellen: WSV-Fahrrinnenanpassung Unterelbe 2021, ENC DE4EM100
+// Alle Werte = Halbbreite in sm (Radius um die Mittellinie = ELBE_TRACK)
+function _elbeFahrwasserNm(trackNm) {
+  // _etCum[2] = Tonne 1 (wp-Index 2 laut ELBE_TONNEN)
+  const tn1Nm   = _etCum[2];   // ~1.5 sm ab Racon = Beginn Außenelbe-Tonnenstrich
+  const cuxNm   = _etCum[9];   // Cuxhaven
+  const brbNm   = _etCum[18];  // Brunsbüttel
+  if (trackNm < tn1Nm)  return 0.27;  // vor Tonne 1: offene See, 500 m Fallback
+  if (trackNm < cuxNm)  return 0.22;  // Außenelbe Tonne 1–Cuxhaven: ~400 m Halbbreite
+  if (trackNm < brbNm)  return 0.16;  // Unterelbe Cuxhaven–Brunsbüttel: ~300 m
+  return 0.14;                          // Unterelbe Brunsbüttel–Hamburg: ~260 m
+}
+
 // Fahrtrichtung aus Position + COG
 function _elbeDir(lat, lon, cog, sog, navStatus) {
   // Ankern, Vertäut, Aufgelaufen → stationary
@@ -5221,7 +5237,7 @@ let _aisStatus          = 'off';
 let _aisRenderTimer     = null;
 let _aisRenderPending   = false;
 let _aisInitialLoaded   = false;
-let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
@@ -5427,7 +5443,7 @@ function _aisLoadFilters() {
       minLen:       d.minLen       ?? 0,
       minSog:       d.minSog       ?? 0,
       maxAge:       d.maxAge       ?? 30,
-      fahrwasserNm: d.fahrwasserNm ?? 0.27,
+      fahrwasserNm: d.fahrwasserNm ?? 0,
       zoneFilter:   d.zoneFilter   ?? 'fahrwasser',
       hideAnc:      d.hideAnc      ?? false,
       sortIn:       d.sortIn       ?? null,
@@ -5440,7 +5456,7 @@ function _aisLoadFilters() {
   } catch {}
 }
 function _aisResetAllFilters() {
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisSaveFilters(); _aisRenderTable();
@@ -5472,7 +5488,7 @@ function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? nu
 function _aisSortOut(key) { _aisFilter.sortOut = _aisFilter.sortOut === key ? null : key; _aisSaveFilters(); _aisRenderTable(); }
 function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetMaxAge(v)        { _aisFilter.maxAge        = parseInt(v)   || 0;   _aisSaveFilters(); _aisRenderTable(); }
-function _aisSetFahrwasserNm(v)  { _aisFilter.fahrwasserNm  = parseFloat(v) || 0.27; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetFahrwasserNm(v)  { _aisFilter.fahrwasserNm  = parseFloat(v) || 0; _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetZoneFilter(v)    { _aisFilter.zoneFilter    = v;                     _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
@@ -5490,11 +5506,18 @@ function _aisRenderTable() {
   const allTypes = ['Frachter','Tanker','Fahrgast','Yacht','Schlepper','Fischer','Dienst','Sonstige','—'];
 
   // Zone bestimmen (Fahrwasser / Reede)
+  // Nutzt dynamische Fahrrinnenbreite je Streckenabschnitt:
+  //   vor Tonne 1 (offene See) → 500 m Fallback
+  //   ab Tonne 1 → tatsächliche Elbe-Fahrrinnenbreite (Tonnenstrich BB/SB)
+  // _aisFilter.fahrwasserNm dient als optionaler manueller Override (nur wenn > 0 gesetzt).
   function shipZone(s) {
     if (s.elbeDistNm == null) return 'reede';
     // SOG-Heuristik: fahrende Schiffe können nicht auf Reede liegen
     if (s.sog != null && s.sog > 3) return 'fahrwasser';
-    return s.elbeDistNm <= _aisFilter.fahrwasserNm ? 'fahrwasser' : 'reede';
+    const halfW = _aisFilter.fahrwasserNm > 0
+      ? _aisFilter.fahrwasserNm
+      : _elbeFahrwasserNm(s.trackNm);
+    return s.elbeDistNm <= halfW ? 'fahrwasser' : 'reede';
   }
 
   // Filter anwenden
@@ -5696,10 +5719,10 @@ function _aisRenderTable() {
     <button class="ais-type-btn${_aisFilter.zoneFilter==='reede'?' active':''}" onclick="_aisSetZoneFilter('reede')">⚓ Reede</button>
     <span style="font-size:11px;color:var(--text-muted);margin-left:8px">Breite FW:</span>
     <div style="display:flex;align-items:center;gap:4px">
-      <input type="number" min="0.1" max="5" step="0.1" value="${_aisFilter.fahrwasserNm}"
-        oninput="_aisSetFahrwasserNm(this.value)"
-        style="font-size:11px;width:52px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
-      <span style="font-size:11px;color:var(--text-muted)">sm</span>
+      <input type="number" min="0" max="5" step="0.05" value="${_aisFilter.fahrwasserNm || ''}"
+        oninput="_aisSetFahrwasserNm(this.value)" placeholder="Auto"
+        style="font-size:11px;width:60px;padding:2px 6px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;text-align:right">
+      <span style="font-size:11px;color:var(--text-muted)">sm (0=Auto)</span>
     </div>
     <button onclick="_aisResetAllFilters()" style="margin-left:auto;font-size:10px;padding:2px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);font-family:inherit">↺ Alle Filter zurücksetzen</button>
   </div>`;
@@ -5798,7 +5821,7 @@ function goVerkehr() {
   _aisShips.clear();
   _aisInitialLoaded = false;
   // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0.27, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisLoadFilters();
