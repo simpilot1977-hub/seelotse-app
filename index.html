@@ -1723,10 +1723,12 @@ async function fetchWindData() {
     if (!ts) return '';
     try {
       const d = new Date(ts);
+      const TZ = 'Europe/Berlin';
       const now = new Date();
-      const sameDay = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-      const timeStr = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr';
-      return sameDay ? timeStr : d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit'}) + ' ' + timeStr;
+      const dStr   = d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:TZ});
+      const nowStr = now.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:TZ});
+      const timeStr = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:TZ})+' Uhr';
+      return dStr === nowStr ? timeStr : d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',timeZone:TZ}) + ' ' + timeStr;
     } catch { return ''; }
   };
 
@@ -2704,7 +2706,7 @@ function _renderPegelChart(tRange) {
     { vFn:(skn,st)   => st.mthw != null ? st.mthw-skn:null,label:'MThw',dash:'8 3', w:1.0, op:0.60 },
     { vFn:(skn,st)   => st.mtnw != null ? st.mtnw-skn:null,label:'MTnw',dash:'8 3', w:1.0, op:0.60 },
   ];
-  const fmtTime = t => t.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+  const fmtTime = t => t.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Berlin'});
   const clampX  = x => Math.min(Math.max(x, padL + 22), xR - 22);
   const clampY  = y => Math.min(Math.max(y, padT + 7),  yBot - 5);
 
@@ -2892,7 +2894,9 @@ function getElbeCurrentFromDb(ataDt, wpKey) {
 function arCalcETAs(entry, veff) {
   const isEinkommend = !!entry.einkommend;
   const startKey = AR_VON_KEY[entry.streckeVon]  || 'ElbeRacon';
-  const endKey   = AR_NACH_KEY[entry.streckeNach] || 'Hamburg';
+  // Reiseziel hat Vorrang gegenüber Lotsung-Nach für die Streckenberechnung
+  const _zielRaw = entry.reiseziel || entry.streckeNach;
+  const endKey   = AR_NACH_KEY[_zielRaw] || AR_NACH_KEY[entry.streckeNach] || 'Hamburg';
   const startNm  = AR_WAYPOINTS.find(w=>w.key===startKey)?.nm ?? 0;
   const endNm    = AR_WAYPOINTS.find(w=>w.key===endKey)?.nm   ?? 89;
   let wps;
@@ -2949,6 +2953,28 @@ function arTideStatusAtTime(dbKey, refMs) {
 // BSH-Zeiten sind immer in MEZ (UTC+1), auch im Sommer.
 // Alle Anzeige-Funktionen nutzen explizit Europe/Berlin, damit MESZ automatisch
 // berücksichtigt wird – unabhängig von der Geräte-Zeitzone.
+
+// Konvertiert BSH-MEZ-Zeitstring zu YYYY-MM-DDTHH:MM in Europe/Berlin (für datetime-local Inputs)
+function bshDtToLocal(dt) {
+  if (!dt) return '';
+  const ms = bshDtMs(dt);
+  if (isNaN(ms)) return typeof dt === 'string' ? dt : '';
+  const s = new Date(ms).toLocaleString('sv', { timeZone: 'Europe/Berlin' }); // "YYYY-MM-DD HH:MM:SS"
+  return s.slice(0, 16).replace(' ', 'T'); // "YYYY-MM-DDTHH:MM"
+}
+
+// Konvertiert datetime-local-Wert (Europe/Berlin Lokalzeit) zurück zu BSH-MEZ-String
+function bshLocalToBsh(localVal) {
+  if (!localVal) return '';
+  try {
+    // Browser parst datetime-local-Wert als Lokalzeit (Europe/Berlin)
+    const ms = new Date(localVal).getTime(); // UTC ms
+    // Als MEZ (UTC+1) formatieren – so wie bshDtMs() es erwartet
+    const s = new Date(ms).toLocaleString('sv', { timeZone: 'Etc/GMT-1' }); // "YYYY-MM-DD HH:MM:SS"
+    return s.slice(0, 16).replace(' ', 'T'); // "YYYY-MM-DDTHH:MM" in MEZ
+  } catch(e) { return localVal; }
+}
+
 function fmtBshDT(dt) {
   if (!dt) return '—';
   const ms = bshDtMs(dt);
@@ -3310,7 +3336,7 @@ let arWpSog = {};     // { waypointKey: wahre SOG in kn } – überschreibt bere
 
 // ── IndexedDB: persistenter Hauptspeicher (überlebt App-Updates) ─────────────
 const IDB_NAME = 'seelotse_idb';
-const IDB_VER  = 1;
+const IDB_VER  = 2;
 let _idb = null;
 
 function _openIDB() {
@@ -3322,9 +3348,37 @@ function _openIDB() {
       if (!db.objectStoreNames.contains('fahrten'))    db.createObjectStore('fahrten',    { keyPath: 'id' });
       if (!db.objectStoreNames.contains('eppFahrten')) db.createObjectStore('eppFahrten', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('tideDbs'))    db.createObjectStore('tideDbs',    { keyPath: 'station' });
+      if (!db.objectStoreNames.contains('settings'))   db.createObjectStore('settings',   { keyPath: 'key' });
     };
     req.onsuccess = e => { _idb = e.target.result; resolve(_idb); };
     req.onerror   = () => reject(req.error);
+  });
+}
+
+async function _idbGet(store, key) {
+  const db = await _openIDB();
+  return new Promise((res, rej) => {
+    const req = db.transaction(store, 'readonly').objectStore(store).get(key);
+    req.onsuccess = () => res(req.result ? req.result.value : null);
+    req.onerror   = () => rej(req.error);
+  });
+}
+async function _idbSet(store, key, value) {
+  const db = await _openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).put({ key, value });
+    tx.oncomplete = res;
+    tx.onerror    = () => rej(tx.error);
+  });
+}
+async function _idbDel(store, key) {
+  const db = await _openIDB();
+  return new Promise((res, rej) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.objectStore(store).delete(key);
+    tx.oncomplete = res;
+    tx.onerror    = () => rej(tx.error);
   });
 }
 
@@ -3349,6 +3403,127 @@ async function _idbPutAll(store, items) {
   });
 }
 
+// ── Auto-Speicherung (File System Access API) ─────────────────────────────────
+let _autoSaveHandle = null;      // FileSystemFileHandle | null
+let _autoSavePending = false;    // debounce flag
+
+async function _loadAutoSaveHandle() {
+  try {
+    _autoSaveHandle = await _idbGet('settings', 'autoSaveHandle');
+  } catch(e) { _autoSaveHandle = null; }
+}
+
+async function _getAutoSavePermission() {
+  if (!_autoSaveHandle) return 'denied';
+  try {
+    let perm = await _autoSaveHandle.queryPermission({ mode: 'readwrite' });
+    if (perm === 'prompt') perm = await _autoSaveHandle.requestPermission({ mode: 'readwrite' });
+    return perm; // 'granted' | 'denied'
+  } catch(e) { return 'denied'; }
+}
+
+function _buildAutoSaveBlob() {
+  const payload = {
+    _version: 1,
+    _savedAt: new Date().toISOString(),
+    fahrten,
+    eppFahrten,
+    tideDbs,
+  };
+  return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+}
+
+async function _autoSaveToFile() {
+  if (!_autoSaveHandle || _autoSavePending) return;
+  _autoSavePending = true;
+  // Debounce: wait 500ms so rapid sequential saves don't thrash the disk
+  await new Promise(r => setTimeout(r, 500));
+  _autoSavePending = false;
+  try {
+    const perm = await _getAutoSavePermission();
+    if (perm !== 'granted') return;
+    const writable = await _autoSaveHandle.createWritable();
+    await writable.write(_buildAutoSaveBlob());
+    await writable.close();
+    _updateAutoSaveStatus('ok');
+  } catch(e) {
+    console.warn('Auto-Speicherung fehlgeschlagen:', e);
+    _updateAutoSaveStatus('error');
+  }
+}
+
+function _updateAutoSaveStatus(state) {
+  const el = document.getElementById('autosave-status');
+  if (!el) return;
+  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
+  if (state === 'ok') {
+    el.innerHTML = `<span style="color:#16a34a">✓ Zuletzt gespeichert: ${now} Uhr</span>`;
+  } else if (state === 'error') {
+    el.innerHTML = `<span style="color:#dc2626">⚠️ Speichern fehlgeschlagen — bitte Berechtigung prüfen</span>`;
+  }
+}
+
+async function setupAutoSave() {
+  if (!('showSaveFilePicker' in window)) {
+    showToast('Automatische Speicherung wird von diesem Browser nicht unterstützt (Chrome/Edge empfohlen).', 'error');
+    return;
+  }
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: 'seelotse-master.json',
+      types: [{ description: 'Seelotse Master-Datei', accept: { 'application/json': ['.json'] } }],
+      startIn: 'documents',
+    });
+    _autoSaveHandle = handle;
+    await _idbSet('settings', 'autoSaveHandle', handle);
+    // Immediately write current data to the new file
+    const writable = await handle.createWritable();
+    await writable.write(_buildAutoSaveBlob());
+    await writable.close();
+    showToast('✓ Auto-Speicherung eingerichtet. Daten werden automatisch gespeichert.', 'success');
+    renderImportExport();
+  } catch(e) {
+    if (e.name !== 'AbortError') showToast('Fehler beim Einrichten der Auto-Speicherung.', 'error');
+  }
+}
+
+async function removeAutoSave() {
+  _autoSaveHandle = null;
+  await _idbDel('settings', 'autoSaveHandle');
+  showToast('Auto-Speicherung deaktiviert.', 'info');
+  renderImportExport();
+}
+
+async function restoreFromAutoSave(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async evt => {
+    try {
+      const data = JSON.parse(evt.target.result);
+      // Support both plain array (old export) and new payload format
+      if (Array.isArray(data)) {
+        fahrten = data;
+      } else if (data._version === 1) {
+        if (Array.isArray(data.fahrten))    fahrten    = data.fahrten;
+        if (Array.isArray(data.eppFahrten)) eppFahrten = data.eppFahrten;
+        if (data.tideDbs && typeof data.tideDbs === 'object') {
+          tideDbs = data.tideDbs;
+          saveTideDbs();
+        }
+        if (Array.isArray(data.eppFahrten)) saveEPPData();
+      } else throw new Error('Unbekanntes Format');
+      saveData();
+      showToast(`✓ Wiederhergestellt: ${fahrten.length} Fahrten.`, 'success');
+      renderImportExport();
+    } catch(err) {
+      showToast('Fehler: Ungültiges Dateiformat.', 'error');
+    }
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
 // ── fahrten ─────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
@@ -3366,6 +3541,7 @@ function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fahrten)); // sync-Fallback
   _idbPutAll('fahrten', fahrten).catch(() => {});             // primärer Store
   updateAgenturDatalist();
+  _autoSaveToFile();                                           // Auto-Speicherung in Datei
 }
 function updateAgenturDatalist() {
   const dl = document.getElementById('agentur-list');
@@ -3392,6 +3568,7 @@ async function loadEPPData() {
 function saveEPPData() {
   localStorage.setItem(EPP_STORAGE_KEY, JSON.stringify(eppFahrten));
   _idbPutAll('eppFahrten', eppFahrten).catch(() => {});
+  _autoSaveToFile();
 }
 
 // ── Gezeiten-Datenbank ──────────────────────────────────────────────────────
@@ -3416,6 +3593,7 @@ async function loadTideDbs() {
 function saveTideDbs() {
   localStorage.setItem(TIDE_DB_STORAGE_KEY, JSON.stringify(tideDbs));
   _idbPutAll('tideDbs', Object.entries(tideDbs).map(([station, entries]) => ({ station, entries }))).catch(() => {});
+  _autoSaveToFile();
 }
 
 // BSH VB2 Tide-Zeiten sind in MEZ (UTC+1) – ohne Zeitzonenangabe gespeichert.
@@ -3940,13 +4118,13 @@ function addHours(isoOrStr, hours) {
 }
 
 function fmtTime(date) {
-  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
 }
 
 function fmtDateTimeFull(date) {
   return date.toLocaleString('de-DE', {
     day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin'
   });
 }
 
@@ -4057,7 +4235,7 @@ function makeTideCurveSVG(tideEntries, refTs) {
   }
 
   const p2 = n => String(n).padStart(2, '0');
-  const fmtT = ms => { const d = new Date(ms); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+  const fmtT = ms => { const d = new Date(ms); return d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit', timeZone:'Europe/Berlin'}); };
 
   // Labels from ACTUAL events (prev, near, next)
   const evts = [prevEvt, nearEvt, nextEvt].filter(Boolean);
@@ -4176,8 +4354,8 @@ function renderEPPPage() {
           <option value="HW" ${row.type==='HW'?'selected':''}>HW</option>
           <option value="NW" ${row.type==='NW'?'selected':''}>NW</option>
         </select>
-        <input class="tide-dt-input" type="datetime-local" value="${row.dt}"
-          onchange="eppTiden['${loc}'][${i}].dt=this.value">
+        <input class="tide-dt-input" type="datetime-local" value="${bshDtToLocal(row.dt)}"
+          onchange="eppTiden['${loc}'][${i}].dt=bshLocalToBsh(this.value)">
         <input class="tide-ws-input" type="number" value="${row.ws}"
           step="1" placeholder="cm" onchange="eppTiden['${loc}'][${i}].ws=this.value">
       </div>`;
@@ -5234,9 +5412,10 @@ const _AIS_NAV = ['Fahrt','Ankern','Manövr.los','Eingeschr.','Tiefgang','Vertä
 let _aisWs              = null;
 let _aisShips           = new Map();   // MMSI → Schiffsobjekt
 let _aisStatus          = 'off';
-let _aisRenderTimer     = null;
-let _aisRenderPending   = false;
-let _aisInitialLoaded   = false;
+let _aisRenderTimer        = null;
+let _aisRenderPending      = false;
+let _aisInitialLoaded      = false;
+let _karteShipUpdatePending = false;
 let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
@@ -5391,6 +5570,11 @@ function _aisMsgIn(msg) {
   if (!_aisInitialLoaded && !_aisRenderPending) {
     _aisRenderPending = true;
     setTimeout(() => { _aisRenderPending = false; _aisRenderTable(); }, 800);
+  }
+  // Karte-Schiffe sofort aktualisieren wenn das Overlay aktiv ist (debounced, 1s)
+  if (_karteOverlays?.schiffe && !_karteShipUpdatePending) {
+    _karteShipUpdatePending = true;
+    setTimeout(() => { _karteShipUpdatePending = false; if (_karteOverlays?.schiffe) _karteUpdateShips(); }, 1000);
   }
 }
 
@@ -5882,6 +6066,12 @@ let _karteSelectedMMSI  = '';    // MMSI des fokussierten Schiffs (leer = alle z
 let _karteWaterFetching = false;
 let _karteWaterBbox     = '';
 
+// ── GPS / Eigenposition ──────────────────────────────────────────────────────
+let _karteGpsWatchId   = null;   // navigator.geolocation.watchPosition handle
+let _karteGpsMarker    = null;   // maplibregl.Marker for position dot
+let _karteGpsVectorMin = 10;     // Vektor-Zeitraum in Minuten
+let _karteGpsPos       = null;   // { lat, lon, sog_kn, cog_deg, acc_m }
+
 // Radarlinie-Wegpunkte: E3 → Hamburg (SEAiq GPX-Route)
 const KARTE_WP = [
   { key:'wp0',  label:'E3',                               lat: 54.05280253, lon:  7.90232888 },
@@ -6088,7 +6278,8 @@ function goKarte() {
   setNavActive('nav-karte');
   document.getElementById('new-btn').style.display = 'none';
   // Overlay-State zurücksetzen (Standardwerte bei jedem Seitenaufruf)
-  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, radarlinie: true, schnittpunkte: true, kursdistanz: true };
+  _karteOverlays = { grid: true, pegel: false, wind: false, seemap: false, schiffe: false, tide: false, stroem: false, seezeichen: false, gps: false, radarlinie: true, schnittpunkte: true, kursdistanz: true };
+  _karteStopGps();
   _karteDarkMode = false;
 
   document.getElementById('app-main').innerHTML = `
@@ -6141,6 +6332,20 @@ function goKarte() {
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-seezeichen" onchange="karteToggleOverlay('seezeichen',this.checked)"> Seezeichen <span style="font-size:9px;color:#94a3b8">(zoom ≥ 9)</span>
         </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
+          <input type="checkbox" id="karte-toggle-gps" onchange="karteToggleOverlay('gps',this.checked)"> <span style="color:#0ea5e9;font-weight:600">📍 Meine Position</span>
+        </label>
+        <div id="karte-gps-panel" style="display:none;padding-left:20px;margin-top:4px">
+          <div style="font-size:11px;color:#637485;margin-bottom:3px">Vektor-Zeitraum:</div>
+          <select id="karte-gps-vector-time" onchange="karteGpsVectorChange(this.value)" style="width:100%;font-size:11px;border:1px solid #c8d6e2;border-radius:4px;padding:3px 4px;margin-bottom:5px;background:#fff">
+            <option value="5">5 Minuten</option>
+            <option value="10" selected>10 Minuten</option>
+            <option value="20">20 Minuten</option>
+            <option value="30">30 Minuten</option>
+            <option value="60">1 Stunde</option>
+          </select>
+          <div id="karte-gps-info" style="font-size:10px;color:#64748b;line-height:1.6"></div>
+        </div>
         <div id="karte-seezeichen-filter" style="display:none;margin-top:6px;padding:6px 0 0 4px;border-top:1px solid rgba(148,163,184,0.2)">
           <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Filtern:</div>
           <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:11px;margin-bottom:3px"><input type="checkbox" id="sz-filter-tonnen" checked onchange="karteSeamarkFilterChange()"> Fahrwassertonnen</label>
@@ -6214,6 +6419,10 @@ function goKarte() {
     _karteTideMarkers.forEach(m => m.remove()); _karteTideMarkers = [];
     _karteSeamarkMarkers.forEach(m => m.remove()); _karteSeamarkMarkers = [];
     _karteSeamarkBbox = '';
+    _karteSeamarkFetching = false; // reset so next visit can fetch immediately
+    if (_karteGpsWatchId != null) { navigator.geolocation.clearWatch(_karteGpsWatchId); _karteGpsWatchId = null; }
+    if (_karteGpsMarker) { _karteGpsMarker.remove(); _karteGpsMarker = null; }
+    _karteGpsPos = null;
     if (_karteRangeLineRAF) { cancelAnimationFrame(_karteRangeLineRAF); _karteRangeLineRAF = null; }
     _karteRangeLineLayers = [];
     _karteSectorLayers = [];
@@ -7070,7 +7279,150 @@ function karteToggleOverlay(type, visible) {
       _karteRangeLineLayers = [];
       _karteSectorLayers = [];
     }
+  } else if (type === 'gps') {
+    const panel = document.getElementById('karte-gps-panel');
+    if (panel) panel.style.display = visible ? 'block' : 'none';
+    if (visible) _karteStartGps();
+    else _karteStopGps();
   }
+}
+
+// ── GPS / Eigenposition ──────────────────────────────────────────────────────
+function _karteGpsEndpoint(lat, lon, cog_deg, sog_kn, minutes) {
+  const distKm = sog_kn * 1.852 * (minutes / 60);
+  const R = 6371;
+  const brg = cog_deg * Math.PI / 180;
+  const d = distKm / R;
+  const lat1 = lat * Math.PI / 180;
+  const lon1 = lon * Math.PI / 180;
+  const lat2 = Math.asin(Math.sin(lat1)*Math.cos(d) + Math.cos(lat1)*Math.sin(d)*Math.cos(brg));
+  const lon2 = lon1 + Math.atan2(Math.sin(brg)*Math.sin(d)*Math.cos(lat1), Math.cos(d)-Math.sin(lat1)*Math.sin(lat2));
+  return { lat: lat2 * 180 / Math.PI, lon: lon2 * 180 / Math.PI };
+}
+
+function _karteUpdateGpsMarker() {
+  if (!_karteMap || !_karteGpsPos) return;
+  const { lat, lon, sog_kn, cog_deg, acc_m } = _karteGpsPos;
+  const hasCog = sog_kn > 0.3 && cog_deg != null;
+
+  // ── Position dot (SVG Marker) ──────────────────────────────────────
+  const SIZE = 60;
+  const CX = SIZE / 2, CY = SIZE / 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}" viewBox="0 0 ${SIZE} ${SIZE}" style="overflow:visible;pointer-events:none">
+    <circle cx="${CX}" cy="${CY}" r="11" fill="rgba(14,165,233,0.18)" stroke="rgba(14,165,233,0.5)" stroke-width="1.5"/>
+    <circle cx="${CX}" cy="${CY}" r="7" fill="#0ea5e9" stroke="#fff" stroke-width="2.5"/>
+    <circle cx="${CX}" cy="${CY}" r="2.5" fill="#fff"/>
+  </svg>`;
+  const el = document.createElement('div');
+  el.style.cssText = `width:${SIZE}px;height:${SIZE}px;pointer-events:none`;
+  el.innerHTML = svg;
+  if (_karteGpsMarker) _karteGpsMarker.remove();
+  _karteGpsMarker = new maplibregl.Marker({ element: el, anchor: 'center' })
+    .setLngLat([lon, lat]).addTo(_karteMap);
+
+  // ── COG vector line (MapLibre source/layer) ────────────────────────
+  const vecCoords = [[lon, lat]];
+  if (hasCog) {
+    const end = _karteGpsEndpoint(lat, lon, cog_deg, sog_kn, _karteGpsVectorMin);
+    vecCoords.push([end.lon, end.lat]);
+  }
+  const vecGeo = { type: 'FeatureCollection', features: vecCoords.length > 1 ? [{
+    type: 'Feature', geometry: { type: 'LineString', coordinates: vecCoords }, properties: {}
+  }] : [] };
+
+  if (_karteMap.getSource('gps-vector')) {
+    _karteMap.getSource('gps-vector').setData(vecGeo);
+  } else {
+    _karteMap.addSource('gps-vector', { type: 'geojson', data: vecGeo });
+    _karteMap.addLayer({ id: 'gps-vector-line', type: 'line', source: 'gps-vector',
+      paint: { 'line-color': '#0ea5e9', 'line-width': 3, 'line-opacity': 0.9,
+               'line-dasharray': [1, 0] } });
+    _karteMap.addLayer({ id: 'gps-vector-head', type: 'circle', source: 'gps-vector',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: { 'circle-radius': 0 } }); // placeholder — end dot via second source
+    // End-dot source
+    _karteMap.addSource('gps-vector-end', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+    _karteMap.addLayer({ id: 'gps-vector-end-dot', type: 'circle', source: 'gps-vector-end',
+      paint: { 'circle-radius': 5, 'circle-color': '#0ea5e9', 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+  }
+  // Update end dot
+  const endDotGeo = { type: 'FeatureCollection', features: vecCoords.length > 1 ? [{
+    type: 'Feature', geometry: { type: 'Point', coordinates: vecCoords[1] }, properties: {}
+  }] : [] };
+  if (_karteMap.getSource('gps-vector-end')) _karteMap.getSource('gps-vector-end').setData(endDotGeo);
+
+  // ── Info panel ──────────────────────────────────────────────────────
+  const info = document.getElementById('karte-gps-info');
+  if (info) {
+    const bft = typeof _knToBft === 'function' ? _knToBft(sog_kn) : '';
+    const bftStr = bft !== '' ? ` (Bft ${bft})` : '';
+    info.innerHTML = [
+      `📍 ${lat.toFixed(5)}°N&nbsp;&nbsp;${lon.toFixed(5)}°E`,
+      hasCog ? `🧭 ${Math.round(cog_deg)}°&nbsp;·&nbsp;${sog_kn.toFixed(1)} kn${bftStr}` : `🛑 Liegt still`,
+      `⊙ ~${Math.round(acc_m)} m Genauigkeit`,
+    ].join('<br>');
+  }
+}
+
+function _karteStartGps() {
+  if (!navigator.geolocation) {
+    showToast('GPS nicht verfügbar auf diesem Gerät.', 'error');
+    const cb = document.getElementById('karte-toggle-gps');
+    if (cb) cb.checked = false;
+    _karteOverlays.gps = false;
+    return;
+  }
+  _karteGpsWatchId = navigator.geolocation.watchPosition(
+    pos => {
+      if (_karteGpsWatchId == null) return; // already stopped — ignore stale callback
+      const c = pos.coords;
+      _karteGpsPos = {
+        lat:     c.latitude,
+        lon:     c.longitude,
+        sog_kn:  c.speed != null ? c.speed / 0.51444 : 0,
+        cog_deg: c.heading != null ? c.heading : 0,
+        acc_m:   c.accuracy,
+      };
+      _karteUpdateGpsMarker();
+    },
+    err => {
+      if (_karteGpsWatchId == null) return; // already stopped — ignore stale callback
+      if (err.code === err.PERMISSION_DENIED) {
+        showToast('GPS-Berechtigung verweigert.', 'error');
+        _karteStopGps();
+        const cb = document.getElementById('karte-toggle-gps');
+        if (cb) cb.checked = false;
+        _karteOverlays.gps = false;
+      }
+    },
+    { enableHighAccuracy: true, maximumAge: 3000, timeout: 15000 }
+  );
+}
+
+function _karteStopGps() {
+  if (_karteGpsWatchId != null) {
+    navigator.geolocation.clearWatch(_karteGpsWatchId);
+    _karteGpsWatchId = null;
+  }
+  if (_karteGpsMarker) { _karteGpsMarker.remove(); _karteGpsMarker = null; }
+  _karteGpsPos = null;
+  // Remove map layers/sources
+  if (_karteMap) {
+    const style = _karteMap.getStyle?.();
+    const layerIds = (style?.layers || []).map(l => l.id);
+    const sourceIds = Object.keys(style?.sources || {});
+    ['gps-vector-end-dot','gps-vector-line','gps-vector-head'].forEach(id => { if (layerIds.includes(id)) try { _karteMap.removeLayer(id); } catch(e) {} });
+    ['gps-vector-end','gps-vector'].forEach(id => { if (sourceIds.includes(id)) try { _karteMap.removeSource(id); } catch(e) {} });
+  }
+  const info = document.getElementById('karte-gps-info');
+  if (info) info.innerHTML = '';
+  const panel = document.getElementById('karte-gps-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+function karteGpsVectorChange(val) {
+  _karteGpsVectorMin = Number(val);
+  _karteUpdateGpsMarker();
 }
 
 // ── Seezeichen-Filter ──────────────────────────────────────────────
@@ -7401,12 +7753,16 @@ async function _karteLoadTides() {
 
       if (!display || !display.length) return;
 
-      const fmtT = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }) + ' Uhr';
+      const TZ = 'Europe/Berlin';
+      const fmtT = d => d.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: TZ }) + ' Uhr';
       const fmtDate = d => {
         const today = new Date(); const tom = new Date(today); tom.setDate(tom.getDate() + 1);
-        if (d.toDateString() === today.toDateString()) return 'heute';
-        if (d.toDateString() === tom.toDateString()) return 'morgen';
-        return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        const dStr = d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: TZ });
+        const tdStr = today.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: TZ });
+        const tmStr = tom.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: TZ });
+        if (dStr === tdStr) return 'heute';
+        if (dStr === tmStr) return 'morgen';
+        return d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', timeZone: TZ });
       };
 
       const rows = display.map(e => {
@@ -7672,21 +8028,44 @@ async function _karteLoadSeamarks() {
     // seamark:type filter first → uses Overpass index, then name filter is cheap
     // Also fetch front/rear category lights (e.g. Richtfeuer Balje uses category instead of name)
     const query = `[out:json][timeout:10];(node["seamark:type"](${bbox});way["seamark:type"="leading_line"](${richtBbox});node["seamark:type"~"light_major|light_minor|lighthouse"](${bbox});node["seamark:type"~"light_major|light_minor|lighthouse"]["name"~"feuer"](${richtBbox});node["seamark:type"~"light_major|light_minor|lighthouse"]["seamark:light:category"~"front|rear"](${richtBbox}););out geom;`;
-    const OVERPASS_ENDPOINTS = [
-      'https://overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter',
-      'https://overpass.private.coffee/api/interpreter',
-    ];
+
+    // ── LocalStorage-Cache (6h TTL) ──────────────────────────────────
+    const SEAMARK_CACHE_KEY = 'seelotse_seamark_' + bbox;
+    const SEAMARK_CACHE_TTL = 6 * 3600 * 1000; // 6h
     let data = null;
-    for (const ep of OVERPASS_ENDPOINTS) {
-      try {
-        const ctrl = new AbortController();
-        const tid = setTimeout(() => ctrl.abort(), 12000); // 12s per endpoint
-        const resp = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctrl.signal });
-        const text = await resp.text(); // keep abort signal active during body read
-        clearTimeout(tid);
-        if (text.trim().startsWith('{')) { data = JSON.parse(text); break; }
-      } catch(e) { /* try next endpoint */ }
+    try {
+      const cached = localStorage.getItem(SEAMARK_CACHE_KEY);
+      if (cached) {
+        const { ts, d } = JSON.parse(cached);
+        if (Date.now() - ts < SEAMARK_CACHE_TTL) data = d;
+        else localStorage.removeItem(SEAMARK_CACHE_KEY);
+      }
+    } catch(e) {}
+
+    if (!data) {
+      const OVERPASS_ENDPOINTS = [
+        'https://overpass-api.de/api/interpreter',
+        'https://overpass.kumi.systems/api/interpreter',
+        'https://overpass.private.coffee/api/interpreter',
+      ];
+      for (const ep of OVERPASS_ENDPOINTS) {
+        try {
+          const ctrl = new AbortController();
+          const tid = setTimeout(() => ctrl.abort(), 8000); // 8s per endpoint
+          const resp = await fetch(ep, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal: ctrl.signal });
+          const text = await resp.text();
+          clearTimeout(tid);
+          if (text.trim().startsWith('{')) {
+            const parsed = JSON.parse(text);
+            if (parsed.elements && parsed.elements.length > 0) {
+              data = parsed;
+              // Cache the result
+              try { localStorage.setItem(SEAMARK_CACHE_KEY, JSON.stringify({ ts: Date.now(), d: data })); } catch(e) {}
+              break;
+            }
+          }
+        } catch(e) { /* try next endpoint */ }
+      }
     }
     if (!data) throw new Error('All Overpass endpoints failed');
 
@@ -8369,7 +8748,7 @@ function _saveWfCache() {
 }
 
 async function fetchWindField(force) {
-  const AGE_LIMIT = 3 * 3600000;
+  const AGE_LIMIT = 60 * 60000; // 1h — Windfeld beim Seitenaufruf immer frisch wenn älter als 1h
   if (!force && _wfData && (Date.now() - _wfData.fetchedAt) < AGE_LIMIT) { _initWfAnim(); return; }
   const btn = document.getElementById('wf-refresh-btn');
   if (btn) btn.textContent = '⏳ Laden…';
@@ -9087,12 +9466,13 @@ function renderWetterPage() {
   if (title) title.textContent = `📈 Verlaufskurven · ${WEATHER_STATIONS[_pressureStation]?.label || 'Cuxhaven'}`;
   if (_pressureRefreshTimer) clearTimeout(_pressureRefreshTimer);
   if (_windRefreshTimer) { clearTimeout(_windRefreshTimer); _windRefreshTimer = null; }
+  // Alle Daten beim Seitenaufruf frisch laden
   setTimeout(() => {
-    // Immer frisch laden beim Seitenaufruf
-    // renderAstroDashboard() wird von fetchWindData() aufgerufen sobald Daten da sind
-    fetchWindData();
-    fetchPressureHistory(_pressureHours);
+    fetchWindData();           // lädt Wind + ruft renderAstroDashboard() → fetchBarPegelData() + fetchBarVisData()
+    fetchPressureHistory(_pressureHours); // lädt Verlaufskurven
   }, 0);
+  // Windfeld immer frisch laden wenn Seite geöffnet wird (AGE_LIMIT gilt nur für schnelles Re-Enter)
+  // Wird in _initWetterWindMap() getriggert, sobald die Map bereit ist (force=false nutzt Cache falls < 1h alt)
 }
 
 function exportWetterPDF() {
@@ -10237,7 +10617,7 @@ function renderForm(f) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 17l1-8h16l1 8"/><path d="M7 9V5h10v4"/><path d="M3 17h18"/></svg>
             Einsatz &amp; Route
           </div>
-          <div class="form-grid">
+          <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:16px">
             <div class="field">
               <label for="artDesEinsatzes">Art des Einsatzes <span class="req">*</span></label>
               <select id="artDesEinsatzes" name="artDesEinsatzes" required onchange="updateFormVisibility()">
@@ -10246,14 +10626,19 @@ function renderForm(f) {
               </select>
             </div>
             <div class="field" id="field-streckeVon">
-              <label for="streckeVon">Von</label>
-              <input type="text" id="streckeVon" name="streckeVon" value="${v('streckeVon')}" list="streckeVon-list" placeholder="BrB, NOK, HH …" autocomplete="off">
+              <label for="streckeVon">Lotsung von</label>
+              <input type="text" id="streckeVon" name="streckeVon" value="${v('streckeVon')}" list="streckeVon-list" placeholder="BrB, NOK …" autocomplete="off">
               <datalist id="streckeVon-list">${STRECKE_VON_OPTS.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
             </div>
             <div class="field" id="field-streckeNach">
-              <label for="streckeNach">Nach</label>
-              <input type="text" id="streckeNach" name="streckeNach" value="${v('streckeNach')}" list="streckeNach-list" placeholder="See, BrB, HH …" autocomplete="off" oninput="updateFormVisibility()">
+              <label for="streckeNach">Lotsung nach</label>
+              <input type="text" id="streckeNach" name="streckeNach" value="${v('streckeNach')}" list="streckeNach-list" placeholder="See, BrB …" autocomplete="off" oninput="updateFormVisibility()">
               <datalist id="streckeNach-list">${STRECKE_NACH_OPTS.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
+            </div>
+            <div class="field">
+              <label for="reiseziel">Reiseziel</label>
+              <input type="text" id="reiseziel" name="reiseziel" value="${v('reiseziel')}" list="reiseziel-list" placeholder="HH, See …" autocomplete="off">
+              <datalist id="reiseziel-list">${STRECKE_NACH_OPTS.map(o=>`<option value="${esc(o)}">`).join('')}</datalist>
             </div>
           </div>
           <div id="cux-option-group" style="margin-top:12px;display:none">
@@ -10666,6 +11051,7 @@ function handleSubmit(e) {
     schiffsname:    fd.get('schiffsname')?.trim() || '',
     streckeVon:     fd.get('streckeVon') || '',
     streckeNach:    fd.get('streckeNach') || '',
+    reiseziel:      fd.get('reiseziel') || '',
     artDesEinsatzes:fd.get('artDesEinsatzes') || '',
     tiefgang:       fd.get('tiefgang') || '',
     airdraught:     fd.get('airdraught') || '',
@@ -10911,7 +11297,8 @@ function renderFahrtDashboard(entry) {
           <div class="fd-ship-grid">
             <div class="fd-field"><div class="fd-lbl">Schiffsname</div><div class="fd-val">${esc(entry.schiffsname)||'—'}</div></div>
             <div class="fd-field"><div class="fd-lbl">Art des Einsatzes</div><div class="fd-val">${esc(entry.artDesEinsatzes)||'—'}</div></div>
-            <div class="fd-field"><div class="fd-lbl">Von → Nach</div><div class="fd-val">${esc(entry.streckeVon)||'—'} → ${esc(entry.streckeNach)||'—'}</div></div>
+            <div class="fd-field"><div class="fd-lbl">Lotsung von → nach</div><div class="fd-val">${esc(entry.streckeVon)||'—'} → ${esc(entry.streckeNach)||'—'}</div></div>
+            ${entry.reiseziel ? `<div class="fd-field"><div class="fd-lbl">Reiseziel</div><div class="fd-val" style="color:var(--blue);font-weight:600">⚑ ${esc(entry.reiseziel)}</div></div>` : ''}
             <div class="fd-field"><div class="fd-lbl">Tiefgang</div><div class="fd-val">${entry.tiefgang ? entry.tiefgang+' m' : '—'}</div></div>
             ${entry.airdraught != null && entry.airdraught !== '' ? `<div class="fd-field"><div class="fd-lbl">Airdraught</div><div class="fd-val">${entry.airdraught} m</div></div>` : ''}
             <div class="fd-field"><div class="fd-lbl">Personen</div><div class="fd-val">${entry.personenAnBord||'—'}</div></div>
@@ -11011,12 +11398,48 @@ function renderFahrtDashboard(entry) {
 ════════════════════════════════════════════ */
 function renderImportExport() {
   const count = fahrten.length;
+  const hasHandle = !!_autoSaveHandle;
+  const fsaSupported = 'showSaveFilePicker' in window;
+
+  let autoSaveFileName = '';
+  if (hasHandle) {
+    try { autoSaveFileName = _autoSaveHandle.name || ''; } catch(e) {}
+  }
+
+  const autoSaveCard = `
+    <div class="ie-card" style="border-top:3px solid #0ea5e9;background:linear-gradient(135deg,#f0f9ff,#e0f2fe)">
+      <div class="ie-icon">💾</div>
+      <h3>Automatische Speicherung</h3>
+      ${hasHandle ? `
+        <p>Alle Daten werden automatisch nach jeder Änderung in diese Datei geschrieben — Fahrten, EPP und Gezeitendaten.</p>
+        <div class="ie-count" style="color:#0ea5e9">
+          📁 ${autoSaveFileName || 'Datei eingerichtet'}
+        </div>
+        <div id="autosave-status" style="font-size:11px;margin-bottom:10px;min-height:16px"></div>
+        <button class="btn btn-primary" onclick="setupAutoSave()" style="background:#0ea5e9;margin-bottom:6px">Speicherort ändern …</button>
+        <button class="btn btn-warn" onclick="removeAutoSave()">Deaktivieren</button>
+      ` : `
+        <p>Wähle einmalig einen Speicherort — danach sichert die App alle Daten (Fahrten, EPP, Gezeitendaten) automatisch nach jeder Eingabe.</p>
+        ${!fsaSupported ? '<div class="ie-warn-text">⚠️ Nicht verfügbar — bitte Chrome oder Edge verwenden</div>' : ''}
+        <button class="btn btn-primary" onclick="setupAutoSave()" style="background:#0ea5e9" ${!fsaSupported?'disabled':''}>Speicherort auswählen …</button>
+      `}
+    </div>
+    <div class="ie-card" style="border-top:3px solid #6366f1;background:linear-gradient(135deg,#f5f3ff,#ede9fe)">
+      <div class="ie-icon">🔄</div>
+      <h3>Aus Sicherung wiederherstellen</h3>
+      <p>Stellt Fahrten, EPP-Daten und Gezeitendatenbank aus einer zuvor automatisch gespeicherten Datei wieder her.</p>
+      <div class="ie-warn-text">⚠️ Aktuelle Daten werden überschrieben</div>
+      <button class="btn btn-warn" onclick="document.getElementById('restore-input').click()">Sicherung laden …</button>
+      <input type="file" id="restore-input" accept=".json" style="display:none" onchange="restoreFromAutoSave(this)">
+    </div>`;
+
   document.getElementById('app-main').innerHTML = `
     <div class="ie-header">
       <h2>Import / Export</h2>
       <p>Datenbank sichern, wiederherstellen oder nach Excel exportieren.</p>
     </div>
     <div class="ie-grid">
+      ${autoSaveCard}
       <div class="ie-card blue">
         <div class="ie-icon">📤</div>
         <h3>JSON exportieren</h3>
@@ -11073,18 +11496,18 @@ function renderImportExport() {
 }
 
 function exportJSON() {
-  const json = JSON.stringify(fahrten, null, 2);
-  const blob = new Blob([json], {type:'application/json'});
+  // Export is a timestamped copy of the master file content (same format)
+  const blob = _buildAutoSaveBlob();
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   const now  = new Date();
   const pad  = n => String(n).padStart(2,'0');
-  const ts   = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
+  const ts   = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}`;
   a.href     = url;
-  a.download = `seelotse-fahrtenbuch_${ts}.json`;
+  a.download = `seelotse-master_backup_${ts}.json`;
   a.click();
   URL.revokeObjectURL(url);
-  showToast('✓ JSON-Datei exportiert.', 'success');
+  showToast('✓ Sicherungskopie erstellt.', 'success');
 }
 
 function importJSON(input) {
@@ -11226,7 +11649,7 @@ function exportExcel() {
    INIT
 ════════════════════════════════════════════ */
 (async () => {
-  await Promise.all([loadData(), loadEPPData(), loadTideDbs()]);
+  await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
   updateAgenturDatalist();
   goList();
 })();
