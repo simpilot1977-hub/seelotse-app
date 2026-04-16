@@ -2986,6 +2986,32 @@ function fmtBshDT(dt) {
   });
 }
 
+// ── Gezeitenvorhersage: Abweichung vom Mittelwert ─────────────────────────────
+// Vergleicht den vorhergesagten Wasserstand mit dem langjährigen Mittelwert
+// (MThW für HW, MTnW für NW) und gibt ein farbiges Badge zurück.
+// type:  'HW' | 'NW'
+// loc:   'Cuxhaven' | 'Brunsbuettel' | 'Hamburg'  (= tideDb-Schlüssel)
+// ws:    Wasserstand in cm ü.PN (z.B. '685')
+// mode:  'html' (farbiges Span) | 'text' (reiner Text für PDFs)
+function wsDeviation(ws, type, loc, mode = 'html') {
+  if (!ws) return '';
+  const station = PEGEL_STATIONS.find(s => s.tideDb === loc);
+  if (!station) return '';
+  const ref = type === 'HW' ? station.mthw : station.mtnw;
+  if (!ref) return '';
+  const diff = parseInt(ws) - ref;
+  const sign = diff >= 0 ? '+' : '';
+  const label = type === 'HW' ? 'MThW' : 'MTnW';
+  // HW über MThW = mehr Wasser = günstig (grün)
+  // HW unter MThW = weniger Wasser (orange)
+  // NW über MTnW = mehr Wasser = günstig (grün)
+  // NW unter MTnW = weniger Wasser = kritisch (rot)
+  const color = diff >= 0 ? '#16a34a' : (type === 'NW' ? '#dc2626' : '#d97706');
+  const arrow = diff >= 0 ? '▲' : '▼';
+  if (mode === 'text') return `${arrow} ${sign}${diff} cm ${label}`;
+  return `<span style="font-size:10px;font-weight:700;color:${color};white-space:nowrap" title="${sign}${diff} cm gegenüber ${label} (${ref} cm)">${arrow} ${sign}${diff}&thinsp;cm ${label}</span>`;
+}
+
 function fmtTideTime(isoStr, refMs) {
   if (!isoStr) return '—';
   const ms = bshDtMs(isoStr);
@@ -3131,7 +3157,13 @@ function exportFahrtPDF(entryId) {
       let st=null;
       for(const ev of shifted) if(Math.abs(ev.t-refMs)<=STAU_MS){st='stau';break;}
       if(!st){let last=null;for(const ev of shifted)if(ev.t<=refMs)last=ev; if(last)st=last.type==='HW'?'ebbe':'flut'; else if(shifted[0])st=shifted[0].type==='HW'?'flut':'ebbe';}
-      const fE = e => { if(!e)return'—'; const d=new Date(bshDtMs(e.dt)); return `${e.type} · ${d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'})} Uhr${e.ws?' · '+e.ws+' cm':''}`; };
+      const fE = e => {
+        if(!e)return'—';
+        const d=new Date(bshDtMs(e.dt));
+        const t=d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+        const dev=wsDeviation(e.ws,e.type,loc);
+        return `${e.type} · ${t} Uhr${e.ws?' · '+e.ws+' cm':''}${dev?' <span style="margin-left:3px">'+dev+'</span>':''}`;
+      };
       return `<div class="tc-card">
         <div class="tc-head"><span class="tc-name">${stnLbl[loc]}</span>${tbadge(st)}</div>
         <div class="tc-row"><span class="tc-lbl">Vorheriges</span><span class="tc-val">${fE(bef)}</span></div>
@@ -4398,7 +4430,8 @@ function renderEPPPage() {
     const label = loc === 'Brunsbuettel' ? 'Brunsbüttel' : loc;
     const rows = eppTiden[loc].map((row, i) => {
       const typeClass = row.type === 'HW' ? 'hw' : 'nw';
-      return `<div class="epp-tide-row">
+      const dev = wsDeviation(row.ws, row.type, loc);
+      return `<div class="epp-tide-row" style="flex-wrap:wrap;gap:4px">
         <select class="tide-type-sel ${typeClass}"
           onchange="eppSetTideType('${loc}',${i},this.value)">
           <option value="HW" ${row.type==='HW'?'selected':''}>HW</option>
@@ -4407,7 +4440,8 @@ function renderEPPPage() {
         <input class="tide-dt-input" type="datetime-local" value="${bshDtToLocal(row.dt)}"
           onchange="eppTiden['${loc}'][${i}].dt=bshLocalToBsh(this.value)">
         <input class="tide-ws-input" type="number" value="${row.ws}"
-          step="1" placeholder="cm" onchange="eppTiden['${loc}'][${i}].ws=this.value">
+          step="1" placeholder="cm" onchange="eppTiden['${loc}'][${i}].ws=this.value;renderEPPPage()">
+        ${dev ? `<div style="width:100%;padding-left:60px;margin-top:-2px">${dev}</div>` : ''}
       </div>`;
     }).join('');
 
@@ -10534,13 +10568,14 @@ function exportEPPPDF() {
     const label = loc === 'Brunsbuettel' ? 'Brunsbüttel' : loc;
     const entries = eppTiden[loc] || [];
     const svgStr = makeTideCurveSVG(entries, pdfRefTs);
-    const dataRows = entries.filter(e=>e.dt).map(e =>
-      `<div class="td-row">
+    const dataRows = entries.filter(e=>e.dt).map(e => {
+      const dev = wsDeviation(e.ws, e.type, loc);
+      return `<div class="td-row">
         <span class="td-badge ${e.type==='HW'?'hw':'nw'}">${e.type==='HW'?'↑ HW':'↓ NW'}</span>
         <span class="td-time">${fmtBshDT(e.dt)}</span>
-        <span class="td-ws">${fmtWs(e.ws)}</span>
-      </div>`
-    ).join('');
+        <span class="td-ws">${fmtWs(e.ws)}${dev ? `<br><span style="font-size:8px">${dev}</span>` : ''}</span>
+      </div>`;
+    }).join('');
     return `<div class="tide-col">
       <div class="tide-col-hdr">${label}</div>
       ${svgStr || '<div class="no-data">Keine Tidedaten</div>'}
@@ -10773,9 +10808,10 @@ function exportEPPPDF() {
           const label = loc==='Brunsbuettel'?'Brunsbüttel':loc;
           const entries = eppTiden[loc]||[];
           const svg = makeTideCurveSVG(entries, pdfRefTs);
-          const rows = entries.filter(e=>e.dt).map(e=>
-            `<div class="td-row"><span class="td-badge ${e.type==='HW'?'hw':'nw'}">${e.type==='HW'?'↑ HW':'↓ NW'}</span><span class="td-time">${fmtBshDT(e.dt)}</span><span class="td-ws">${fmtWs(e.ws)}</span></div>`
-          ).join('');
+          const rows = entries.filter(e=>e.dt).map(e=>{
+            const dev = wsDeviation(e.ws, e.type, loc);
+            return `<div class="td-row"><span class="td-badge ${e.type==='HW'?'hw':'nw'}">${e.type==='HW'?'↑ HW':'↓ NW'}</span><span class="td-time">${fmtBshDT(e.dt)}</span><span class="td-ws">${fmtWs(e.ws)}${dev?`<br><small>${dev}</small>`:''}</span></div>`;
+          }).join('');
           return `<div class="tide-col"><div class="tide-col-hdr">${label}</div><div class="tide-col-body">${svg||'<div class="no-data">Keine Daten</div>'}<div class="td-rows">${rows}</div></div></div>`;
         }).join('')}</div>
       </div>
@@ -11376,11 +11412,16 @@ function renderFahrtDashboard(entry) {
     const ti = getTideAroundTime(loc, refMs);
     if (!ti) return `<div class="fd-tide-card"><div class="fd-tide-header"><span class="fd-tide-name">${stationLabel[loc]}</span></div><div class="fd-tide-none">Keine DB-Daten</div></div>`;
     const svgCurve = makeTideCurveSVG(tideDbs[loc], refMs);
-    const fmtEvtLine = e => e ? `${e.type} · ${fmtTideTime(e.dt, refMs)} · ${fmtWs(e.ws)}` : '—';
+    const fmtEvtLine = (e, loc) => {
+      if (!e) return '—';
+      const baseText = `${e.type} · ${fmtTideTime(e.dt, refMs)} · ${fmtWs(e.ws)}`;
+      const dev = wsDeviation(e.ws, e.type, loc);
+      return dev ? `${baseText} <span style="margin-left:4px">${dev}</span>` : baseText;
+    };
     return `<div class="fd-tide-card">
       <div class="fd-tide-header"><span class="fd-tide-name">${stationLabel[loc]}</span>${tideBadge(ti.status)}</div>
-      <div class="fd-tide-row"><span class="fd-tide-lbl">Vorheriges</span><span class="fd-tide-val">${fmtEvtLine(ti.before)}</span></div>
-      <div class="fd-tide-row"><span class="fd-tide-lbl">Nächstes</span><span class="fd-tide-val">${fmtEvtLine(ti.after)}</span></div>
+      <div class="fd-tide-row"><span class="fd-tide-lbl">Vorheriges</span><span class="fd-tide-val">${fmtEvtLine(ti.before, loc)}</span></div>
+      <div class="fd-tide-row"><span class="fd-tide-lbl">Nächstes</span><span class="fd-tide-val">${fmtEvtLine(ti.after, loc)}</span></div>
       ${svgCurve}
     </div>`;
   }).join('') : '';
