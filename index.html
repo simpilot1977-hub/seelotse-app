@@ -3660,6 +3660,56 @@ function importTideDb(stationKey, input) {
   reader.readAsText(file);
 }
 
+// ── BSH Gezeitendaten automatisch aus dem Internet laden ─────────────────────
+// BSH-Dateiformat: VB2#…#…#H/N#…#DD. MM.YYYY#HH:MM# M.MM\n
+// Öffentlich zugänglich unter bsh.de; CORS-Proxy nötig für Direktabruf
+const BSH_STATION_URLS = {
+  Cuxhaven:    year => `https://www.bsh.de/DE/THEMEN/Wasserstand_Gezeiten/Vorhersagen/Tabellen/DE__CUX__P${year}.txt`,
+  Brunsbuettel:year => `https://www.bsh.de/DE/THEMEN/Wasserstand_Gezeiten/Vorhersagen/Tabellen/DE__BRUN__P${year}.txt`,
+  Hamburg:     year => `https://www.bsh.de/DE/THEMEN/Wasserstand_Gezeiten/Vorhersagen/Tabellen/DE__HAM__P${year}.txt`,
+};
+const BSH_PROXY = 'https://corsproxy.io/?url=';
+
+async function fetchBSHTideOnline(stationKey) {
+  const label = stationKey === 'Brunsbuettel' ? 'Brunsbüttel' : stationKey;
+  const btnId  = `bsh-online-btn-${stationKey}`;
+  const statId = `bsh-online-stat-${stationKey}`;
+  const btn  = document.getElementById(btnId);
+  const stat = document.getElementById(statId);
+  if (btn)  btn.disabled = true;
+  if (stat) stat.innerHTML = `<span style="color:var(--text-muted)">⟳ Verbinde mit BSH…</span>`;
+
+  const year = new Date().getFullYear();
+  // Versuche aktuelles Jahr, bei Fehlschlag nächstes Jahr
+  for (const y of [year, year + 1]) {
+    const urlFn = BSH_STATION_URLS[stationKey];
+    if (!urlFn) { if (stat) stat.innerHTML = `<span style="color:var(--danger)">Unbekannte Station.</span>`; if (btn) btn.disabled = false; return; }
+    const bshUrl  = urlFn(y);
+    const proxyUrl = BSH_PROXY + encodeURIComponent(bshUrl);
+    try {
+      if (stat) stat.innerHTML = `<span style="color:var(--text-muted)">⟳ Lade ${y}…</span>`;
+      const resp = await fetch(proxyUrl);
+      if (!resp.ok) continue;
+      const text = await resp.text();
+      const entries = parseBSHTideFile(text);
+      if (entries.length === 0) continue;
+      tideDbs[stationKey] = entries;
+      saveTideDbs();
+      showToast(`✓ ${entries.length} BSH-Gezeiten für ${label} (${y}) geladen.`, 'success');
+      if (stat) stat.innerHTML = `<span style="color:#16a34a;font-weight:600">✓ ${entries.length} Einträge für ${y} geladen</span>`;
+      if (btn)  btn.disabled = false;
+      if (_karteOverlays?.tide) _karteLoadTides();
+      if (_karteOverlays?.stroem) _karteLoadStroem();
+      renderImportExport();
+      return;
+    } catch(err) { /* nächstes Jahr versuchen */ }
+  }
+  // Fehlschlag
+  const directUrl = BSH_STATION_URLS[stationKey]?.(year) || '';
+  if (stat) stat.innerHTML = `<span style="color:var(--danger)">Abruf fehlgeschlagen. <a href="${directUrl}" target="_blank" style="color:var(--blue)">Manuell herunterladen</a> und "Datei laden" nutzen.</span>`;
+  if (btn)  btn.disabled = false;
+}
+
 function clearTideDb(stationKey) {
   tideDbs[stationKey] = [];
   saveTideDbs();
@@ -5420,6 +5470,77 @@ let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge:
 let _aisCustomKm        = null;
 let _aisCollapsed       = { in: false, out: false };
 
+// ── AIS Schiffssuche & Alarm ──────────────────────────────────────────────────
+let _aisWatchList   = new Set(); // überwachte Schiffsnamen (lowercase)
+let _aisWatchFound  = new Set(); // MMSIs für die bereits alarmiert wurde
+let _aisSearch      = '';        // aktueller Suchbegriff
+const _AIS_WATCH_KEY = 'ais_watch_v1';
+
+function _aisLoadWatch() {
+  try { const r = localStorage.getItem(_AIS_WATCH_KEY); if (r) _aisWatchList = new Set(JSON.parse(r)); } catch {}
+}
+function _aisSaveWatch() {
+  try { localStorage.setItem(_AIS_WATCH_KEY, JSON.stringify([..._aisWatchList])); } catch {}
+}
+function aisWatchToggle(name) {
+  const key = name.trim().toLowerCase();
+  if (_aisWatchList.has(key)) _aisWatchList.delete(key);
+  else { _aisWatchList.add(key); _aisWatchFound.delete([..._aisShips.values()].find(s=>s.name?.toLowerCase()===key)?.mmsi); }
+  _aisSaveWatch(); _aisRenderTable();
+}
+function aisWatchClear() {
+  _aisWatchList.clear(); _aisWatchFound.clear(); _aisSaveWatch(); _aisRenderTable();
+}
+function _aisWatchAlert(s) {
+  showToast(`🔔 ${s.name} im Sichtbereich!`, 'success');
+  try {
+    if (typeof Notification !== 'undefined') {
+      if (Notification.permission === 'granted') {
+        new Notification('🔔 Seelotse · Schiff gesichtet', {
+          body: `${s.name}  ·  ${s.length > 0 ? s.length+'m  ·  ' : ''}SOG: ${s.sog.toFixed(1)} kn`,
+          icon: './icon-192.png', tag: 'ais-watch-' + s.mmsi
+        });
+      } else if (Notification.permission === 'default') {
+        Notification.requestPermission().then(p => {
+          if (p === 'granted') new Notification('🔔 Seelotse · Schiff gesichtet', {
+            body: `${s.name}  ·  SOG: ${s.sog.toFixed(1)} kn`, icon: './icon-192.png', tag: 'ais-watch-' + s.mmsi
+          });
+        });
+      }
+    }
+  } catch {}
+}
+function aisSetSearch(val) { _aisSearch = val.trim(); _aisRenderTable(); }
+function _aisShowWatchPanel() {
+  const p = document.getElementById('ais-watch-panel');
+  if (p) { p.style.display = p.style.display === 'none' ? 'block' : 'none'; _aisRenderWatchList(); }
+}
+function _aisWatchAddFromInput() {
+  const inp = document.getElementById('ais-watch-input');
+  const name = inp?.value?.trim();
+  if (!name) return;
+  _aisWatchList.add(name.toLowerCase());
+  _aisSaveWatch();
+  if (inp) inp.value = '';
+  _aisRenderWatchList();
+  _aisRenderTable();
+}
+function _aisRenderWatchList() {
+  const el = document.getElementById('ais-watch-list-render');
+  if (!el) return;
+  if (_aisWatchList.size === 0) { el.innerHTML = '<div style="font-size:11px;color:var(--text-muted);font-style:italic">Keine Schiffe überwacht</div>'; return; }
+  el.innerHTML = [..._aisWatchList].map(name => {
+    const found = [..._aisShips.values()].find(s => s.name?.toLowerCase() === name);
+    const badge = found
+      ? `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#dcfce7;color:#15803d;margin-left:6px;font-weight:700">● Gesichtet</span>`
+      : `<span style="font-size:9px;padding:1px 5px;border-radius:10px;background:#f1f5f9;color:#94a3b8;margin-left:6px">Nicht gesichtet</span>`;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:12px;font-weight:600">${name.toUpperCase()}${badge}</span>
+      <button onclick="aisWatchToggle('${name.replace(/'/g, "\\'")}')" style="font-size:10px;color:var(--danger);border:none;background:transparent;cursor:pointer;padding:2px 6px">✕</button>
+    </div>`;
+  }).join('');
+}
+
 // ── WebSocket ─────────────────────────────────────────────────────
 // aisstream.io blockiert direkte Browser-Verbindungen (CORS).
 // Lösung: Cloudflare Worker als Proxy — deployed auf seelotse.workers.dev
@@ -5566,6 +5687,11 @@ function _aisMsgIn(msg) {
     // Zonen-Klassifizierung wird beim Rendern gesetzt (abhängig von fahrwasserNm-Einstellung)
   }
   _aisShips.set(mmsi, s);
+  // Watch-Alarm: Schiff erstmalig gesichtet?
+  if (s.name && _aisWatchList.has(s.name.trim().toLowerCase()) && !_aisWatchFound.has(mmsi)) {
+    _aisWatchFound.add(mmsi);
+    _aisWatchAlert(s);
+  }
   // Quick-render nur solange noch kein erster Ladevorgang abgeschlossen — danach nur 30s-Timer
   if (!_aisInitialLoaded && !_aisRenderPending) {
     _aisRenderPending = true;
@@ -5729,9 +5855,11 @@ function _aisRenderTable() {
   const ships   = [..._aisShips.values()].filter(s => s.lat !== null && s.lon !== null);
   // Erst als geladen markieren wenn echte Positionsdaten vorhanden
   if (ships.length > 0) _aisInitialLoaded = true;
-  const inRaw   = ships.filter(s => s.dir === 'in');
-  const outRaw  = ships.filter(s => s.dir === 'out');
-  const ancList = _aisFilter.hideAnc ? [] : applyFilter(ships.filter(s => s.dir === 'stationary'));
+  // Suchfilter anwenden (falls gesetzt)
+  const searchFilter = s => !_aisSearch || (s.name || '').toLowerCase().includes(_aisSearch.toLowerCase()) || String(s.mmsi).includes(_aisSearch);
+  const inRaw   = ships.filter(s => s.dir === 'in').filter(searchFilter);
+  const outRaw  = ships.filter(s => s.dir === 'out').filter(searchFilter);
+  const ancList = _aisFilter.hideAnc ? [] : applyFilter(ships.filter(s => s.dir === 'stationary').filter(searchFilter));
 
   // Sortierung einkommend
   let inList = applyFilter(inRaw);
@@ -5808,11 +5936,17 @@ function _aisRenderTable() {
     const tonneBadge = (() => {
       const t = _nearestTonne(s.trackNm, s.dir);
       if (t) return `<br><span style="font-size:10px;font-weight:700;color:${t.css}">${t.label}</span>`;
-      // Fallback: Stromkilometer wenn keine Tonne zuordenbar
       return '';
     })();
-    return `<tr>
-      <td><div class="ais-ship-name">${dot}${tE} ${s.name || s.mmsi}</div><div>${dest}<span class="ais-type-badge">${tL}</span> ${zoneBadge}</div></td>
+    // Watch-Button und Suchmarkierung
+    const nameKey = (s.name || '').toLowerCase();
+    const isWatched = _aisWatchList.has(nameKey);
+    const isMatch   = _aisSearch && nameKey.includes(_aisSearch.toLowerCase());
+    const watchBtn  = s.name ? `<button onclick="aisWatchToggle('${(s.name||'').replace(/'/g,"\\'")}')" title="${isWatched?'Aus Beobachtung entfernen':'Schiff beobachten'}"
+      style="font-size:11px;border:none;background:transparent;cursor:pointer;padding:1px 3px;opacity:${isWatched?1:0.35}">${isWatched?'🔔':'🔕'}</button>` : '';
+    const rowStyle  = isMatch ? 'background:rgba(251,191,36,0.15);' : (isWatched ? 'background:rgba(59,130,246,0.07);' : '');
+    return `<tr style="${rowStyle}">
+      <td><div class="ais-ship-name">${dot}${tE} ${s.name || s.mmsi}${watchBtn}</div><div>${dest}<span class="ais-type-badge">${tL}</span> ${zoneBadge}</div></td>
       <td style="font-size:11px;white-space:nowrap">${len}<br><span style="color:var(--text-muted)">${drg}</span></td>
       <td class="ais-pos">${posLabel(s.trackNm)}${tonneBadge}</td>
       <td class="ais-sog">${sog}</td>
@@ -5910,9 +6044,11 @@ function _aisRenderTable() {
     </div>
     <button onclick="_aisResetAllFilters()" style="margin-left:auto;font-size:10px;padding:2px 10px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted);font-family:inherit">↺ Alle Filter zurücksetzen</button>
   </div>`;
+  const searchInfo = _aisSearch ? `<span style="color:#f59e0b;font-weight:700">🔍 "${_aisSearch}" · ${inList.length + outList.length + ancList.length} Treffer</span>` : `<span style="color:#94a3b8">Gesamt: ${ships.length} · ${inList.length + outList.length + ancList.length} angezeigt</span>`;
+  const watchInfo  = _aisWatchList.size > 0 ? `<span style="color:#3b82f6;margin-left:8px">🔔 ${_aisWatchList.size} beobachtet</span>` : '';
   html += `<div class="ais-legend">
     <span>● &lt;3 min</span><span style="color:#f59e0b">● 5–15 min</span><span style="color:#ef4444">● &gt;15 min</span><span>✓ passiert</span><span style="color:#dc2626">rot = &lt;3 sm</span>
-    <span style="margin-left:auto;color:#94a3b8">Gesamt: ${ships.length} · ${inList.length + outList.length + ancList.length} angezeigt</span>
+    <span style="margin-left:auto">${searchInfo}${watchInfo}</span>
   </div>`;
 
   // ── Einkommend ──
@@ -5997,6 +6133,7 @@ function _aisRenderTable() {
 
   container.innerHTML = html;
   _aisUpdateBadge();
+  _aisRenderWatchList(); // Watchlist-Panel synchron halten
 }
 
 // ── Seitennavigation ──────────────────────────────────────────────
@@ -6004,23 +6141,45 @@ function goVerkehr() {
   aisDisconnect();
   _aisShips.clear();
   _aisInitialLoaded = false;
+  _aisSearch = '';
+  _aisWatchFound.clear(); // neue Sitzung → Alarme zurücksetzen
   // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
   _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
   _aisLoadFilters();
+  _aisLoadWatch();
   currentView = 'verkehr';
   setNavActive('nav-verkehr');
   document.getElementById('new-btn').style.display = 'none';
   document.getElementById('app-main').innerHTML = `
     <div style="max-width:960px;margin:0 auto">
       <div class="fd-card">
-        <div class="fd-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="fd-card-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
           <span>⚓ Schiffsverkehr Elbe</span>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:6px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-sm);padding:3px 8px">
+              <span style="font-size:12px">🔍</span>
+              <input id="ais-search-input" type="text" placeholder="Schiffsname suchen…" value=""
+                oninput="aisSetSearch(this.value)"
+                style="border:none;background:transparent;font-size:12px;font-family:inherit;outline:none;width:160px;color:var(--text)">
+            </div>
+            <button id="ais-watch-btn" onclick="_aisShowWatchPanel()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted)">🔔 Beobachten</button>
             <span id="ais-status-badge" class="ais-conn-status ais-conn-connecting">⟳ Verbinden…</span>
             <button onclick="aisConnect()" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--text-muted)">↻ Neu verbinden</button>
           </div>
+        </div>
+        <div id="ais-watch-panel" style="display:none;background:var(--bg);border:1.5px solid #f59e0b;border-radius:var(--r-md);padding:10px 14px;margin-bottom:8px">
+          <div style="font-size:12px;font-weight:700;color:var(--warn);margin-bottom:6px">🔔 Schiffsalarm — Beobachtungsliste</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Wenn ein Schiff dieser Liste im AIS-Stream auftaucht, erscheint ein Alarm (Toast + Benachrichtigung).</div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input id="ais-watch-input" type="text" placeholder="Schiffsname eingeben …"
+              style="flex:1;padding:6px 10px;font-size:12px;border:1.5px solid var(--border);border-radius:var(--r-sm);font-family:inherit;background:var(--surface)"
+              onkeydown="if(event.key==='Enter')_aisWatchAddFromInput()">
+            <button onclick="_aisWatchAddFromInput()" style="padding:6px 14px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);font-size:12px;cursor:pointer;font-weight:600">+ Hinzufügen</button>
+          </div>
+          <div id="ais-watch-list-render"></div>
+          ${_aisWatchList.size > 0 ? `<button onclick="aisWatchClear()" style="margin-top:6px;font-size:11px;color:var(--danger);border:1px solid var(--danger);border-radius:var(--r-sm);background:transparent;padding:2px 10px;cursor:pointer">✕ Alle löschen</button>` : ''}
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">
           AIS Live-Daten · Elbe-Racon → Cuxhaven → Brunsbüttel → Hamburg · ETA basiert auf aktueller SOG
@@ -6030,6 +6189,7 @@ function goVerkehr() {
         </div>
       </div>
     </div>`;
+  _aisRenderWatchList();
   aisConnect();  // zeigt Setup-Guide wenn kein Proxy konfiguriert
   _aisRenderTimer = setInterval(_aisRenderTable, 30000);
 }
@@ -6335,6 +6495,13 @@ function goKarte() {
         <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
           <input type="checkbox" id="karte-toggle-gps" onchange="karteToggleOverlay('gps',this.checked)"> <span style="color:#0ea5e9;font-weight:600">📍 Meine Position</span>
         </label>
+        <div style="border-top:1px solid #e2e8f0;margin-top:10px;padding-top:8px">
+          <button onclick="kartePreloadTiles()" id="karte-offline-btn"
+            style="width:100%;padding:5px 8px;font-size:11px;border:1px solid var(--border,#c8d6e2);border-radius:6px;background:var(--bg,#fff);cursor:pointer;color:#1b3d5f;font-weight:600;text-align:left;display:flex;align-items:center;gap:6px">
+            🔌 <span>Karte offline laden</span>
+          </button>
+          <div id="karte-offline-status" style="font-size:10px;color:#637485;margin-top:4px;line-height:1.5"></div>
+        </div>
         <div id="karte-gps-panel" style="display:none;padding-left:20px;margin-top:4px">
           <div style="font-size:11px;color:#637485;margin-bottom:3px">Vektor-Zeitraum:</div>
           <select id="karte-gps-vector-time" onchange="karteGpsVectorChange(this.value)" style="width:100%;font-size:11px;border:1px solid #c8d6e2;border-radius:4px;padding:3px 4px;margin-bottom:5px;background:#fff">
@@ -7423,6 +7590,79 @@ function _karteStopGps() {
 function karteGpsVectorChange(val) {
   _karteGpsVectorMin = Number(val);
   _karteUpdateGpsMarker();
+}
+
+// ── Offline-Karte: Tiles vorausladen ─────────────────────────────────────────
+async function kartePreloadTiles() {
+  const btn    = document.getElementById('karte-offline-btn');
+  const status = document.getElementById('karte-offline-status');
+  if (!status) return;
+
+  // Elbe-Bereich: Cuxhaven → Hamburg + Puffer
+  const bbox = { lonMin: 7.7, lonMax: 10.3, latMin: 53.25, latMax: 54.40 };
+  const zooms = [7, 8, 9, 10, 11];
+
+  function lonToTile(lon, z) { return Math.floor((lon + 180) / 360 * (1 << z)); }
+  function latToTile(lat, z) {
+    const r = Math.PI / 180;
+    return Math.floor((1 - Math.log(Math.tan(lat * r) + 1 / Math.cos(lat * r)) / Math.PI) / 2 * (1 << z));
+  }
+
+  // Tile-URLs aus demotiles Style ermitteln
+  let tileBase = 'https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf';
+  try {
+    const style = _karteMap?.getStyle?.();
+    if (style?.sources) {
+      for (const src of Object.values(style.sources)) {
+        if (src.tiles?.[0]?.includes('demotiles')) { tileBase = src.tiles[0]; break; }
+        if (src.url?.includes('demotiles')) { tileBase = src.url.replace('json', '{z}/{x}/{y}.pbf'); break; }
+      }
+    }
+  } catch {}
+
+  // Alle Tile-URLs berechnen
+  const urls = [];
+  for (const z of zooms) {
+    const x0 = lonToTile(bbox.lonMin, z), x1 = lonToTile(bbox.lonMax, z);
+    const y0 = latToTile(bbox.latMax, z), y1 = latToTile(bbox.latMin, z); // lat invertiert
+    for (let x = x0; x <= x1; x++)
+      for (let y = y0; y <= y1; y++)
+        urls.push(tileBase.replace('{z}', z).replace('{x}', x).replace('{y}', y));
+  }
+
+  const total = urls.length;
+  if (btn) btn.disabled = true;
+  status.textContent = `Lade ${total} Kacheln …`;
+
+  // Style.json + Glyphen cachen
+  const extras = ['https://demotiles.maplibre.org/style.json'];
+  const allUrls = [...extras, ...urls];
+
+  let done = 0, failed = 0;
+  // Aktuellen Cache-Namen dynamisch ermitteln (folgt SW-Versionsbump)
+  const cacheKeys = await caches.keys();
+  const cacheName = cacheKeys.find(k => k.startsWith('seelotse-')) || 'seelotse-v109';
+  const cache = await caches.open(cacheName);
+
+  const BATCH = 12;
+  for (let i = 0; i < allUrls.length; i += BATCH) {
+    const batch = allUrls.slice(i, i + BATCH);
+    await Promise.allSettled(batch.map(async url => {
+      try {
+        const cached = await cache.match(url);
+        if (!cached) {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.ok) await cache.put(url, res);
+        }
+        done++;
+      } catch { failed++; done++; }
+    }));
+    status.textContent = `${done} / ${total} Kacheln (${Math.round(done/total*100)} %) …`;
+  }
+
+  if (btn) btn.disabled = false;
+  const now = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  status.innerHTML = `✓ ${done - failed} Kacheln gecacht <span style="color:#94a3b8">(${failed > 0 ? failed + ' Fehler · ' : ''}${now} Uhr)</span><br>Zoom 7–11 · Elbe-Bereich offline verfügbar`;
 }
 
 // ── Seezeichen-Filter ──────────────────────────────────────────────
@@ -11465,7 +11705,7 @@ function renderImportExport() {
     </div>
     <div class="ie-header" style="margin-top:28px">
       <h2 style="font-size:17px">Gezeiten-Datenbank</h2>
-      <p>BSH-Vorausberechnungen (DE__xxxP20xx) für Cuxhaven, Brunsbüttel und Hamburg laden. Die Daten werden dauerhaft gespeichert und ermöglichen die automatische Befüllung der Gezeitenfelder im EPP-Blatt.</p>
+      <p>BSH-Vorausberechnungen für Cuxhaven, Brunsbüttel und Hamburg. <strong>Online laden</strong> bezieht die Daten automatisch von bsh.de. Als Fallback können Dateien (VB2-Format, DE__xxx__Pyyyy.txt) manuell importiert werden.</p>
     </div>
     <div class="tide-db-list">
       ${['Cuxhaven','Brunsbuettel','Hamburg'].map(loc => {
@@ -11485,11 +11725,18 @@ function renderImportExport() {
         return `<div class="tide-db-card">
           <div class="tide-db-name">${label}</div>
           <div class="tide-db-count">${metaHtml}</div>
-          <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0">
-            Datei laden …
-            <input type="file" style="display:none" accept=".txt,.dat,*" onchange="importTideDb('${loc}',this)">
-          </label>
-          ${cnt > 0 ? `<button class="btn-warn-sm" onclick="clearTideDb('${loc}')">Löschen</button>` : ''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+            <button id="bsh-online-btn-${loc}" onclick="fetchBSHTideOnline('${loc}')"
+              style="padding:4px 10px;font-size:11px;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;font-weight:600;white-space:nowrap">
+              🌐 Online laden
+            </button>
+            <label class="btn btn-secondary btn-sm" style="cursor:pointer;margin:0">
+              Datei laden …
+              <input type="file" style="display:none" accept=".txt,.dat,*" onchange="importTideDb('${loc}',this)">
+            </label>
+            ${cnt > 0 ? `<button class="btn-warn-sm" onclick="clearTideDb('${loc}')">Löschen</button>` : ''}
+          </div>
+          <div id="bsh-online-stat-${loc}" style="font-size:11px;margin-top:4px"></div>
         </div>`;
       }).join('')}
     </div>`;
