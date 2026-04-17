@@ -9590,6 +9590,127 @@ function _saveVhCache() {
   try { localStorage.setItem(VH_CACHE_KEY, JSON.stringify(_vhCache)); } catch(e) {}
 }
 
+// ── Wetterradar (Rainviewer) ──────────────────────────────────────────────────
+async function _initRadarMap() {
+  if (_radarMap) { _loadRadarFrames(); return; }
+  const container = document.getElementById('radar-map-container');
+  if (!container) return;
+  _radarMap = new maplibregl.Map({
+    container,
+    style: {
+      version: 8,
+      sources: { osm: { type:'raster', tiles:['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize:256, attribution:'© OpenStreetMap contributors' } },
+      layers:  [{ id:'osm-layer', type:'raster', source:'osm', paint:{'raster-opacity':1} }],
+    },
+    center: [9.5, 53.5],
+    zoom: 4.2,
+    attributionControl: false,
+  });
+  new maplibregl.AttributionControl({ compact:true });
+  _radarMap.on('load', () => _loadRadarFrames());
+}
+
+async function _loadRadarFrames(force = false) {
+  const el = document.getElementById('radar-time-label');
+  const now = Date.now();
+  if (!force && _radarApiCache && (now - _radarApiCache.ts) < 10 * 60 * 1000) {
+    _applyRadarData(_radarApiCache.data); return;
+  }
+  if (el) el.textContent = '⏳ Laden…';
+  try {
+    const data = await fetch('https://api.rainviewer.com/public/weather-maps.json').then(r => r.json());
+    _radarApiCache = { ts: Date.now(), data };
+    _applyRadarData(data);
+  } catch(e) { if (el) el.textContent = 'Fehler – bitte neu laden'; }
+}
+
+function _applyRadarData(data) {
+  if (!_radarMap) return;
+  _radarHost = data.host || 'https://tilecache.rainviewer.com';
+
+  // Alte Layer/Sources entfernen
+  for (let i = 0; i < _radarFrameCount + 2; i++) {
+    const id = `rf-${i}`;
+    if (_radarMap.getLayer(id)) _radarMap.removeLayer(id);
+    if (_radarMap.getSource(id)) _radarMap.removeSource(id);
+  }
+
+  if (_radarMode === 'radar') {
+    const past    = (data.radar?.past    || []).slice(-12).map(f=>({...f,type:'past'}));
+    const nowcast = (data.radar?.nowcast || []).slice(0, 3).map(f=>({...f,type:'nowcast'}));
+    _radarFrames = [...past, ...nowcast];
+  } else {
+    _radarFrames = (data.satellite?.infrared || []).slice(-12).map(f=>({...f,type:'infrared'}));
+  }
+  _radarFrameCount = _radarFrames.length;
+
+  if (!_radarFrames.length) { const el=document.getElementById('radar-time-label'); if(el) el.textContent='Keine Daten'; return; }
+
+  // Alle Frames als Raster-Layer hinzufügen (initial opacity 0)
+  const color = _radarMode === 'satellite' ? 0 : 3; // 3 = Blue-Purple colorscheme
+  _radarFrames.forEach((f, i) => {
+    const id  = `rf-${i}`;
+    const url = `${_radarHost}${f.path}/256/{z}/{x}/{y}/${color}/1_1.png`;
+    _radarMap.addSource(id, { type:'raster', tiles:[url], tileSize:256 });
+    _radarMap.addLayer({ id, type:'raster', source:id, paint:{'raster-opacity':0, 'raster-opacity-transition':{duration:200, delay:0}} });
+  });
+
+  // Neuesten Frame einblenden und Slider updaten
+  const slider = document.getElementById('radar-slider');
+  if (slider) { slider.max = _radarFrames.length - 1; slider.value = _radarFrames.length - 1; }
+  _radarSetFrame(_radarFrames.length - 1);
+}
+
+function _radarSetFrame(idx) {
+  if (!_radarMap || !_radarFrames.length) return;
+  // Vorherigen Frame ausblenden
+  const prevId = `rf-${_radarFrameIdx}`;
+  if (_radarMap.getLayer(prevId)) _radarMap.setPaintProperty(prevId, 'raster-opacity', 0);
+  _radarFrameIdx = Math.max(0, Math.min(idx, _radarFrames.length - 1));
+  const id = `rf-${_radarFrameIdx}`;
+  if (_radarMap.getLayer(id)) _radarMap.setPaintProperty(id, 'raster-opacity', 0.85);
+  // Label aktualisieren
+  const frame = _radarFrames[_radarFrameIdx];
+  const d = new Date(frame.time * 1000);
+  const typeTag = frame.type === 'nowcast' ? ' · Nowcast ▸' : frame.type === 'infrared' ? ' · Infrarot' : '';
+  const el = document.getElementById('radar-time-label');
+  if (el) el.textContent = d.toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'}) + ' Uhr' + typeTag;
+  const slider = document.getElementById('radar-slider');
+  if (slider) slider.value = _radarFrameIdx;
+}
+
+function radarSetFrame(val) { _radarSetFrame(parseInt(val)); }
+
+function radarTogglePlay() {
+  const btn = document.getElementById('radar-play-btn');
+  if (_radarPlayTimer) {
+    clearInterval(_radarPlayTimer); _radarPlayTimer = null;
+    if (btn) btn.textContent = '▶';
+  } else {
+    if (btn) btn.textContent = '⏸';
+    _radarPlayTimer = setInterval(() => {
+      const next = (_radarFrameIdx + 1) % _radarFrames.length;
+      _radarSetFrame(next);
+    }, 500);
+  }
+}
+
+function radarSetMode(mode) {
+  if (_radarMode === mode) return;
+  if (_radarPlayTimer) { clearInterval(_radarPlayTimer); _radarPlayTimer = null; const b=document.getElementById('radar-play-btn'); if(b) b.textContent='▶'; }
+  _radarMode = mode;
+  ['radar','satellite'].forEach(m => {
+    const b = document.getElementById(`radar-mode-${m}`);
+    if (!b) return;
+    const on = m === mode;
+    b.style.background   = on ? 'var(--blue)' : 'var(--bg)';
+    b.style.color        = on ? '#fff'         : 'var(--text-muted)';
+    b.style.borderColor  = on ? 'var(--blue)'  : 'var(--border)';
+  });
+  if (_radarApiCache) _applyRadarData(_radarApiCache.data);
+  else _loadRadarFrames();
+}
+
 // ── Windfeld-Karte (Wetter-Seite) ────────────────────────────────────────────
 const WF_BOUNDS   = { minLat:53.2, maxLat:55.6, minLon:6.8, maxLon:11.0 };
 const WF_LATS     = [53.5, 54.0, 54.5, 55.0, 55.5];
@@ -9614,6 +9735,16 @@ let _wfCustom      = null;  // {lat,lon} from map click
 let _wfMarkerEl    = null;
 let _wfCustomOpts  = { precip: false, temp: false }; // Einblend-Optionen für Custom-Panel
 let _wfCustomCache = null; // { results, lat, lon } für Neu-Rendern ohne Refetch
+
+// ── Wetterradar (Rainviewer) ──────────────────────────────────────────────────
+let _radarMap       = null;
+let _radarFrames    = [];       // [{time, path, type}]
+let _radarFrameIdx  = 0;
+let _radarPlayTimer = null;
+let _radarMode      = 'radar';  // 'radar' | 'satellite'
+let _radarHost      = 'https://tilecache.rainviewer.com';
+let _radarApiCache  = null;     // { ts, data }
+let _radarFrameCount = 0;       // wie viele Frames aktuell in der Map geladen sind
 let _wfColorMode   = false; // Farbflächen-Overlay
 let _wfColorCanvas = null;
 let _wfColorCtx    = null;
@@ -10346,6 +10477,27 @@ function renderWetterPage() {
         </div>
         <div id="wf-custom-panel" style="display:none;margin-top:12px;border-top:1px solid var(--border);padding-top:12px"></div>
       </div>
+      <!-- Wetterradar -->
+      <div class="fd-card" style="margin-top:16px;padding:16px 18px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="fd-card-title" style="margin-bottom:2px">🌧️ Wetterradar</div>
+            <div style="font-size:10px;color:var(--text-muted)">Rainviewer · Radar &amp; Satellitenbild · letzte 2 h + Nowcast 30 min</div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+            <button id="radar-mode-radar"     onclick="radarSetMode('radar')"     style="padding:3px 10px;font-size:11px;border:1.5px solid var(--blue);border-radius:var(--r-sm);background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;font-weight:600">📡 Radar</button>
+            <button id="radar-mode-satellite" onclick="radarSetMode('satellite')" style="padding:3px 10px;font-size:11px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">🛰️ Satellit</button>
+            <button onclick="_loadRadarFrames(true)" style="padding:3px 10px;font-size:11px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text-muted);cursor:pointer;font-family:inherit">↻ Aktualisieren</button>
+          </div>
+        </div>
+        <div style="position:relative;border-radius:8px;overflow:hidden;height:380px" id="radar-map-container"></div>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+          <button id="radar-play-btn" onclick="radarTogglePlay()" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--blue);background:var(--blue);color:#fff;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;flex-shrink:0">▶</button>
+          <input type="range" id="radar-slider" min="0" max="14" value="14" oninput="radarSetFrame(this.value)" style="flex:1;min-width:120px;accent-color:var(--blue)">
+          <span id="radar-time-label" style="font-size:11px;color:var(--text-muted);white-space:nowrap;min-width:200px">–</span>
+        </div>
+        <div style="font-size:9px;color:var(--text-muted);margin-top:6px">Daten: Rainviewer.com · 10-Minuten-Intervall · ▸ = Nowcast-Prognose</div>
+      </div>
     </div>
     <!-- Vorhersage-Modal -->
     <div id="vh-modal" onclick="if(event.target===this)closeVorhersage()" style="position:fixed;inset:0;z-index:9999;background:rgba(10,20,40,.85);display:none;align-items:flex-start;justify-content:center;padding:24px;box-sizing:border-box;overflow-y:auto">
@@ -10375,7 +10527,8 @@ function renderWetterPage() {
     fetchWindData();           // lädt Wind + ruft renderAstroDashboard() → fetchBarPegelData() + fetchBarVisData()
     fetchPressureHistory(_pressureHours); // lädt Verlaufskurven
     _populatePegelFreeSelect(); // Pegelstationsliste laden (gecacht nach erstem Aufruf)
-  }, 0);
+    _initRadarMap();            // Wetterradar initialisieren / Frames nachladen
+  }, 100);
   // Windfeld immer frisch laden wenn Seite geöffnet wird (AGE_LIMIT gilt nur für schnelles Re-Enter)
   // Wird in _initWetterWindMap() getriggert, sobald die Map bereit ist (force=false nutzt Cache falls < 1h alt)
 }
