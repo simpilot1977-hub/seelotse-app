@@ -10939,7 +10939,12 @@ function renderList() {
       const einsatzRes = getEinsatzdauer(f, fahrten);
       const pairInfo   = pairMap[f.id];
       const isLinkedAusgehend = !einsatzRes && pairInfo && f.ausgehend;
-      const palette    = pairInfo ? PAIR_PALETTES[pairInfo.idx % PAIR_PALETTES.length] : null;
+      // Einzeleinsatz: vollständige Dauer in einem einzigen Eintrag, kein Paar → violett
+      const isSoloEinsatz = !!(einsatzRes && !einsatzRes.cross && !pairInfo);
+      const SOLO_PALETTE  = { bg: '#f5f3ff', border: '#7c3aed' };
+      const palette = pairInfo ? PAIR_PALETTES[pairInfo.idx % PAIR_PALETTES.length]
+                    : isSoloEinsatz ? SOLO_PALETTE
+                    : null;
       const stripeBg   = _rowGroup[rowIdx] % 2 === 0 ? '#f4f7fb' : '#ffffff';
       const trStyle    = palette
         ? `style="background:${palette.bg};border-left:3px solid ${palette.border}"`
@@ -10982,7 +10987,11 @@ function renderList() {
         <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.abfahrt))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.ankunft))||'—'}</div></td>
         <td>${f.abgeschöpft ? '<span style="color:#1a7340;font-weight:700">✓</span>' : '<span style="opacity:.4">—</span>'}</td>
         <td>${einsatzRes
-          ? `<span class="dur-badge ${einsatzRes.cross?'dur-cross':'dur-einsatz'}" title="${einsatzRes.cross?'Eintragsübergreifend (Ausgehend → Einkommend)':''}">${esc(einsatzRes.dur)}${einsatzRes.cross?' ↗':''}</span>`
+          ? einsatzRes.cross
+            ? `<span class="dur-badge dur-cross" title="Eintragsübergreifend (Ausgehend → Einkommend)">${esc(einsatzRes.dur)} ↗</span>`
+            : isSoloEinsatz
+              ? `<span class="dur-badge dur-einsatz" title="Gesamteinsatzdauer (Einzeleintrag)" style="color:#7c3aed;border-color:#c4b5fd">↑↓ ${esc(einsatzRes.dur)}</span>`
+              : `<span class="dur-badge dur-einsatz">${esc(einsatzRes.dur)}</span>`
           : isLinkedAusgehend
             ? `<span class="dur-badge dur-pending" title="Ausgehende Reise – Einsatzdauer auf der Einkommend-Zeile">⬇ Ausgehend</span>`
             : '<span style="opacity:.4">—</span>'
