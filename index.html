@@ -1589,6 +1589,8 @@ let _windLastFetch        = null; // Zeitstempel des letzten erfolgreichen Fetch
 const WIND_REFRESH_MS     = 15 * 60 * 1000; // 15 min = 4× pro Stunde
 const WIND_MAX_AGE_MS     = 60 * 60 * 1000; // 1 h = max Datenalter
 let _arMeteo = null; // Letzte Wetterdaten von Cuxhaven für das Umwelt-Dashboard
+let _arMeteoStation = 'cuxhaven'; // aktuell angezeigte Station in Card 4
+let _arMeteoAll = {};              // key → { temp, dewpoint, pressure, visibility, ts, label }
 
 function _msToKn(ms) { return ms * 1.94384; }
 
@@ -1706,7 +1708,8 @@ async function fetchWindData() {
       .then(d => {
         const w = d.weather;
         const stn = d.sources?.[0]?.station_name || 'DWD';
-        results.brb = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
+        results.brb = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type,
+          temp: w.temperature, dewpoint: w.dew_point, pressure: w.pressure_msl, visibility: w.visibility };
       }).catch(() => {}),
 
     // Hamburg – DWD SYNOP via Bright Sky Koordinaten Hamburg-Hafen
@@ -1715,7 +1718,8 @@ async function fetchWindData() {
       .then(d => {
         const w = d.weather;
         const stn = d.sources?.[0]?.station_name || 'Hamburg';
-        results.hh = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type };
+        results.hh = { ms: w.wind_speed_10 / 3.6, dir: w.wind_direction_10, gust: w.wind_gust_speed_10 / 3.6, ts: w.timestamp, src: stn, obsType: d.sources?.[0]?.observation_type,
+          temp: w.temperature, dewpoint: w.dew_point, pressure: w.pressure_msl, visibility: w.visibility };
       }).catch(() => {})
   ]);
 
@@ -1751,7 +1755,15 @@ async function fetchWindData() {
 
   // Wetterdaten für Umwelt-Dashboard speichern und Kacheln aktualisieren
   if (results.cux) {
-    _arMeteo = { temp: results.cux.temp, dewpoint: results.cux.dewpoint, pressure: results.cux.pressure, visibility: results.cux.visibility, ts: results.cux.ts };
+    const d = { temp: results.cux.temp, dewpoint: results.cux.dewpoint, pressure: results.cux.pressure, visibility: results.cux.visibility, ts: results.cux.ts, label: 'DWD · Cuxhaven' };
+    _arMeteoAll.cuxhaven = d;
+    _arMeteo = d;
+  }
+  if (results.brb && results.brb.temp != null) {
+    _arMeteoAll.brunsbuettel = { temp: results.brb.temp, dewpoint: results.brb.dewpoint, pressure: results.brb.pressure, visibility: results.brb.visibility, ts: results.brb.ts, label: 'DWD · ' + (results.brb.src || 'Freiburg/Elbe') };
+  }
+  if (results.hh && results.hh.temp != null) {
+    _arMeteoAll.hamburg = { temp: results.hh.temp, dewpoint: results.hh.dewpoint, pressure: results.hh.pressure, visibility: results.hh.visibility, ts: results.hh.ts, label: 'DWD · ' + (results.hh.src || 'Hamburg') };
   }
   renderAstroDashboard();
 
@@ -1775,6 +1787,32 @@ async function fetchWindData() {
   // Auto-refresh alle 15 Minuten (= 4× pro Stunde)
   if (_windRefreshTimer) clearTimeout(_windRefreshTimer);
   _windRefreshTimer = setTimeout(() => { if (document.getElementById('ar-wind-inner')) fetchWindData(); }, WIND_REFRESH_MS);
+}
+
+// ── Wetter-Station Card 4 ────────────────────────────────────────────────────
+async function fetchArMeteoStation(key) {
+  const station = WEATHER_STATIONS[key];
+  if (!station) return;
+  try {
+    const d = await fetch(`https://api.brightsky.dev/current_weather?${station.apiParam}`).then(r => r.json());
+    const w = d.weather;
+    const src = d.sources?.[0]?.station_name;
+    _arMeteoAll[key] = {
+      temp: w.temperature, dewpoint: w.dew_point, pressure: w.pressure_msl, visibility: w.visibility,
+      ts: w.timestamp, label: src ? `DWD · ${src}` : station.label,
+    };
+  } catch { _arMeteoAll[key] = null; }
+  renderAstroDashboard();
+}
+
+function selectArMeteoStation(key) {
+  _arMeteoStation = key;
+  if (key in _arMeteoAll) {
+    renderAstroDashboard(); // Daten vorhanden → sofort rendern
+  } else {
+    renderAstroDashboard(); // "Wird geladen…" zeigen
+    fetchArMeteoStation(key);
+  }
 }
 
 // ── Astronomie / Umwelt-Dashboard ────────────────────────────────────────────
@@ -1905,15 +1943,20 @@ function getTidalAge(moonAgeDays) {
 
 function getSunData() {
   if (typeof SunCalc === 'undefined') return null;
-  const now = new Date();
-  const times = SunCalc.getTimes(now, 53.9, 9.1); // Brunsbüttel
+  const now   = new Date();
+  const LAT   = 53.9, LON = 9.1; // Brunsbüttel
+  const times = SunCalc.getTimes(now, LAT, LON);
+  const moon  = SunCalc.getMoonTimes(now, LAT, LON);
   const fmt = t => {
     if (!t || isNaN(t.getTime())) return '–';
     return t.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'}) + ' Uhr';
   };
   const dayLen = (times.sunset - times.sunrise) / 60000;
   const h = Math.floor(dayLen / 60), m = Math.round(dayLen % 60);
-  return { sunrise: fmt(times.sunrise), sunset: fmt(times.sunset), dayLength: `${h}h ${m}m` };
+  return {
+    sunrise: fmt(times.sunrise), sunset: fmt(times.sunset), dayLength: `${h}h ${m}m`,
+    moonrise: fmt(moon.rise), moonset: fmt(moon.set),
+  };
 }
 
 function renderAstroDashboard() {
@@ -1956,32 +1999,129 @@ function renderAstroDashboard() {
       </div>
     </div>
     <div class="astro-card">
-      <div class="astro-card-title">☀️ Sonne · Brunsbüttel</div>
-      <div class="astro-sun-row">
-        <div class="astro-sun-item"><span>🌅</span><div><div>${sun.sunrise}</div><span class="lbl">Aufgang</span></div></div>
-        <div class="astro-sun-item"><span>🌇</span><div><div>${sun.sunset}</div><span class="lbl">Untergang</span></div></div>
-      </div>
-      <div class="astro-sub">Tageslänge: ${sun.dayLength}</div>
+      ${_renderWetterTideInner()}
     </div>
-    <div class="astro-card">
-      <div class="astro-card-title">🌡️ Wetter · Cuxhaven</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin-top:2px">
-        <div><div class="astro-sub">Temperatur</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtTemp(_arMeteo?.temp)}</div></div>
-        <div><div class="astro-sub">Taupunkt</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtTemp(_arMeteo?.dewpoint)}</div></div>
-        <div><div class="astro-sub">Luftdruck</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtHpa(_arMeteo?.pressure)}</div></div>
-        <div><div class="astro-sub">Sichtweite</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtVis(_arMeteo?.visibility)}</div></div>
+    <div class="astro-card" id="ar-meteo-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div class="astro-card-title" style="margin-bottom:0">🌡️ Wetter</div>
+        <select onchange="selectArMeteoStation(this.value)" style="font-size:10px;padding:2px 5px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;cursor:pointer">
+          ${Object.entries(WEATHER_STATIONS).map(([k,v]) => `<option value="${k}"${k===_arMeteoStation?' selected':''}>${v.label}</option>`).join('')}
+        </select>
       </div>
-      ${_arMeteo?.ts ? (() => {
-        const tsDate = new Date(_arMeteo.ts);
-        const ageMs = Date.now() - tsDate.getTime();
-        const ageH = ageMs / 3600000;
-        const tsStr = tsDate.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' Uhr';
-        const color = ageH > 3 ? 'var(--danger)' : 'var(--text-muted)';
-        return `<div class="astro-sub" style="margin-top:6px;color:${color}">Stand: ${tsStr}${ageH > 3 ? ' ⚠️' : ''}</div>`;
-      })() : (_arMeteo ? '' : '<div class="astro-sub" style="margin-top:6px">Wird geladen…</div>')}
+      ${(() => {
+        const m = _arMeteoAll[_arMeteoStation];
+        if (m === undefined) return '<div class="astro-sub">Wird geladen…</div>';
+        if (m === null)      return '<div class="astro-sub" style="color:var(--danger)">Fehler beim Laden</div>';
+        const tsHtml = m.ts ? (() => {
+          const tsDate = new Date(m.ts);
+          const ageH = (Date.now() - tsDate.getTime()) / 3600000;
+          const tsStr = tsDate.toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) + ' Uhr';
+          const color = ageH > 3 ? 'var(--danger)' : 'var(--text-muted)';
+          return `<div class="astro-sub" style="margin-top:6px;color:${color}">Stand: ${tsStr}${ageH > 3 ? ' ⚠️' : ''}</div>`;
+        })() : '';
+        return `
+          ${m.label ? `<div style="font-size:9px;color:var(--text-muted);margin-bottom:4px">${m.label}</div>` : ''}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 10px">
+            <div><div class="astro-sub">Temperatur</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtTemp(m.temp)}</div></div>
+            <div><div class="astro-sub">Taupunkt</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtTemp(m.dewpoint)}</div></div>
+            <div><div class="astro-sub">Luftdruck</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtHpa(m.pressure)}</div></div>
+            <div><div class="astro-sub">Sichtweite</div><div style="font-size:15px;font-weight:700;color:var(--navy)">${fmtVis(m.visibility)}</div></div>
+          </div>
+          ${tsHtml}
+        `;
+      })()}
+      <div style="border-top:1px solid var(--border);margin-top:8px;padding-top:6px">
+        <div style="display:flex;gap:12px;align-items:center;margin-bottom:5px">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:13px">🌅</span>
+            <div><div style="font-size:12px;font-weight:700;color:var(--navy)">${sun.sunrise}</div><div class="astro-sub" style="font-size:9px">Aufgang</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:13px">🌇</span>
+            <div><div style="font-size:12px;font-weight:700;color:var(--navy)">${sun.sunset}</div><div class="astro-sub" style="font-size:9px">Untergang</div></div>
+          </div>
+          <div class="astro-sub" style="font-size:9px;margin-left:auto">${sun.dayLength}</div>
+        </div>
+        <div style="display:flex;gap:12px;align-items:center">
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:13px">🌕</span>
+            <div><div style="font-size:12px;font-weight:700;color:var(--navy)">${sun.moonrise}</div><div class="astro-sub" style="font-size:9px">Mondaufgang</div></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:4px">
+            <span style="font-size:13px">🌑</span>
+            <div><div style="font-size:12px;font-weight:700;color:var(--navy)">${sun.moonset}</div><div class="astro-sub" style="font-size:9px">Monduntergang</div></div>
+          </div>
+        </div>
+      </div>
     </div>`;
   fetchBarPegelData();
   fetchBarVisData();
+  renderWetterTideCard();
+}
+
+function _renderWetterTideInner() {
+  const TZ  = 'Europe/Berlin';
+  const now = Date.now();
+
+  const fmtTime = (dt) => {
+    if (!dt) return '–';
+    const d = new Date(bshDtMs(dt));
+    return d.toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit', timeZone:TZ });
+  };
+
+  const LOCS = [
+    { key:'Cuxhaven',    label:'Cuxhaven'    },
+    { key:'Brunsbuettel',label:'Brunsbüttel' },
+    { key:'Hamburg',     label:'Hamburg'     },
+  ];
+
+  const stBlocks = LOCS.map(({ key, label }) => {
+    const db     = tideDbs[key] || [];
+    // Nächste 2 Ereignisse chronologisch sortiert
+    const future = db.filter(e => bshDtMs(e.dt) > now).sort((a,b) => bshDtMs(a.dt) - bshDtMs(b.dt));
+    const next2  = future.slice(0, 2);
+
+    const evLines = next2.map(e => {
+      const isHW  = e.type === 'HW';
+      const color = isHW ? '#1d4ed8' : '#15803d';
+      const badge = isHW
+        ? `<span style="font-size:9px;font-weight:700;color:#1d4ed8;background:#dbeafe;border:1px solid #93c5fd;padding:0 4px;border-radius:3px;flex-shrink:0">↑ HW</span>`
+        : `<span style="font-size:9px;font-weight:700;color:#15803d;background:#dcfce7;border:1px solid #86efac;padding:0 4px;border-radius:3px;flex-shrink:0">↓ NW</span>`;
+      const timeStr = fmtTime(e.dt);
+      const dev = bshDevBadge(key, e.type, e.dt, 'dm');
+      const devSpan = dev || '';
+      return `<div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+        ${badge}
+        <span style="font-size:12px;font-weight:700;color:${color}">${timeStr}</span>
+        ${devSpan}
+      </div>`;
+    }).join('');
+
+    return `<div style="margin-bottom:7px">
+      <div style="font-size:10px;font-weight:700;color:var(--navy);margin-bottom:1px">${label}</div>
+      ${evLines || '<div style="font-size:10px;color:var(--text-muted)">Keine Daten</div>'}
+    </div>`;
+  }).join('');
+
+  const bshTs = _bshVorhersage?.issuedAt
+    ? `<span style="font-size:9px;color:var(--text-muted)">BSH ${_bshVorhersage.issuedAt}</span>`
+    : `<span style="font-size:9px;color:var(--text-muted);font-style:italic">BSH nicht geladen</span>`;
+
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;gap:6px">
+      <div class="astro-card-title" style="margin-bottom:0">🌊 Gezeiten</div>
+      <button id="wetter-bsh-btn" onclick="refreshBSHVorhersage()"
+        style="padding:2px 8px;font-size:10px;font-weight:600;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;flex-shrink:0">
+        ↻ BSH
+      </button>
+    </div>
+    <div id="wetter-bsh-info" style="margin-bottom:6px">${bshTs}</div>
+    ${stBlocks}`;
+}
+
+function renderWetterTideCard() {
+  // Gezeiten-Karte steckt jetzt in ar-astro-grid (Card 3) → ganzes Astro-Dashboard neu rendern
+  renderAstroDashboard();
 }
 
 const WEATHER_STATIONS = {
@@ -2009,6 +2149,12 @@ const PEGEL_STATIONS = [
 ];
 let _pegelHours = 24;
 let _pegelData  = {};   // key → [{t, v}]
+
+// ── Freie Pegelauswahl ────────────────────────────────────────────────────────
+let _pegelFreeStation = null; // { uuid, shortname, longname, water }
+let _pegelFreeData    = [];
+let _pegelFreeHours   = 24;
+let _pegelNordseeList = null; // gecachte Stationsliste
 
 let _pressureHours   = 24;
 let _pressureStation = 'cuxhaven';
@@ -2868,6 +3014,147 @@ function _renderPegelChart(tRange) {
   </div>`;
 }
 
+// ── Freie Pegelauswahl – Nordseeküste ────────────────────────────────────────
+async function _loadPegelNordseeList() {
+  if (_pegelNordseeList) return _pegelNordseeList;
+  try {
+    const all = await fetch('https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations.json').then(r => r.json());
+    // Geografische Bbox: deutsche Nordseeküste + Tideflüsse Elbe/Weser/Ems/Jade/Eider
+    const BBOX = { latMin: 52.5, latMax: 56.0, lonMin: 6.5, lonMax: 11.8 };
+    const RELEVANT_WATERS = ['NORDSEE','ELBE','WESER','EMS','JADE','EIDER','HEVER','STÖR','SCHWINGE','LÜHE','ESTE','PINNAU','KRÜCKAU','HUNTE','OSTE'];
+    _pegelNordseeList = all.filter(s => {
+      if (!s.latitude || !s.longitude) return false;
+      if (s.latitude < BBOX.latMin || s.latitude > BBOX.latMax) return false;
+      if (s.longitude < BBOX.lonMin || s.longitude > BBOX.lonMax) return false;
+      const w = (s.water?.longname || '').toUpperCase();
+      return RELEVANT_WATERS.some(n => w.includes(n));
+    }).sort((a, b) => {
+      const wa = (a.water?.longname || '').localeCompare(b.water?.longname || '', 'de');
+      return wa !== 0 ? wa : (a.km || 0) - (b.km || 0);
+    });
+    return _pegelNordseeList;
+  } catch { _pegelNordseeList = []; return []; }
+}
+
+async function _populatePegelFreeSelect() {
+  const sel = document.getElementById('pegel-free-select');
+  if (!sel) return;
+  const list = await _loadPegelNordseeList();
+  if (!list.length) { sel.innerHTML = '<option value="">Fehler beim Laden</option>'; return; }
+  // Nach Gewässer gruppieren
+  const byWater = {};
+  for (const s of list) {
+    const w = s.water?.longname || 'Sonstige';
+    if (!byWater[w]) byWater[w] = [];
+    byWater[w].push(s);
+  }
+  sel.innerHTML = '<option value="">– Station wählen –</option>';
+  for (const [water, stations] of Object.entries(byWater).sort(([a],[b]) => a.localeCompare(b,'de'))) {
+    const grp = document.createElement('optgroup');
+    grp.label = water;
+    for (const s of stations) {
+      const opt = document.createElement('option');
+      opt.value = s.uuid;
+      const km = s.km != null ? ` (km ${s.km})` : '';
+      opt.textContent = `${s.longname || s.shortname}${km}`;
+      if (_pegelFreeStation?.uuid === s.uuid) opt.selected = true;
+      grp.appendChild(opt);
+    }
+    sel.appendChild(grp);
+  }
+}
+
+function selectPegelFree(uuid) {
+  if (!uuid) return;
+  const list = _pegelNordseeList || [];
+  const found = list.find(s => s.uuid === uuid);
+  if (found) _pegelFreeStation = { uuid: found.uuid, shortname: found.shortname, longname: found.longname, water: found.water?.longname || '' };
+  else _pegelFreeStation = { uuid, shortname: '', longname: '', water: '' };
+  fetchPegelFree();
+}
+
+async function fetchPegelFree(hours) {
+  if (hours) _pegelFreeHours = hours;
+  const elChart = document.getElementById('ar-pegel-free-inner');
+  if (!elChart) return;
+  [6,12,24,48].forEach(h => {
+    const b = document.getElementById('pfbtn-' + h);
+    if (b) { b.style.background = h === _pegelFreeHours ? 'var(--blue)' : 'var(--bg)'; b.style.color = h === _pegelFreeHours ? '#fff' : ''; b.style.borderColor = h === _pegelFreeHours ? 'var(--blue)' : 'var(--border)'; }
+  });
+  if (!_pegelFreeStation) { elChart.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Bitte eine Station auswählen.</span>'; return; }
+  elChart.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">Laden…</span>';
+  try {
+    const BASE = 'https://www.pegelonline.wsv.de/webservices/rest-api/v2/stations';
+    const url  = `${BASE}/${_pegelFreeStation.uuid}/W/measurements.json?start=PT${_pegelFreeHours}H`;
+    const data = await fetch(url).then(r => r.json());
+    _pegelFreeData = (Array.isArray(data) ? data : []).map(m => ({ t: new Date(m.timestamp), v: m.value }));
+  } catch { _pegelFreeData = []; }
+  const now = new Date();
+  const tRange = { min: now.getTime() - _pegelFreeHours * 3600000, max: now.getTime() };
+  elChart.innerHTML = _renderPegelFreeChart(tRange);
+}
+
+function _renderPegelFreeChart(tRange) {
+  const pts = _pegelFreeData;
+  const lbl = _pegelFreeStation?.longname || _pegelFreeStation?.shortname || 'Pegel';
+  const wtr  = _pegelFreeStation?.water ? ` · ${_pegelFreeStation.water}` : '';
+  if (!pts.length) return `<div style="font-size:12px;color:var(--text-muted)">Keine Daten für „${lbl}" im gewählten Zeitraum.</div>`;
+
+  const W = 760, H = 200;
+  const padL = 52, padR = 20, padT = 16, padB = 40;
+  const tMin = tRange.min, tMax = tRange.max;
+
+  const vals  = pts.map(p => p.v);
+  const yMin  = Math.floor(Math.min(...vals) / 50) * 50 - 25;
+  const yMax  = Math.ceil(Math.max(...vals)  / 50) * 50 + 25;
+  const ySpan = yMax - yMin || 100;
+  const xR = W - padR, yBot = H - padB;
+
+  const xOf = t => padL + (t - tMin) / (tMax - tMin) * (xR - padL);
+  const yOf = v => padT + (1 - (v - yMin) / ySpan) * (yBot - padT);
+
+  // Grid & Achsen
+  let gridLines = '', xLabels = '', yLabels = '';
+  const yStep = ySpan > 400 ? 100 : ySpan > 200 ? 50 : 25;
+  for (let y = Math.ceil(yMin/yStep)*yStep; y <= yMax; y += yStep) {
+    const yy = yOf(y).toFixed(1);
+    gridLines += `<line x1="${padL}" y1="${yy}" x2="${xR}" y2="${yy}" stroke="#e2e8f0" stroke-width="0.6"/>`;
+    yLabels   += `<text x="${(padL-4).toFixed(1)}" y="${(parseFloat(yy)+3.5).toFixed(1)}" text-anchor="end" font-size="8.5" fill="#64748b">${y}</text>`;
+  }
+  const tickMs = _pegelFreeHours <= 12 ? 3600000 : _pegelFreeHours <= 24 ? 4*3600000 : 12*3600000;
+  const t0tick = Math.ceil(tMin / tickMs) * tickMs;
+  for (let t = t0tick; t <= tMax; t += tickMs) {
+    const xx = xOf(t).toFixed(1);
+    const d  = new Date(t);
+    const lbTxt = d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+    gridLines += `<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${yBot}" stroke="#e2e8f0" stroke-width="0.6"/>`;
+    xLabels   += `<text x="${xx}" y="${(yBot+12).toFixed(1)}" text-anchor="middle" font-size="8.5" fill="#64748b">${lbTxt}</text>`;
+  }
+
+  // Kurve
+  const ptStr = pts.map(p => `${xOf(p.t.getTime()).toFixed(1)},${yOf(p.v).toFixed(1)}`).join(' ');
+  const last  = pts[pts.length-1];
+  const lx = xOf(last.t.getTime()), ly = yOf(last.v);
+
+  // Aktuellen Wert annotieren
+  const fmtTime = d => d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
+  const annot = `
+    <circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="3" fill="#2563eb"/>
+    <text x="${Math.min(lx+5,xR-28).toFixed(1)}" y="${(ly-6).toFixed(1)}" font-size="9" font-weight="700" fill="#2563eb">${last.v.toFixed(0)} cm</text>
+    <text x="${Math.min(lx+5,xR-28).toFixed(1)}" y="${(ly+4).toFixed(1)}" font-size="8" fill="#64748b">${fmtTime(last.t)}</text>`;
+
+  return `
+    <div style="font-size:8.5px;color:#64748b;margin-bottom:3px">${lbl}${wtr} · cm über Pegelnull (PN)</div>
+    <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;overflow:visible;font-family:'Inter',system-ui,sans-serif">
+      ${gridLines}
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${yBot}" stroke="#cbd5e1" stroke-width="1"/>
+      <line x1="${padL}" y1="${yBot}" x2="${xR}"   y2="${yBot}" stroke="#cbd5e1" stroke-width="1"/>
+      ${yLabels}${xLabels}
+      <polyline points="${ptStr}" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      ${annot}
+    </svg>`;
+}
+
 // ── Aktuelle Reise Hilfsfunktionen ───────────────────────────────────────────
 
 // Wie getElbeCurrent, aber liest aus tideDbs (BSH-Datenbank) statt eppTiden
@@ -3010,6 +3297,233 @@ function wsDeviation(ws, type, loc, mode = 'html') {
   const arrow = diff >= 0 ? '▲' : '▼';
   if (mode === 'text') return `${arrow} ${sign}${diff} cm ${label}`;
   return `<span style="font-size:10px;font-weight:700;color:${color};white-space:nowrap" title="${sign}${diff} cm gegenüber ${label} (${ref} cm)">${arrow} ${sign}${diff}&thinsp;cm ${label}</span>`;
+}
+
+// ─── BSH Wasserstandsvorhersage ──────────────────────────────────────────────
+// Lädt täglich aktualisiertes PDF: wasserstand-nordsee.bsh.de/data/Wasserstandsvorhersage.pdf
+// Extrahiert die meteorologisch korrigierten Abweichungen vom MHW/MNW
+// für Cuxhaven und Hamburg und zeigt sie neben allen HW/NW-Zeiten an.
+
+let _bshVorhersage   = null;  // { date, fetchedAt, stations:{Cuxhaven:[...],Hamburg:[...]} }
+let _bshVHFetchedAt  = 0;
+const _BSH_VH_PDF    = 'https://wasserstand-nordsee.bsh.de/data/Wasserstandsvorhersage.pdf';
+const _BSH_VH_TTL    = 6 * 3600 * 1000;  // 6h Cache
+
+// Lazy-load pdf.js from CDN (wird nur bei Bedarf geladen)
+function _ensurePdfJs() {
+  if (window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  return new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.crossOrigin = 'anonymous';
+    s.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    s.onerror = () => reject(new Error('pdf.js konnte nicht geladen werden'));
+    document.head.appendChild(s);
+  });
+}
+
+async function fetchBSHVorhersage(force = false) {
+  if (!force && _bshVorhersage && Date.now() - _bshVHFetchedAt < _BSH_VH_TTL) return _bshVorhersage;
+  try {
+    const pdfjs = await _ensurePdfJs();
+    const url   = 'https://corsproxy.io/?url=' + encodeURIComponent(_BSH_VH_PDF);
+    const resp  = await fetch(url, { cache: 'no-cache' });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const buf   = await resp.arrayBuffer();
+    const pdf   = await pdfjs.getDocument({ data: buf }).promise;
+    const page  = await pdf.getPage(1);
+    const tc    = await page.getTextContent();
+    const items = tc.items
+      .filter(i => i.str && i.str.trim())
+      .map(i => ({ s: i.str.trim(), x: Math.round(i.transform[4]), y: Math.round(i.transform[5]) }));
+    _bshVorhersage  = _parseBSHVorhersagePDF(items);
+    _bshVHFetchedAt = Date.now();
+    // Aktive Ansichten neu rendern
+    try { renderEPPPage(); } catch(e2) {}
+    try { const ef = fahrten?.find(f => f.id === aktuelleReiseId); if (ef) renderFahrtDashboard(ef); } catch(e2) {}
+    try { renderWetterTideCard(); } catch(e2) {}
+    return _bshVorhersage;
+  } catch(e) {
+    console.warn('BSH Vorhersage:', e.message);
+    return null;
+  }
+}
+
+async function refreshBSHVorhersage() {
+  // Alle BSH-Buttons deaktivieren (EPP + Wetterseite)
+  [['bsh-vh-btn','🌊 BSH-Vorhersage'],['wetter-bsh-btn','🌊 Wasserstandsvorhersage aktualisieren']].forEach(([id]) => {
+    const b = document.getElementById(id);
+    if (b) { b.disabled = true; b.textContent = '⏳ Wird geladen…'; }
+  });
+  ['bsh-vh-info','wetter-bsh-info'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = '';
+  });
+  try {
+    await fetchBSHVorhersage(true);
+    // renderEPPPage() + renderWetterTideCard() werden in fetchBSHVorhersage aufgerufen
+  } catch(e) {
+    [['bsh-vh-btn','🌊 BSH-Vorhersage'],['wetter-bsh-btn','🌊 Wasserstandsvorhersage aktualisieren']].forEach(([id, lbl]) => {
+      const b = document.getElementById(id);
+      if (b) { b.disabled = false; b.textContent = lbl; }
+    });
+    ['bsh-vh-info','wetter-bsh-info'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = '⚠️ Fehler beim Laden'; el.style.color = '#dc2626'; }
+    });
+  }
+}
+
+function _parseBSHVorhersagePDF(items) {
+  // Zeilen aus PDF-Items rekonstruieren (gleiche y ±3px)
+  const rowMap = new Map();
+  for (const item of items) {
+    let hit = false;
+    for (const [ky] of rowMap) {
+      if (Math.abs(ky - item.y) <= 3) { rowMap.get(ky).push(item); hit = true; break; }
+    }
+    if (!hit) rowMap.set(item.y, [item]);
+  }
+  const rows = Array.from(rowMap.entries())
+    .sort((a, b) => b[0] - a[0])
+    .map(([y, cells]) => {
+      const sorted = cells.sort((a, b) => a.x - b.x);
+      return { y, cells: sorted, text: sorted.map(c => c.s).join(' ') };
+    });
+
+  // Vorhersagedatum und Herausgabezeitpunkt
+  let forecastDate = null, issuedAt = null;
+  for (const r of rows) {
+    const m = r.text.match(/Erstellt am (\d{2}\.\d{2}\.\d{4}) um (\d{2}:\d{2}) Uhr/);
+    if (m) { forecastDate = m[1]; issuedAt = `${m[1]}, ${m[2]} Uhr`; break; }
+  }
+  if (!forecastDate) {
+    for (const r of rows) {
+      const m = r.text.match(/(\d{2}\.\d{2}\.\d{4})/);
+      if (m) { forecastDate = m[1]; break; }
+    }
+  }
+
+  const result = { date: forecastDate, issuedAt, fetchedAt: Date.now(), stations: {} };
+
+  const STATIONS = [
+    { name: 'Cuxhaven, Steubenhöft', key: 'Cuxhaven' },
+    { name: 'Hamburg, St. Pauli',     key: 'Hamburg'  },
+  ];
+  const TIME_RE = /^\d{2}:\d{2}$/;
+
+  for (const { name, key } of STATIONS) {
+    const ri = rows.findIndex(r => r.text.includes(name));
+    if (ri < 0) continue;
+    const times = rows[ri].cells.filter(c => TIME_RE.test(c.s)).slice(0, 4);
+    if (times.length < 4) continue;
+
+    // Abweichungen in den nächsten Zeilen suchen
+    const devCells = [];
+    for (let j = ri + 1; j < Math.min(ri + 4, rows.length) && devCells.length < 4; j++) {
+      rows[j].cells.filter(c => _isBSHDev(c.s)).forEach(c => devCells.push(c));
+    }
+    if (devCells.length < 4) continue;
+
+    const dates = _assignBSHDates(times.map(t => t.time), forecastDate);
+    const types = ['HW', 'NW', 'HW', 'NW'];
+    result.stations[key] = times.map((t, i) => ({
+      type: types[i], time: t.time, date: dates[i],
+      dev: devCells[i]?.s || '', devCm: _parseBSHDevCm(devCells[i]?.s || ''),
+    }));
+  }
+  return result;
+}
+
+function _isBSHDev(s) {
+  if (!s) return false;
+  s = s.trim();
+  return /^[+\-]\d+\s*dm$/.test(s) || /^\+\/\-\s*0$/.test(s) ||
+         /^[+\-]?\d+\/\d+\s*m$/.test(s) || /^[+\-]\d+\s*m$/.test(s) ||
+         /^[+\-]\d+\/\d+\s*bis\s*[+\-]\d+\/\d+\s*m$/.test(s);
+}
+
+function _parseBSHDevCm(dev) {
+  if (!dev) return null;
+  const s = dev.trim().replace(/\s+/g, ' ');
+  if (/^\+\/\-\s*0$/.test(s)) return 0;
+  const dmM = s.match(/^([+\-])(\d+)\s*dm$/); if (dmM) return (dmM[1]==='-'?-1:1) * parseInt(dmM[2]) * 10;
+  const mFrac = s.match(/^([+\-]?)(\d+)\/(\d+)\s*m$/);
+  if (mFrac) return (mFrac[1]==='-'?-1:1) * Math.round(parseInt(mFrac[2])/parseInt(mFrac[3])*100);
+  const bisFrac = s.match(/^([+\-]?\d+\/\d+)\s*bis/);
+  if (bisFrac) {
+    const fm = bisFrac[1].match(/^([+\-]?)(\d+)\/(\d+)$/);
+    if (fm) return (fm[1]==='-'?-1:1) * Math.round(parseInt(fm[2])/parseInt(fm[3])*100);
+  }
+  return null;
+}
+
+function _assignBSHDates(times, startDate) {
+  if (!startDate) return times.map(() => '');
+  const dates = []; let cur = startDate, prev = -1;
+  for (const t of times) {
+    const [h, m] = t.split(':').map(Number);
+    const mins = h * 60 + m;
+    if (prev >= 0 && mins < prev - 360) {
+      const [d, mo, y] = cur.split('.').map(Number);
+      const next = new Date(y, mo - 1, d + 1);
+      cur = `${String(next.getDate()).padStart(2,'0')}.${String(next.getMonth()+1).padStart(2,'0')}.${next.getFullYear()}`;
+    }
+    dates.push(cur); prev = mins;
+  }
+  return dates;
+}
+
+// BSH-Abweichungs-Badge: zeigt meteorologisch korrigierte Abweichung vom MHW/MNW
+// stationKey: 'Cuxhaven' | 'Hamburg' | 'Brunsbuettel'
+// type:       'HW' | 'NW'
+// isoDatetime: ISO-String im BSH-Format (MEZ, kein Z-Suffix)
+// mode:       'html' | 'text'
+function bshDevBadge(stationKey, type, isoDatetime, mode = 'html') {
+  if (!_bshVorhersage?.stations) return '';
+  const lookupKey = (stationKey === 'Brunsbuettel') ? null : stationKey;
+  if (!lookupKey) return '';
+  const stData = _bshVorhersage.stations[lookupKey];
+  if (!stData?.length) return '';
+  const ms = bshDtMs(isoDatetime);
+  if (isNaN(ms)) return '';
+  const eventDate = new Date(ms).toLocaleDateString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Europe/Berlin' });
+  const eTime = new Date(ms).toLocaleTimeString('de-DE', { hour:'2-digit', minute:'2-digit', timeZone:'Europe/Berlin' });
+  const [eh, em] = eTime.split(':').map(Number);
+  const eMins = eh * 60 + em;
+  let best = null, bestScore = Infinity;
+  for (const ev of stData) {
+    if (ev.type !== type) continue;
+    const evMs  = (() => { const [d,mo,y]=ev.date.split('.').map(Number); return new Date(y,mo-1,d).getTime(); })();
+    const refMs = (() => { const [d,mo,y]=eventDate.split('.').map(Number); return new Date(y,mo-1,d).getTime(); })();
+    const dayDiff = Math.abs(evMs - refMs) / 86400000;
+    if (dayDiff > 2) continue;
+    const [ch, cm] = ev.time.split(':').map(Number);
+    let td = Math.abs(eMins - (ch * 60 + cm)); if (td > 720) td = 1440 - td;
+    const score = td + dayDiff * 300;
+    if (score < bestScore) { bestScore = score; best = ev; }
+  }
+  if (!best || bestScore > 90) return '';
+  const { dev, devCm } = best;
+  if (!dev) return '';
+  const label   = type === 'HW' ? 'MHW' : 'MNW';
+  const isAbove = (devCm ?? 0) >= 0;
+  const color   = isAbove ? '#16a34a' : (type === 'NW' ? '#dc2626' : '#d97706');
+  const arrow   = isAbove ? '▲' : '▼';
+  const cmTxt   = devCm !== null ? `${isAbove?'+':''}${devCm}\u202fcm` : dev;
+  if (mode === 'text') return `${arrow} ${devCm !== null ? (isAbove?'+':'') + devCm + ' cm' : dev} ${label} (BSH)`;
+  if (mode === 'dm') {
+    // Nur Zahl in Dezimetern, kein Label, keine Einheit
+    if (devCm === null) return '';
+    const dm = devCm / 10;
+    const sign = dm >= 0 ? '+' : '';
+    const col = isAbove ? '#16a34a' : '#dc2626';
+    return `<span style="font-size:11px;font-weight:700;color:${col}">${sign}${dm.toFixed(1).replace('.',',')}</span>`;
+  }
+  return `<span style="font-size:10px;font-weight:700;color:${color};white-space:nowrap" title="BSH-Vorhersage: ${cmTxt} gegenüber ${label}">${arrow} ${cmTxt}\u2009${label}<span style="font-size:9px;font-weight:400;color:#94a3b8;margin-left:2px">BSH</span></span>`;
 }
 
 function fmtTideTime(isoStr, refMs) {
@@ -3161,7 +3675,7 @@ function exportFahrtPDF(entryId) {
         if(!e)return'—';
         const d=new Date(bshDtMs(e.dt));
         const t=d.toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',timeZone:'Europe/Berlin'});
-        const dev=wsDeviation(e.ws,e.type,loc);
+        const dev=bshDevBadge(loc,e.type,e.dt)||wsDeviation(e.ws,e.type,loc);
         return `${e.type} · ${t} Uhr${e.ws?' · '+e.ws+' cm':''}${dev?' <span style="margin-left:3px">'+dev+'</span>':''}`;
       };
       return `<div class="tc-card">
@@ -4430,7 +4944,7 @@ function renderEPPPage() {
     const label = loc === 'Brunsbuettel' ? 'Brunsbüttel' : loc;
     const rows = eppTiden[loc].map((row, i) => {
       const typeClass = row.type === 'HW' ? 'hw' : 'nw';
-      const dev = wsDeviation(row.ws, row.type, loc);
+      const dev = bshDevBadge(loc, row.type, row.dt) || wsDeviation(row.ws, row.type, loc);
       return `<div class="epp-tide-row" style="flex-wrap:wrap;gap:4px">
         <select class="tide-type-sel ${typeClass}"
           onchange="eppSetTideType('${loc}',${i},this.value)">
@@ -5045,9 +5559,18 @@ function renderEPPPage() {
 
       <!-- ② Gezeitenvorhersage ─────────────────────────────────────────── -->
       <div class="epp-card">
-        <div class="epp-card-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-4 6-4 8 0s6 4 8 0"/><path d="M2 17c2-4 6-4 8 0s6 4 8 0" opacity=".4"/></svg>
-          Gezeitenvorhersage
+        <div class="epp-card-title" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px">
+          <span style="display:flex;align-items:center;gap:6px">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12c2-4 6-4 8 0s6 4 8 0"/><path d="M2 17c2-4 6-4 8 0s6 4 8 0" opacity=".4"/></svg>
+            Gezeitenvorhersage
+          </span>
+          <span style="display:flex;align-items:center;gap:8px">
+            <span id="bsh-vh-info" style="font-size:10px;font-weight:400;color:var(--text-muted);white-space:nowrap">${_bshVorhersage?.issuedAt ? `BSH-Vorhersage vom ${_bshVorhersage.issuedAt}` : 'BSH-Vorhersage noch nicht geladen'}</span>
+            <button id="bsh-vh-btn" onclick="refreshBSHVorhersage()"
+              style="padding:3px 10px;font-size:11px;font-weight:600;background:var(--blue);color:#fff;border:none;border-radius:var(--r-sm);cursor:pointer;white-space:nowrap;line-height:1.5">
+              🌊 BSH-Vorhersage
+            </button>
+          </span>
         </div>
         ${(tideDbs.Cuxhaven.length || tideDbs.Brunsbuettel.length || tideDbs.Hamburg.length) ? `
         <div class="epp-stichtag-row">
@@ -7380,15 +7903,93 @@ function _karteWindVhRender(results, lat, lon, panelId) {
   }
   dirSvg += `<line x1="${nowX}" y1="5" x2="${nowX}" y2="${rowsBottom}" stroke="#ef4444" stroke-width="1.2" stroke-dasharray="3 2"/>`;
 
+  // ── Niederschlag ─────────────────────────────────────────────────────────────
+  let precipHtml = '';
+  if (typeof _wfCustomOpts !== 'undefined' && _wfCustomOpts.precip) {
+    const PH = 110, ppB = 26;
+    let pMax = 2;
+    const precipData = {};
+    results.forEach(({model, times, precip}) => {
+      if (!precip) return;
+      const pts = [];
+      (times||[]).forEach((t,i)=>{ const ms=new Date(t).getTime(); if(ms<tMin||ms>tMax)return; const v=precip[i]??0; pts.push({t:ms,v}); pMax=Math.max(pMax,v); });
+      precipData[model] = pts;
+    });
+    pMax = Math.max(2, Math.ceil(pMax * 1.3));
+    const yP = v => pT + (1 - v / pMax) * (PH - pT - ppB);
+    const firstPts = Object.values(precipData)[0] || [];
+    const barW = firstPts.length > 1 ? Math.max(1, (xOf(firstPts[1].t) - xOf(firstPts[0].t)) * 0.72) : 3;
+    let barSvg = '';
+    firstPts.forEach(p => { const x=xOf(p.t), y=yP(p.v), h=yP(0)-y; if(h>0.2) barSvg+=`<rect x="${(x-barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="#60a5fa" opacity="0.6"/>`; });
+    let pLines = '';
+    Object.entries(precipData).forEach(([k,pts],idx) => { if(!pts.length||idx===0)return; const m=VORHERSAGE_MODELS[k]; const path=pts.map((p,i)=>`${i===0?'M':'L'}${xOf(p.t).toFixed(1)} ${yP(p.v).toFixed(1)}`).join(' '); pLines+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="1.2" opacity="0.7"/>`; });
+    let pgrid='',pyL='';
+    [0, Math.round(pMax/2), pMax].forEach(v=>{ const y=yP(v).toFixed(1); pgrid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="#c8d6e2" stroke-width=".5"/>`; pyL+=`<text x="${pL-3}" y="${parseFloat(y)+3}" text-anchor="end" font-size="8" fill="#637485">${v}</text>`; });
+    let pxL=''; for(let t=ts0;t<=tMax;t+=step){ const x=xOf(t).toFixed(1),d=new Date(t); pxL+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${PH-ppB}" stroke="#c8d6e2" stroke-width=".8"/>`; pxL+=`<text x="${x}" y="${PH-ppB+10}" text-anchor="middle" font-size="8" fill="#1d6fa5" font-weight="700">${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</text>`; }
+    precipHtml = `
+      <div style="font-size:9px;font-weight:700;color:var(--navy);margin-top:8px;margin-bottom:2px">🌧️ Niederschlag · mm/h</div>
+      <svg viewBox="0 0 ${W} ${PH}" width="100%" style="display:block">
+        <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${PH-pT-ppB}" fill="var(--bg-alt,#f8fafc)"/>
+        ${pgrid}${pyL}${pxL}${barSvg}${pLines}
+        <line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${PH-ppB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2"/>
+        <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${PH-pT-ppB}" fill="none" stroke="#c8d6e2" stroke-width=".7"/>
+      </svg>`;
+  }
+
+  // ── Temperatur ────────────────────────────────────────────────────────────────
+  let tempHtml = '';
+  if (typeof _wfCustomOpts !== 'undefined' && _wfCustomOpts.temp) {
+    const TH = 120, tpB = 26;
+    let tyMin = Infinity, tyMax = -Infinity;
+    const tempData = {};
+    results.forEach(({model, times, temp}) => {
+      if (!temp) return;
+      const pts = [];
+      (times||[]).forEach((t,i)=>{ const ms=new Date(t).getTime(); if(ms<tMin||ms>tMax)return; const v=temp[i]; if(v!=null){pts.push({t:ms,v}); tyMin=Math.min(tyMin,v); tyMax=Math.max(tyMax,v);} });
+      tempData[model] = pts;
+    });
+    if (isFinite(tyMin)) {
+      tyMin = Math.floor(tyMin) - 2; tyMax = Math.ceil(tyMax) + 2;
+      const tSpan = tyMax - tyMin || 10;
+      const yT = v => pT + (1 - (v - tyMin) / tSpan) * (TH - pT - tpB);
+      let tgrid='',tyL='';
+      const tStep = tSpan > 20 ? 5 : tSpan > 10 ? 2 : 1;
+      for(let v=Math.ceil(tyMin/tStep)*tStep; v<=tyMax; v+=tStep){ const y=yT(v).toFixed(1); tgrid+=`<line x1="${pL}" y1="${y}" x2="${W-pR}" y2="${y}" stroke="${v===0?'#94a3b8':'#e2e8f0'}" stroke-width="${v===0?1:.5}"/>`; tyL+=`<text x="${pL-3}" y="${parseFloat(y)+3}" text-anchor="end" font-size="8" fill="#637485">${v}°</text>`; }
+      let txL=''; for(let t=ts0;t<=tMax;t+=step){ const x=xOf(t).toFixed(1),d=new Date(t); txL+=`<line x1="${x}" y1="${pT}" x2="${x}" y2="${TH-tpB}" stroke="#c8d6e2" stroke-width=".8"/>`; txL+=`<text x="${x}" y="${TH-tpB+10}" text-anchor="middle" font-size="8" fill="#1d6fa5" font-weight="700">${d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit'})}</text>`; }
+      let tLineSvg='';
+      Object.entries(tempData).forEach(([k,pts])=>{ if(!pts.length)return; const m=VORHERSAGE_MODELS[k]; const path=pts.map((p,i)=>`${i===0?'M':'L'}${xOf(p.t).toFixed(1)} ${yT(p.v).toFixed(1)}`).join(' '); tLineSvg+=`<path d="${path}" fill="none" stroke="${m.color}" stroke-width="2" stroke-linejoin="round"/>`; });
+      tempHtml = `
+        <div style="font-size:9px;font-weight:700;color:var(--navy);margin-top:8px;margin-bottom:2px">🌡️ Temperatur · °C</div>
+        <svg viewBox="0 0 ${W} ${TH}" width="100%" style="display:block">
+          <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${TH-pT-tpB}" fill="var(--bg-alt,#f8fafc)"/>
+          ${tgrid}${tyL}${txL}${tLineSvg}
+          <line x1="${nowX}" y1="${pT}" x2="${nowX}" y2="${TH-tpB}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3 2"/>
+          <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${TH-pT-tpB}" fill="none" stroke="#c8d6e2" stroke-width=".7"/>
+        </svg>`;
+    }
+  }
+
+  // ── Panel-HTML ────────────────────────────────────────────────────────────────
   const closePanelId = panelId || 'karte-windvh-panel';
+  const isCustom = panelId === 'wf-custom-panel';
+  const _opts = typeof _wfCustomOpts !== 'undefined' ? _wfCustomOpts : {};
+  const optBtnSt = (on, col) => `padding:3px 8px;font-size:10px;font-weight:600;border-radius:var(--r-sm);cursor:pointer;border:1.5px solid ${on?col:'var(--border)'};background:${on?col+'22':'var(--bg)'};color:${on?col:'var(--text-muted)'};font-family:inherit`;
+  const toggleBtns = isCustom ? `
+    <div style="display:flex;gap:5px;flex-shrink:0">
+      <button onclick="_wfToggleOpt('precip')" style="${optBtnSt(_opts.precip,'#2563eb')}">🌧️ Niederschlag</button>
+      <button onclick="_wfToggleOpt('temp')"   style="${optBtnSt(_opts.temp,  '#dc2626')}">🌡️ Temperatur</button>
+    </div>` : '';
   panel.innerHTML = `
     <div style="padding:10px 12px;flex:1;overflow:hidden">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
         <div>
           <div style="font-size:12px;font-weight:700;color:var(--navy)">🌬️ Windvorhersage · 5 Tage</div>
           <div style="font-size:9px;color:var(--text-muted)">${lat}°N, ${lon}°O · ${legend}</div>
         </div>
-        <button onclick="document.getElementById('${closePanelId}').style.display='none'" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;color:var(--text-muted);flex-shrink:0">✕</button>
+        <div style="display:flex;align-items:center;gap:6px">
+          ${toggleBtns}
+          <button onclick="document.getElementById('${closePanelId}').style.display='none'" style="width:24px;height:24px;border-radius:50%;border:1px solid var(--border);background:var(--bg);cursor:pointer;font-size:13px;color:var(--text-muted);flex-shrink:0">✕</button>
+        </div>
       </div>
       <svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
         <rect x="${pL}" y="${pT}" width="${W-pL-pR}" height="${H-pT-pB}" fill="var(--bg-alt,#f8fafc)"/>
@@ -7401,6 +8002,8 @@ function _karteWindVhRender(results, lat, lon, panelId) {
         ${dirSvg}
       </svg>
       <div style="font-size:8px;color:var(--text-muted);margin-top:2px">Windrichtung · Fahne=50 kn, Strich=10 kn, Halbstrich=5 kn · Stiel zeigt woher der Wind kommt</div>
+      ${precipHtml}
+      ${tempHtml}
     </div>`;
 }
 
@@ -9009,6 +9612,8 @@ let _wfTrailCanvas = null;
 let _wfTrailCtx    = null;
 let _wfCustom      = null;  // {lat,lon} from map click
 let _wfMarkerEl    = null;
+let _wfCustomOpts  = { precip: false, temp: false }; // Einblend-Optionen für Custom-Panel
+let _wfCustomCache = null; // { results, lat, lon } für Neu-Rendern ohne Refetch
 let _wfColorMode   = false; // Farbflächen-Overlay
 let _wfColorCanvas = null;
 let _wfColorCtx    = null;
@@ -9311,15 +9916,22 @@ async function _fetchWfCustomForecast(lat, lon) {
   try {
     const models = [..._vhModels].slice(0, 3);
     const results = await Promise.all(models.map(async k => {
-      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_10m,winddirection_10m,windgusts_10m&models=${k}&timezone=Europe%2FBerlin&forecast_days=5&wind_speed_unit=kn`;
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=windspeed_10m,winddirection_10m,windgusts_10m,precipitation,temperature_2m&models=${k}&timezone=Europe%2FBerlin&forecast_days=5&wind_speed_unit=kn`;
       const r = await fetch(url); if (!r.ok) return null;
       const j = await r.json();
-      return { model: k, times: j.hourly?.time, speed: j.hourly?.windspeed_10m, dir: j.hourly?.winddirection_10m, gusts: j.hourly?.windgusts_10m };
+      return { model: k, times: j.hourly?.time, speed: j.hourly?.windspeed_10m, dir: j.hourly?.winddirection_10m, gusts: j.hourly?.windgusts_10m, precip: j.hourly?.precipitation, temp: j.hourly?.temperature_2m };
     }));
-    _karteWindVhRender(results.filter(Boolean), lat, lon, 'wf-custom-panel');
+    const valid = results.filter(Boolean);
+    _wfCustomCache = { results: valid, lat, lon };
+    _karteWindVhRender(valid, lat, lon, 'wf-custom-panel');
   } catch(e) {
     panel.innerHTML = `<div style="padding:10px 0;color:var(--danger);font-size:12px">Fehler: ${e.message}</div>`;
   }
+}
+
+function _wfToggleOpt(key) {
+  _wfCustomOpts[key] = !_wfCustomOpts[key];
+  if (_wfCustomCache) _karteWindVhRender(_wfCustomCache.results, _wfCustomCache.lat, _wfCustomCache.lon, 'wf-custom-panel');
 }
 
 function exportVorhersagePDF() {
@@ -9692,6 +10304,24 @@ function renderWetterPage() {
           <div id="ar-pressure-inner" style="min-height:80px;color:var(--text-muted);font-size:12px">Wird geladen…</div>
         </div>
       </div>
+      <!-- Freie Pegelauswahl Nordseeküste -->
+      <div style="margin-top:10px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--r-md);padding:14px 16px 12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--text-muted)">📊 Pegel · Freie Auswahl</div>
+            <select id="pegel-free-select" onchange="selectPegelFree(this.value)" style="font-size:11px;padding:3px 7px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;cursor:pointer;max-width:260px">
+              <option value="">⏳ Stationsliste wird geladen…</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button onclick="fetchPegelFree(6)"  id="pfbtn-6"  style="${btnStyle}">6h</button>
+            <button onclick="fetchPegelFree(12)" id="pfbtn-12" style="${btnStyle}">12h</button>
+            <button onclick="fetchPegelFree(24)" id="pfbtn-24" style="${btnStyle.replace('background:var(--bg)','background:var(--blue)')};color:#fff;border-color:var(--blue)">24h</button>
+            <button onclick="fetchPegelFree(48)" id="pfbtn-48" style="${btnStyle}">48h</button>
+          </div>
+        </div>
+        <div id="ar-pegel-free-inner" style="min-height:60px;color:var(--text-muted);font-size:12px">Bitte eine Pegelstation aus der Liste wählen.</div>
+      </div>
       <!-- Windfeld-Karte -->
       <div class="fd-card" style="margin-top:16px;padding:16px 18px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
@@ -9744,6 +10374,7 @@ function renderWetterPage() {
   setTimeout(() => {
     fetchWindData();           // lädt Wind + ruft renderAstroDashboard() → fetchBarPegelData() + fetchBarVisData()
     fetchPressureHistory(_pressureHours); // lädt Verlaufskurven
+    _populatePegelFreeSelect(); // Pegelstationsliste laden (gecacht nach erstem Aufruf)
   }, 0);
   // Windfeld immer frisch laden wenn Seite geöffnet wird (AGE_LIMIT gilt nur für schnelles Re-Enter)
   // Wird in _initWetterWindMap() getriggert, sobald die Map bereit ist (force=false nutzt Cache falls < 1h alt)
@@ -10569,7 +11200,7 @@ function exportEPPPDF() {
     const entries = eppTiden[loc] || [];
     const svgStr = makeTideCurveSVG(entries, pdfRefTs);
     const dataRows = entries.filter(e=>e.dt).map(e => {
-      const dev = wsDeviation(e.ws, e.type, loc);
+      const dev = bshDevBadge(loc, e.type, e.dt) || wsDeviation(e.ws, e.type, loc);
       return `<div class="td-row">
         <span class="td-badge ${e.type==='HW'?'hw':'nw'}">${e.type==='HW'?'↑ HW':'↓ NW'}</span>
         <span class="td-time">${fmtBshDT(e.dt)}</span>
@@ -10809,7 +11440,7 @@ function exportEPPPDF() {
           const entries = eppTiden[loc]||[];
           const svg = makeTideCurveSVG(entries, pdfRefTs);
           const rows = entries.filter(e=>e.dt).map(e=>{
-            const dev = wsDeviation(e.ws, e.type, loc);
+            const dev = bshDevBadge(loc, e.type, e.dt) || wsDeviation(e.ws, e.type, loc);
             return `<div class="td-row"><span class="td-badge ${e.type==='HW'?'hw':'nw'}">${e.type==='HW'?'↑ HW':'↓ NW'}</span><span class="td-time">${fmtBshDT(e.dt)}</span><span class="td-ws">${fmtWs(e.ws)}${dev?`<br><small>${dev}</small>`:''}</span></div>`;
           }).join('');
           return `<div class="tide-col"><div class="tide-col-hdr">${label}</div><div class="tide-col-body">${svg||'<div class="no-data">Keine Daten</div>'}<div class="td-rows">${rows}</div></div></div>`;
@@ -11415,7 +12046,7 @@ function renderFahrtDashboard(entry) {
     const fmtEvtLine = (e, loc) => {
       if (!e) return '—';
       const baseText = `${e.type} · ${fmtTideTime(e.dt, refMs)} · ${fmtWs(e.ws)}`;
-      const dev = wsDeviation(e.ws, e.type, loc);
+      const dev = bshDevBadge(loc, e.type, e.dt) || wsDeviation(e.ws, e.type, loc);
       return dev ? `${baseText} <span style="margin-left:4px">${dev}</span>` : baseText;
     };
     return `<div class="fd-tide-card">
@@ -11940,6 +12571,8 @@ function exportExcel() {
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
   updateAgenturDatalist();
   goList();
+  // BSH Wasserstandsvorhersage im Hintergrund laden (nach 4s Verzögerung)
+  setTimeout(() => fetchBSHVorhersage().catch(() => {}), 4000);
 })();
 </script>
 

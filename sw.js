@@ -1,4 +1,4 @@
-const CACHE = 'seelotse-v109';
+const CACHE = 'seelotse-v115';
 const CORE = [
   './',
   './index.html',
