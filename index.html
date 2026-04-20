@@ -11170,7 +11170,13 @@ function renderList() {
         <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.anBord))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.vonBord))||'—'}</div></td>
         <td>${reiseDur ? `<span class="dur-badge dur-reise">${esc(reiseDur)}</span>` : '<span style="opacity:.4">—</span>'}</td>
         <td class="td-stack"><div class="td-stack-top">${esc(fmtDTShort(f.abfahrt))||'<span style="opacity:.4">—</span>'}</div><div class="td-stack-bot">${esc(fmtDTShort(f.ankunft))||'—'}</div></td>
-        <td>${f.abgeschöpft ? '<span style="color:#1a7340;font-weight:700">✓</span>' : '<span style="opacity:.4">—</span>'}</td>
+        <td>${(() => {
+          const badges = [];
+          if (f.abgeschöpft)   badges.push('<span title="Abgeschöpft" style="color:#1a7340;font-weight:700">✂️</span>');
+          if (f.umkehrlotsung) badges.push('<span title="Umkehrlotsung" style="color:#dc2626;font-weight:800;font-size:13px">↩</span>');
+          if (f.boertGenommen) badges.push('<span title="Bört genommen" style="color:#0369a1;font-weight:700">⚓</span>');
+          return badges.length ? badges.join('&thinsp;') : '<span style="opacity:.4">—</span>';
+        })()}</td>
         <td>${einsatzRes
           ? einsatzRes.cross
             ? `<span class="dur-badge dur-cross" title="Eintragsübergreifend (Ausgehend → Einkommend)">${esc(einsatzRes.dur)} ↗</span>`
@@ -11199,7 +11205,7 @@ function renderList() {
             <th>An Bord<br>Von Bord</th>
             <th>Reise</th>
             <th>Abfahrt<br>Ankunft</th>
-            <th>Abg.</th>
+            <th title="Abgeschöpft / Umkehrlotsung / Bört genommen">Abg./<br>↩/⚓</th>
             <th>Einsatz</th>
           </tr></thead>
           <tbody>${rows}</tbody>
@@ -11333,6 +11339,8 @@ function exportExcelPeriod() {
       'Abfahrt Haustür':   fmtDT(f.abfahrt),
       'Ankunft Haustür':   fmtDT(f.ankunft),
       'Abgeschöpft':       f.abgeschöpft        ? 'Ja' : '',
+      'Umkehrlotsung':     f.umkehrlotsung      ? 'Ja' : '',
+      'Bört genommen':     f.boertGenommen      ? 'Ja' : '',
       'Einsatzdauer':      einsatzTxt,
     };
   });
@@ -12013,6 +12021,19 @@ function renderForm(f) {
               → Anspleissen (Ausgehend)
             </label>
           </div>
+          <!-- Umkehrlotsung / Bört genommen -->
+          <div id="umkehr-group" style="margin-top:12px;display:none;gap:8px;flex-wrap:wrap">
+            <label class="richtung-btn${f?.umkehrlotsung?' active':''}" id="btn-umkehr" onclick="toggleUmkehr(event)">
+              <input type="checkbox" name="umkehrlotsung" ${f?.umkehrlotsung?'checked':''}>
+              <span class="cb-check"></span>
+              🔄 Umkehrlotsung
+            </label>
+            <label class="richtung-btn${f?.boertGenommen?' active':''}" id="btn-boert" onclick="toggleBoert(event)" style="display:none">
+              <input type="checkbox" name="boertGenommen" ${f?.boertGenommen?'checked':''}>
+              <span class="cb-check"></span>
+              ⚓ Bört genommen
+            </label>
+          </div>
         </div>
 
         <!-- Sektion 3b: WR / WB / 2+2 Einsatzdaten -->
@@ -12156,6 +12177,24 @@ function toggleAnspleissen(event) {
   event.currentTarget.classList.toggle('active', cb.checked);
 }
 
+function toggleUmkehr(event) {
+  event.preventDefault();
+  const cb = event.currentTarget.querySelector('input[type="checkbox"]');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  event.currentTarget.classList.toggle('active', cb.checked);
+  updateFormVisibility();
+}
+
+function toggleBoert(event) {
+  event.preventDefault();
+  const cb = event.currentTarget.querySelector('input[type="checkbox"]');
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  event.currentTarget.classList.toggle('active', cb.checked);
+  updateFormVisibility();
+}
+
 function calcWartestunden() {
   const vonEl    = document.getElementById('wm_von');
   const bisEl    = document.getElementById('wm_bis');
@@ -12219,6 +12258,8 @@ function updateFormVisibility() {
   const einkommend     = document.querySelector('input[name="einkommend"]')?.checked;
   const ausgehend      = document.querySelector('input[name="ausgehend"]')?.checked;
   const isAbgeschoepft = document.querySelector('input[name="abgeschöpft"]')?.checked;
+  const isUmkehr       = document.querySelector('input[name="umkehrlotsung"]')?.checked || false;
+  const isBoert        = document.querySelector('input[name="boertGenommen"]')?.checked || false;
 
   // ── Element-Referenzen ──────────────────────────────────────────────────
   const richtungGroup   = document.getElementById('richtung-group');
@@ -12237,6 +12278,9 @@ function updateFormVisibility() {
   const ansplGroup      = document.getElementById('anspleissen-group');
   const cuxGroup        = document.getElementById('cux-option-group');
   const wrSection       = document.getElementById('wr-section');
+  const umkehrGroup     = document.getElementById('umkehr-group');
+  const btnBoert        = document.getElementById('btn-boert');
+  const btnUmkehr       = document.getElementById('btn-umkehr');
 
   // ── Felder ein-/ausblenden ──────────────────────────────────────────────
   if (vonField)        vonField.style.display        = isRadar             ? 'none' : '';
@@ -12279,10 +12323,37 @@ function updateFormVisibility() {
   // Cux-Option-Gruppe: nur wenn Nach = Cux
   if (cuxGroup) cuxGroup.style.display = isCux ? '' : 'none';
 
-  // Zeitfelder: WR/WB/2+2, 4 Anteile oder Cux→BrB → alle anzeigen
-  const showAllTimes = isWrWb2p2 || is4Anteile || isCuxBrb;
+  // ── Umkehrlotsung: anzeigen wenn ausgehend ODER einkommend (nicht beides) ──
+  const showUmkehr = !isRadar && !!(ausgehend || einkommend) && !(ausgehend && einkommend);
+  if (umkehrGroup) {
+    umkehrGroup.style.display = showUmkehr ? 'flex' : 'none';
+    if (!showUmkehr) {
+      const ucb = umkehrGroup.querySelector('input[name="umkehrlotsung"]');
+      if (ucb) { ucb.checked = false; btnUmkehr?.classList.remove('active'); }
+    }
+  }
+  // Bört-genommen: nur wenn einkommend + Umkehrlotsung
+  const showBoert = !!einkommend && isUmkehr;
+  if (btnBoert) {
+    btnBoert.style.display = showBoert ? '' : 'none';
+    if (!showBoert) {
+      const bcb = btnBoert.querySelector('input[name="boertGenommen"]');
+      if (bcb) { bcb.checked = false; btnBoert.classList.remove('active'); }
+    }
+  }
+
+  // Zeitfelder: WR/WB/2+2, 4 Anteile, Cux→BrB, oder ausgehend Umkehrlotsung → alle anzeigen
+  const showAllTimes = isWrWb2p2 || is4Anteile || isCuxBrb || (!!ausgehend && isUmkehr);
   if (dtAbfahrt) dtAbfahrt.style.display = showAllTimes ? '' : ((!isRadar && einkommend) ? 'none' : '');
-  if (dtAnkunft) dtAnkunft.style.display = showAllTimes ? '' : ((!isRadar && ausgehend && !isAbgeschoepft) ? 'none' : '');
+  // Ankunft Haustür: verbergen wenn ausgehend ohne Umkehrlotsung/Abgeschöpft,
+  //                  oder wenn einkommend + Umkehrlotsung + Bört genommen (weitere Reise folgt)
+  if (dtAnkunft) {
+    const hideAnkunft = !showAllTimes && (
+      (!isRadar && !!ausgehend && !isAbgeschoepft) ||
+      (!!einkommend && isUmkehr && isBoert)
+    );
+    dtAnkunft.style.display = hideAnkunft ? 'none' : '';
+  }
 
   // Wartestunden berechnen (falls Von/Bis bereits gesetzt)
   calcWartestunden();
@@ -12315,11 +12386,13 @@ function handleSubmit(e) {
     abteilung:      fromDTInput(fd.get('abteilung')),
     abStation:      fromDTInput(fd.get('abStation')),
     zuBuch:         fromDTInput(fd.get('zuBuch')),
-    einkommend:     fd.get('einkommend') === 'on',
-    ausgehend:      fd.get('ausgehend') === 'on',
-    abgeschöpft:    fd.get('abgeschöpft') === 'on',
-    manöver:        fd.get('manöver') === 'on',
-    anspleissen:    fd.get('anspleissen') === 'on',
+    einkommend:      fd.get('einkommend') === 'on',
+    ausgehend:       fd.get('ausgehend') === 'on',
+    abgeschöpft:     fd.get('abgeschöpft') === 'on',
+    umkehrlotsung:   fd.get('umkehrlotsung') === 'on',
+    boertGenommen:   fd.get('boertGenommen') === 'on',
+    manöver:         fd.get('manöver') === 'on',
+    anspleissen:     fd.get('anspleissen') === 'on',
     cuxOption:      fd.get('cuxOption') || '',
     wartestunden:     fd.get('wartestunden') || '',
     wartestunden_von: fromDTInput(fd.get('wartestunden_von')),
