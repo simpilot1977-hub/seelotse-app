@@ -3849,14 +3849,14 @@ let _tidePlanSchiff = { typ: '', laenge: '', breite: '', tiefgang: '' };
 // ── AGF-Tiefgänge Einkommend · Containerschiffe (Quelle: PIA-Tabelle Hamburg) ──
 // Spalten: bMax (Breite ≤), lMax (Länge ≤), tideUnabh (jederzeit), tideAbh (mit AGF-Fenster)
 const AGF_CONTAINER_TABLE = [
-  { bMax: 46.0, lMax: 350, tideUnabh: 12.20, tideAbh: 14.50 },
-  { bMax: 47.5, lMax: 360, tideUnabh: 12.30, tideAbh: 14.60 },
-  { bMax: 50.0, lMax: 370, tideUnabh: 12.40, tideAbh: 14.70 },
-  { bMax: 52.5, lMax: 380, tideUnabh: 12.50, tideAbh: 14.80 },
-  { bMax: 55.0, lMax: 390, tideUnabh: 12.60, tideAbh: 14.90 },
-  { bMax: 57.5, lMax: 400, tideUnabh: 12.70, tideAbh: 15.00 },
-  { bMax: 60.0, lMax: 400, tideUnabh: 12.80, tideAbh: 15.10 },
-  { bMax: 62.5, lMax: 400, tideUnabh: 12.90, tideAbh: 15.20 },
+  { bMax: 46.0, lMax: 350, tideUnabh: 12.90, tideAbh: 15.20 }, // ✓
+  { bMax: 47.5, lMax: 360, tideUnabh: 12.80, tideAbh: 15.10 }, // ✓
+  { bMax: 50.0, lMax: 370, tideUnabh: 12.70, tideAbh: 15.00 }, // ✓
+  { bMax: 52.5, lMax: 380, tideUnabh: 12.60, tideAbh: 14.90 }, // ✓
+  { bMax: 55.0, lMax: 390, tideUnabh: 12.50, tideAbh: 14.80 }, // ✓
+  { bMax: 57.5, lMax: 400, tideUnabh: 12.40, tideAbh: 14.70 }, // ✓
+  { bMax: 60.0, lMax: 400, tideUnabh: 12.30, tideAbh: 14.60 }, // ✓
+  { bMax: 62.5, lMax: 400, tideUnabh: 12.20, tideAbh: 14.50 }, // ✓
 ];
 
 // Elbe waypoints: order is inbound (E3 → Hamburg)
