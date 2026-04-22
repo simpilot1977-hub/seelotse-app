@@ -3844,7 +3844,7 @@ const TIDE_DB_STORAGE_KEY = 'seelotse_tide_db_v1';
 let tideDbs = { Cuxhaven:[], Brunsbuettel:[], Hamburg:[] };
 let eppStichtag = ''; // datetime-local string oder '' = aktuelle Zeit
 let _eppSubTab  = 'epp'; // 'epp' | 'tide'
-let _tidePlanSchiff = { typ: '', laenge: '', breite: '', tiefgang: '' };
+let _tidePlanSchiff = { typ: '', laenge: '', breite: '', tiefgang: '', rakontonne: '' };
 
 // ── AGF-Tiefgänge Einkommend · Containerschiffe (Quelle: PIA-Tabelle Hamburg) ──
 // Spalten: bMax (Breite ≤), lMax (Länge ≤), tideUnabh (jederzeit), tideAbh (mit AGF-Fenster)
@@ -3857,6 +3857,24 @@ const AGF_CONTAINER_TABLE = [
   { bMax: 57.5, lMax: 400, tideUnabh: 12.40, tideAbh: 14.70 }, // ✓
   { bMax: 60.0, lMax: 400, tideUnabh: 12.30, tideAbh: 14.60 }, // ✓
   { bMax: 62.5, lMax: 400, tideUnabh: 12.20, tideAbh: 14.50 }, // ✓
+];
+
+// Passierzeit Bake "C" frühestens · bezogen auf NW Cuxhaven
+// Gilt für Containerschiffe L ≤ 350 m, B < 46,0 m (PIA-Tabelle, Spalte 1)
+const AGF_BARKE_C_L350 = [
+  { tgMax: 12.80, minAfterNW: null },  // jederzeit
+  { tgMax: 12.90, minAfterNW:    0 },
+  { tgMax: 13.10, minAfterNW:    0 },
+  { tgMax: 13.30, minAfterNW:   20 },
+  { tgMax: 13.50, minAfterNW:   40 },
+  { tgMax: 13.70, minAfterNW:   60 },
+  { tgMax: 13.90, minAfterNW:   80 },
+  { tgMax: 14.10, minAfterNW:  105 },
+  { tgMax: 14.30, minAfterNW:  120 },
+  { tgMax: 14.50, minAfterNW:  150 },
+  { tgMax: 14.70, minAfterNW:  170 },
+  { tgMax: 14.90, minAfterNW:  195 },
+  { tgMax: 15.20, minAfterNW:  240 },
 ];
 
 // Elbe waypoints: order is inbound (E3 → Hamburg)
@@ -4703,10 +4721,11 @@ function _tideFensterGetEvents(loc, refMs) {
 }
 
 function _tideFensterUpdateSchiff() {
-  _tidePlanSchiff.typ      = document.getElementById('tf-typ')?.value      || '';
-  _tidePlanSchiff.laenge   = document.getElementById('tf-laenge')?.value   || '';
-  _tidePlanSchiff.breite   = document.getElementById('tf-breite')?.value   || '';
-  _tidePlanSchiff.tiefgang = document.getElementById('tf-tiefgang')?.value || '';
+  _tidePlanSchiff.typ        = document.getElementById('tf-typ')?.value        || '';
+  _tidePlanSchiff.laenge     = document.getElementById('tf-laenge')?.value     || '';
+  _tidePlanSchiff.breite     = document.getElementById('tf-breite')?.value     || '';
+  _tidePlanSchiff.tiefgang   = document.getElementById('tf-tiefgang')?.value   || '';
+  _tidePlanSchiff.rakontonne = document.getElementById('tf-rakontonne')?.value || '';
   _updateTideFensterResult();
 }
 
@@ -4715,7 +4734,7 @@ function _lookupAGFContainer(breite, laenge) {
 }
 
 function _buildTideFensterResult() {
-  const { typ, laenge, breite, tiefgang } = _tidePlanSchiff;
+  const { typ, laenge, breite, tiefgang, rakontonne } = _tidePlanSchiff;
   if (typ !== 'Containerschiff') return '';
 
   const l = parseFloat(laenge), b = parseFloat(breite), tg = parseFloat(tiefgang) || null;
@@ -4749,6 +4768,91 @@ function _buildTideFensterResult() {
   }
 
   const fmt = v => v.toFixed(2).replace('.', ',');
+  const pad = n => String(n).padStart(2, '0');
+  const fmtTime = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+  // ── Passierzeit Barke "C" frühestens ─────────────────────────────────────
+  let barkeCHtml = '';
+  const qualifiziert = typ === 'Containerschiff' && l <= 350 && b < 46.0;
+
+  if (qualifiziert && tg !== null && tg <= match.tideAbh) {
+    // Nearest NW Cuxhaven relative to Rakon Tonne time
+    const cuxNW = tideDbs.Cuxhaven.filter(e => e.type === 'NW');
+
+    let nwRef = null;
+    if (rakontonne) {
+      // datetime-local → treat as CET (+01:00) consistent with bshDtMs
+      const rakonMs = new Date(rakontonne + ':00+01:00').getTime();
+      nwRef = cuxNW.reduce((best, ev) => {
+        if (!best) return ev;
+        return Math.abs(bshDtMs(ev.dt) - rakonMs) < Math.abs(bshDtMs(best.dt) - rakonMs) ? ev : best;
+      }, null);
+    } else if (cuxNW.length) {
+      // No Rakon Tonne time → use next upcoming NW
+      const now = Date.now();
+      nwRef = cuxNW.find(ev => bshDtMs(ev.dt) >= now) || cuxNW[cuxNW.length - 1];
+    }
+
+    if (nwRef) {
+      const nwMs  = bshDtMs(nwRef.dt);
+      const entry = AGF_BARKE_C_L350.find(r => tg <= r.tgMax);
+
+      if (entry && entry.minAfterNW === null) {
+        // jederzeit — kein Tideabhängigkeit an Bake C
+        barkeCHtml = `
+          <div style="margin-top:18px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
+            <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+              Passierzeit Bake „C" frühestens
+            </div>
+            <div style="background:#f0fdf4;border:2px solid #6ee7b7;border-radius:12px;padding:16px 20px;text-align:center">
+              <div style="font-size:11px;font-weight:700;color:#059669;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Bake C</div>
+              <div style="font-size:26px;font-weight:900;color:#059669;letter-spacing:-1px">jederzeit</div>
+              <div style="font-size:11px;color:#6ee7b7;margin-top:5px;font-weight:600">Containerschiff · L ≤ 350 m · B &lt; 46 m</div>
+            </div>
+          </div>`;
+      } else if (entry && entry.minAfterNW !== null) {
+        const offset   = entry.minAfterNW;
+        const bakeCMs  = nwMs + offset * 60000;
+        const offStr   = offset === 0 ? 'NW + 0 min' : `NW + ${offset >= 60 ? Math.floor(offset/60)+'h ' : ''}${offset%60 > 0 ? (offset%60)+' min' : ''}`.trim();
+
+        barkeCHtml = `
+          <div style="margin-top:18px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
+            <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+              Passierzeit Bake „C" frühestens
+            </div>
+            <div style="font-size:11px;color:#64748b;margin-bottom:10px">
+              Bezug: NW Cuxhaven <strong style="color:#1b3d5f">${fmtTime(nwMs)} Uhr</strong>
+              &nbsp;·&nbsp; Zuschlag: <strong style="color:#1b3d5f">${offStr}</strong>
+            </div>
+            <div style="background:#fdf4ff;border:2px solid #d8b4fe;border-radius:12px;padding:16px 20px;text-align:center">
+              <div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Früheste Passage Bake C</div>
+              <div style="font-size:32px;font-weight:900;color:#7c3aed;letter-spacing:-1px">${fmtTime(bakeCMs)} Uhr</div>
+              <div style="font-size:11px;color:#a78bfa;margin-top:5px;font-weight:600">Containerschiff · L ≤ 350 m · B &lt; 46 m</div>
+            </div>
+          </div>`;
+      }
+    } else if (!rakontonne) {
+      barkeCHtml = `
+        <div style="margin-top:18px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
+          <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+            Passierzeit Bake „C" frühestens
+          </div>
+          <div style="padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#94a3b8;border:1px dashed #cbd5e1;text-align:center">
+            Keine BSH-Tidedaten für Cuxhaven geladen.
+          </div>
+        </div>`;
+    }
+  } else if (!qualifiziert && tg !== null) {
+    barkeCHtml = `
+      <div style="margin-top:18px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">
+          Passierzeit Bake „C" frühestens
+        </div>
+        <div style="padding:10px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#94a3b8;border:1px dashed #cbd5e1;text-align:center">
+          Tabelle nur für Containerschiffe L ≤ 350 m, B &lt; 46 m verfügbar.
+        </div>
+      </div>`;
+  }
 
   return `
     <div style="margin-top:16px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
@@ -4771,6 +4875,7 @@ function _buildTideFensterResult() {
         </div>
       </div>
       ${tgHtml}
+      ${barkeCHtml}
     </div>`;
 }
 
@@ -4921,6 +5026,13 @@ function _renderTideFenster() {
               <label for="tf-tiefgang" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Tiefgang (m)</label>
               <input id="tf-tiefgang" type="number" min="0" step="0.01" placeholder="z. B. 12.50"
                 value="${_tidePlanSchiff.tiefgang}"
+                oninput="_tideFensterUpdateSchiff()"
+                style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
+            </div>
+            <div class="field">
+              <label for="tf-rakontonne" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Passage Rakon Tonne</label>
+              <input id="tf-rakontonne" type="datetime-local"
+                value="${_tidePlanSchiff.rakontonne}"
                 oninput="_tideFensterUpdateSchiff()"
                 style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
             </div>
