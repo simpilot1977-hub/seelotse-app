@@ -3846,6 +3846,19 @@ let eppStichtag = ''; // datetime-local string oder '' = aktuelle Zeit
 let _eppSubTab  = 'epp'; // 'epp' | 'tide'
 let _tidePlanSchiff = { typ: '', laenge: '', breite: '', tiefgang: '' };
 
+// ── AGF-Tiefgänge Einkommend · Containerschiffe (Quelle: PIA-Tabelle Hamburg) ──
+// Spalten: bMax (Breite ≤), lMax (Länge ≤), tideUnabh (jederzeit), tideAbh (mit AGF-Fenster)
+const AGF_CONTAINER_TABLE = [
+  { bMax: 46.0, lMax: 350, tideUnabh: 12.20, tideAbh: 14.50 },
+  { bMax: 47.5, lMax: 360, tideUnabh: 12.30, tideAbh: 14.60 },
+  { bMax: 50.0, lMax: 370, tideUnabh: 12.40, tideAbh: 14.70 },
+  { bMax: 52.5, lMax: 380, tideUnabh: 12.50, tideAbh: 14.80 },
+  { bMax: 55.0, lMax: 390, tideUnabh: 12.60, tideAbh: 14.90 },
+  { bMax: 57.5, lMax: 400, tideUnabh: 12.70, tideAbh: 15.00 },
+  { bMax: 60.0, lMax: 400, tideUnabh: 12.80, tideAbh: 15.10 },
+  { bMax: 62.5, lMax: 400, tideUnabh: 12.90, tideAbh: 15.20 },
+];
+
 // Elbe waypoints: order is inbound (E3 → Hamburg)
 // dist = distance FROM previous waypoint in NM
 const EPP_WP = [
@@ -4694,6 +4707,76 @@ function _tideFensterUpdateSchiff() {
   _tidePlanSchiff.laenge   = document.getElementById('tf-laenge')?.value   || '';
   _tidePlanSchiff.breite   = document.getElementById('tf-breite')?.value   || '';
   _tidePlanSchiff.tiefgang = document.getElementById('tf-tiefgang')?.value || '';
+  _updateTideFensterResult();
+}
+
+function _lookupAGFContainer(breite, laenge) {
+  return AGF_CONTAINER_TABLE.find(r => breite <= r.bMax && laenge <= r.lMax) || null;
+}
+
+function _buildTideFensterResult() {
+  const { typ, laenge, breite, tiefgang } = _tidePlanSchiff;
+  if (typ !== 'Containerschiff') return '';
+
+  const l = parseFloat(laenge), b = parseFloat(breite), tg = parseFloat(tiefgang) || null;
+  if (!b || !l) return `
+    <div style="padding:12px 14px;background:#f8fafc;border-radius:8px;font-size:12px;color:#94a3b8;border:1px dashed #cbd5e1;text-align:center">
+      Bitte Breite und Länge eingeben, um den zulässigen Tiefgang zu ermitteln.
+    </div>`;
+
+  const match = _lookupAGFContainer(b, l);
+  if (!match) return `
+    <div style="padding:12px 14px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;color:#dc2626;font-weight:600">
+      ⛔ Keine AGF-Kategorie — Schiff überschreitet Höchstmaß (B max. 62,5 m · L max. 400 m)
+    </div>`;
+
+  // Draught status badge
+  let tgHtml = '';
+  if (tg !== null) {
+    if (tg > match.tideAbh) {
+      tgHtml = `<div style="margin-top:10px;padding:9px 14px;background:#fef2f2;border:1.5px solid #fca5a5;border-radius:8px;font-size:13px;color:#dc2626;font-weight:700">
+        ⛔ TG ${tg.toFixed(2).replace('.',',')} m — überschreitet AGF-Grenze (max. ${match.tideAbh.toFixed(2).replace('.',',')} m)
+      </div>`;
+    } else if (tg > match.tideUnabh) {
+      tgHtml = `<div style="margin-top:10px;padding:9px 14px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:8px;font-size:13px;color:#92400e;font-weight:700">
+        🕐 TG ${tg.toFixed(2).replace('.',',')} m — nur mit AGF-Tidefahrplan (Zeitfenster erforderlich)
+      </div>`;
+    } else {
+      tgHtml = `<div style="margin-top:10px;padding:9px 14px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;font-size:13px;color:#16a34a;font-weight:700">
+        ✅ TG ${tg.toFixed(2).replace('.',',')} m — tideunabhängig (jederzeit möglich)
+      </div>`;
+    }
+  }
+
+  const fmt = v => v.toFixed(2).replace('.', ',');
+
+  return `
+    <div style="margin-top:16px;border-top:1px solid var(--border,#c8d6e2);padding-top:14px">
+      <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">
+        Tiefgänge AGF Einkommend · Containerschiff
+      </div>
+      <div style="font-size:12px;color:#1b3d5f;margin-bottom:12px">
+        Klasse: <strong>B ≤ ${match.bMax.toFixed(1).replace('.',',')} m &nbsp;·&nbsp; L ≤ ${match.lMax} m</strong>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div style="background:#eff6ff;border:1.5px solid #93c5fd;border-radius:10px;padding:14px 16px;text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Tideunabhängig</div>
+          <div style="font-size:26px;font-weight:800;color:#1d4ed8;letter-spacing:-.5px">max. ${fmt(match.tideUnabh)} m</div>
+          <div style="font-size:10px;color:#93c5fd;margin-top:4px;font-weight:600">jederzeit</div>
+        </div>
+        <div style="background:#f0fdf4;border:1.5px solid #6ee7b7;border-radius:10px;padding:14px 16px;text-align:center">
+          <div style="font-size:10px;font-weight:700;color:#059669;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Tideabhängig (AGF)</div>
+          <div style="font-size:26px;font-weight:800;color:#059669;letter-spacing:-.5px">max. ${fmt(match.tideAbh)} m</div>
+          <div style="font-size:10px;color:#6ee7b7;margin-top:4px;font-weight:600">mit Tidefahrplan</div>
+        </div>
+      </div>
+      ${tgHtml}
+    </div>`;
+}
+
+function _updateTideFensterResult() {
+  const el = document.getElementById('tf-result');
+  if (el) el.innerHTML = _buildTideFensterResult();
 }
 
 function _renderTideFenster() {
@@ -4842,10 +4925,14 @@ function _renderTideFenster() {
                 style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
             </div>
           </div>
+          <!-- AGF-Tiefgang-Ergebnis -->
+          <div id="tf-result"></div>
         </div>
 
       </div>
     </div>`;
+  // Ergebnis sofort berechnen (z. B. beim Tab-Wechsel mit bereits eingegebenen Werten)
+  _updateTideFensterResult();
 }
 
 function goEPP() {
