@@ -987,6 +987,18 @@
     .epp-toggle-field { display: flex; flex-direction: column; }
     .epp-toggle-field label.top-label { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 6px; }
 
+    /* EPP Tab Bar */
+    .epp-tab-bar { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 2px solid var(--border,#c8d6e2); margin-bottom: 18px; }
+    .epp-tab { padding: 8px 20px; font-size: 13px; font-weight: 600; border: none; border-radius: 8px 8px 0 0; background: #e9f0f6; color: #637485; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .15s; }
+    .epp-tab:hover { background: #dce7f0; color: #1b3d5f; }
+    .epp-tab-active { background: #fff; color: #1b3d5f; border: 2px solid var(--border,#c8d6e2); border-bottom-color: #fff; }
+    /* Tide-Fenster */
+    .tf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 640px) { .tf-grid { grid-template-columns: 1fr; } }
+    .tf-col { display: flex; flex-direction: column; gap: 8px; }
+    .tf-col-hdr { font-size: 13px; font-weight: 800; color: #1b3d5f; padding: 4px 0 8px; border-bottom: 2px solid var(--border,#c8d6e2); margin-bottom: 2px; letter-spacing: .2px; }
+    .tf-event { padding: 8px 10px; border-radius: 7px; border: 1px solid rgba(0,0,0,.06); }
+    .tf-no-data { padding: 16px 10px; color: #94a3b8; font-size: 12px; text-align: center; background: #f8fafc; border-radius: 7px; }
     /* EPP Toolbar */
     .epp-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
     .epp-toolbar-left { display: flex; align-items: center; gap: 10px; }
@@ -3831,6 +3843,8 @@ function exportFahrtPDF(entryId) {
 const TIDE_DB_STORAGE_KEY = 'seelotse_tide_db_v1';
 let tideDbs = { Cuxhaven:[], Brunsbuettel:[], Hamburg:[] };
 let eppStichtag = ''; // datetime-local string oder '' = aktuelle Zeit
+let _eppSubTab  = 'epp'; // 'epp' | 'tide'
+let _tidePlanSchiff = { typ: '', laenge: '', breite: '', tiefgang: '' };
 
 // Elbe waypoints: order is inbound (E3 → Hamburg)
 // dist = distance FROM previous waypoint in NM
@@ -4662,6 +4676,178 @@ function setNavActive(id) {
 
 /* ── EPP – Elbe Passage Planning ── */
 
+function goEppTab(tab) {
+  _eppSubTab = tab;
+  renderEPPPage();
+}
+
+function _tideFensterGetEvents(loc, refMs) {
+  const db = (tideDbs[loc] || []).slice().sort((a, b) => bshDtMs(a.dt) - bshDtMs(b.dt));
+  if (!db.length) return { past: null, future: [] };
+  const past   = [...db].filter(e => bshDtMs(e.dt) <= refMs).at(-1) || null;
+  const future = db.filter(e => bshDtMs(e.dt) > refMs).slice(0, 2);
+  return { past, future };
+}
+
+function _tideFensterUpdateSchiff() {
+  _tidePlanSchiff.typ      = document.getElementById('tf-typ')?.value      || '';
+  _tidePlanSchiff.laenge   = document.getElementById('tf-laenge')?.value   || '';
+  _tidePlanSchiff.breite   = document.getElementById('tf-breite')?.value   || '';
+  _tidePlanSchiff.tiefgang = document.getElementById('tf-tiefgang')?.value || '';
+}
+
+function _renderTideFenster() {
+  const now    = new Date();
+  const refMs  = now.getTime();
+  const pad    = n => String(n).padStart(2, '0');
+  const fmtT   = ms => { const d = new Date(ms); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const fmtDT  = ms => {
+    const d = new Date(ms);
+    return `${pad(d.getDate())}.${pad(d.getMonth()+1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  const fmtDelta = ms => {
+    const diff = ms - refMs;
+    const abs  = Math.abs(diff);
+    const h    = Math.floor(abs / 3600000);
+    const m    = Math.floor((abs % 3600000) / 60000);
+    const sign = diff < 0 ? '−' : '+';
+    return h > 0 ? `${sign}${h}h ${pad(m)}m` : `${sign}${m}m`;
+  };
+
+  const locLabels = { Cuxhaven: 'Cuxhaven', Brunsbuettel: 'Brunsbüttel', Hamburg: 'Hamburg' };
+
+  const hasTideData = EPP_TIDE_LOCS.some(loc => tideDbs[loc]?.length > 0);
+
+  const tideTable = EPP_TIDE_LOCS.map(loc => {
+    const { past, future } = _tideFensterGetEvents(loc, refMs);
+    const allEvents = [past, ...future].filter(Boolean);
+
+    if (!allEvents.length) {
+      return `
+        <div class="tf-col">
+          <div class="tf-col-hdr">${locLabels[loc]}</div>
+          <div class="tf-no-data">Keine Tidedaten<br><small>BSH-Datei importieren</small></div>
+        </div>`;
+    }
+
+    const rows = allEvents.map((ev, idx) => {
+      const isPast = idx === 0 && past !== null;
+      const ms     = bshDtMs(ev.dt);
+      const isHW   = ev.type === 'HW';
+      const wsM    = ev.ws ? (parseFloat(ev.ws) / 100).toFixed(2) + ' m' : '—';
+      const dev    = bshDevBadge(loc, ev.type, ev.dt, 'dm');
+      const delta  = fmtDelta(ms);
+      const typeColor = isHW ? '#1d4ed8' : '#b45309';
+      const rowBg  = isPast
+        ? 'background:#f1f5f9;opacity:.7'
+        : isHW
+          ? 'background:rgba(219,234,254,0.5);border-left:3px solid #1d4ed8'
+          : 'background:rgba(254,249,195,0.5);border-left:3px solid #d97706';
+
+      return `
+        <div class="tf-event" style="${rowBg}">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+            <span style="font-size:11px;font-weight:800;color:${isPast?'#94a3b8':typeColor};letter-spacing:.3px;min-width:24px">${ev.type}</span>
+            <span style="font-size:13px;font-weight:700;color:${isPast?'#94a3b8':'#1a2332'}">${fmtDT(ms)}</span>
+            <span style="font-size:11px;color:${isPast?'#b4c2cc':'#334155'};margin-left:auto;white-space:nowrap">${delta}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:3px">
+            <span style="font-size:12px;color:${isPast?'#94a3b8':'#1b3d5f'};font-weight:600">${wsM}</span>
+            <span style="font-size:11px">${dev}</span>
+            ${isPast?'<span style="font-size:10px;color:#94a3b8;margin-left:auto">vergangen</span>':''}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="tf-col">
+        <div class="tf-col-hdr">${locLabels[loc]}</div>
+        ${rows}
+      </div>`;
+  }).join('');
+
+  const noDataBanner = !hasTideData ? `
+    <div style="margin:0 0 16px;padding:10px 16px;background:#fef9c3;border:1px solid #fde68a;border-radius:8px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px">
+      ⚠️ Keine BSH-Tidedaten geladen. Bitte im Wetter-Dashboard eine BSH-Datei importieren.
+    </div>` : '';
+
+  const SHIP_TYPES = ['Containerschiff', 'Massengutschiff', 'Sonstiges'];
+
+  document.getElementById('app-main').innerHTML = `
+    <div class="epp-page">
+
+      <!-- Tab-Leiste ─────────────────────────────────────────────────────── -->
+      <div class="epp-tab-bar">
+        <button class="epp-tab" onclick="goEppTab('epp')">⚓ EPP</button>
+        <button class="epp-tab epp-tab-active" onclick="goEppTab('tide')">🌊 Tide-Fenster</button>
+      </div>
+
+      <!-- Toolbar ─────────────────────────────────────────────────────────── -->
+      <div class="epp-toolbar">
+        <div class="epp-toolbar-left">
+          <h2>🌊 Tide-Fahrplan · Elbe</h2>
+          <span style="font-size:11px;color:#94a3b8">Referenz: ${fmtDT(refMs)} Uhr</span>
+        </div>
+      </div>
+
+      <div class="epp-body" style="padding:16px 20px;max-width:900px;margin:0 auto">
+
+        ${noDataBanner}
+
+        <!-- ① Gezeitenübersicht ─────────────────────────────────────────── -->
+        <div class="epp-card" style="margin-bottom:20px">
+          <div class="epp-card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+            Gezeitenübersicht
+          </div>
+          <div class="tf-grid">
+            ${tideTable}
+          </div>
+        </div>
+
+        <!-- ② Schiffsdaten ──────────────────────────────────────────────── -->
+        <div class="epp-card">
+          <div class="epp-card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 17l5-10 4 6 3-4 5 8H3z"/></svg>
+            Schiffsdaten
+          </div>
+          <div class="epp-ship-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px 16px;align-items:end">
+            <div class="field">
+              <label for="tf-typ" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Schiffstyp</label>
+              <select id="tf-typ" onchange="_tideFensterUpdateSchiff()"
+                style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff)">
+                <option value="">— wählen —</option>
+                ${SHIP_TYPES.map(t => `<option value="${t}"${_tidePlanSchiff.typ===t?' selected':''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="field">
+              <label for="tf-laenge" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Länge (m)</label>
+              <input id="tf-laenge" type="number" min="0" step="1" placeholder="z. B. 250"
+                value="${_tidePlanSchiff.laenge}"
+                oninput="_tideFensterUpdateSchiff()"
+                style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
+            </div>
+            <div class="field">
+              <label for="tf-breite" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Breite (m)</label>
+              <input id="tf-breite" type="number" min="0" step="1" placeholder="z. B. 40"
+                value="${_tidePlanSchiff.breite}"
+                oninput="_tideFensterUpdateSchiff()"
+                style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
+            </div>
+            <div class="field">
+              <label for="tf-tiefgang" style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.4px">Tiefgang (m)</label>
+              <input id="tf-tiefgang" type="number" min="0" step="0.01" placeholder="z. B. 12.50"
+                value="${_tidePlanSchiff.tiefgang}"
+                oninput="_tideFensterUpdateSchiff()"
+                style="width:100%;padding:7px 8px;border:1.5px solid var(--border,#c8d6e2);border-radius:7px;font-size:13px;background:var(--bg,#fff);box-sizing:border-box">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>`;
+}
+
 function goEPP() {
   currentView = 'epp';
   setNavActive('nav-epp');
@@ -4867,6 +5053,7 @@ function makeTideCurveSVG(tideEntries, refTs) {
 }
 
 function renderEPPPage() {
+  if (_eppSubTab === 'tide') { _renderTideFenster(); return; }
   const wps     = eppWaypoints();
   const fromOpts = wps.map((w, i) => {
     const validTo = wps.findIndex(x => x.id === eppTo);
@@ -5459,6 +5646,12 @@ function renderEPPPage() {
 
   document.getElementById('app-main').innerHTML = `
     <div class="epp-page">
+
+      <!-- Tab-Leiste ─────────────────────────────────────────────────────── -->
+      <div class="epp-tab-bar">
+        <button class="epp-tab epp-tab-active" onclick="goEppTab('epp')">⚓ EPP</button>
+        <button class="epp-tab" onclick="goEppTab('tide')">🌊 Tide-Fenster</button>
+      </div>
 
       <!-- Toolbar ─────────────────────────────────────────────────────── -->
       <div class="epp-toolbar">
