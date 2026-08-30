@@ -274,6 +274,113 @@
       max-height: calc(100vh - var(--header-h) - 140px);
     }
 
+    /* ── KALENDER ──────────────────────────────────────────────────── */
+    .view-toggle { display:flex; gap:6px; margin:0 0 4px; }
+    .view-toggle-btn {
+      padding: 6px 16px; border-radius: var(--r-sm); border: 1px solid var(--border);
+      background: var(--surface); color: var(--text-muted); font-size: 13px;
+      font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .view-toggle-btn.active {
+      background: var(--navy); color: #fff; border-color: var(--navy);
+    }
+    .kal-wrap { padding: 0 0 40px; }
+    .kal-nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 0 16px; gap: 12px;
+    }
+    .kal-nav-btn {
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
+      padding: 6px 14px; font-size: 18px; cursor: pointer; color: var(--text);
+      transition: background .12s;
+    }
+    .kal-nav-btn:hover { background: var(--blue-pale); }
+    .kal-month-label { font-size: 20px; font-weight: 700; color: var(--text); }
+    .kal-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+    }
+    .kal-dow {
+      text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .5px;
+      color: var(--text-muted); padding: 4px 0 8px; text-transform: uppercase;
+    }
+    .kal-day {
+      min-height: 90px; background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 5px 5px 5px; cursor: pointer;
+      transition: background .12s; display: flex; flex-direction: column; gap: 3px;
+    }
+    .kal-day:hover { background: var(--blue-pale); }
+    .kal-day.kal-today { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(42,100,149,.2); }
+    .kal-day.kal-outside { background: var(--bg); opacity: .45; cursor: default; }
+    .kal-day.kal-outside:hover { background: var(--bg); }
+    .kal-day-num {
+      font-size: 12px; font-weight: 700; color: var(--text-muted);
+      line-height: 1; margin-bottom: 2px;
+    }
+    .kal-day.kal-today .kal-day-num {
+      color: var(--blue); background: var(--blue-pale);
+      border-radius: 50%; width: 20px; height: 20px;
+      display: flex; align-items: center; justify-content: center; font-size: 11px;
+    }
+    .kal-chip {
+      font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 100%; line-height: 1.3; cursor: default;
+    }
+    .kal-chip-fahrt  { background: #dbeafe; color: #1e40af; border-left: 3px solid #3b82f6; }
+    .kal-chip-radar  { background: #f3e8ff; color: #6b21a8; border-left: 3px solid #9333ea; }
+    .kal-chip-ag     { background: #fef9c3; color: #854d0e; border-left: 3px solid #eab308; }
+    .kal-chip-2p2    { background: #dcfce7; color: #14532d; border-left: 3px solid #22c55e; }
+    .kal-chip-wr     { background: #fff7ed; color: #7c2d12; border-left: 3px solid #f97316; }
+    .kal-chip-wb     { background: #fce7f3; color: #831843; border-left: 3px solid #ec4899; }
+    .kal-chip-dv     { background: #fee2e2; color: #991b1b; border-left: 3px solid #ef4444; cursor:pointer; }
+    .kal-chip-krank  { background: #fff3e0; color: #7c3300; border-left: 3px solid #fb923c; cursor:pointer; }
+    .kal-chip-frei   { background: #d1fae5; color: #065f46; border-left: 3px solid #10b981; cursor:pointer; }
+    .kal-add-btn {
+      margin-top: auto; font-size: 10px; color: var(--text-muted);
+      opacity: 0; transition: opacity .15s;
+      background: none; border: 1px dashed var(--border); border-radius: 3px;
+      padding: 2px 4px; cursor: pointer; width: 100%;
+    }
+    .kal-day:hover .kal-add-btn { opacity: 1; }
+    .kal-legend {
+      display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px;
+      padding: 12px 16px; background: var(--surface); border-radius: var(--r);
+      border: 1px solid var(--border);
+    }
+    .kal-legend-item {
+      display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text-muted);
+    }
+    .kal-legend-dot {
+      width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0;
+    }
+    /* ── ADD-EVENT POPUP ─────────────────────────────────────────────── */
+    .kal-popup-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 300;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .kal-popup {
+      background: var(--surface); border-radius: var(--r-lg); padding: 24px;
+      width: 320px; box-shadow: var(--sh-lg); display: flex; flex-direction: column; gap: 14px;
+    }
+    .kal-popup h3 { font-size: 16px; font-weight: 700; color: var(--text); }
+    .kal-popup .kal-type-btns { display: flex; gap: 8px; }
+    .kal-popup .kal-type-btn {
+      flex: 1; padding: 8px 4px; border-radius: var(--r-sm); border: 2px solid transparent;
+      font-size: 13px; font-weight: 700; cursor: pointer; transition: all .12s;
+    }
+    .kal-type-btn.dv   { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+    .kal-type-btn.krank{ background: #fff3e0; color: #7c3300; border-color: #fdba74; }
+    .kal-type-btn.frei { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+    .kal-type-btn.selected { box-shadow: 0 0 0 3px var(--blue); }
+    .kal-popup input[type="text"] {
+      width: 100%; padding: 8px 10px; border-radius: var(--r-sm);
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      font-size: 14px;
+    }
+    .kal-popup-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    /* ── end KALENDER ─────────────────────────────────────────────── */
+
     .entries-table {
       width: 100%;
       border-collapse: collapse;
@@ -1499,6 +1606,13 @@ let confirmingId  = null;
 let filterFrom    = '';
 let filterTo      = '';
 let filterPreset  = '';
+
+// ── Kalender ─────────────────────────────────────────────────────────────────
+const KALENDER_EVENTS_KEY = 'seelotse_kalender_events_v1';
+let kalenderEvents  = [];           // [{id, date:'YYYY-MM-DD', type:'DV'|'krank'|'frei', notiz}]
+let fahrtenListMode = 'list';       // 'list' | 'kalender'
+let kalenderYear    = new Date().getFullYear();
+let kalenderMonth   = new Date().getMonth(); // 0-based
 
 // EPP Datenbank
 const EPP_STORAGE_KEY = 'seelotse_epp_v1';
@@ -4133,6 +4247,13 @@ function saveData() {
   _idbPutAll('fahrten', fahrten).catch(() => {});             // primärer Store
   updateAgenturDatalist();
   _autoSaveToFile();                                           // Auto-Speicherung in Datei
+}
+function loadKalenderEvents() {
+  try { const r = localStorage.getItem(KALENDER_EVENTS_KEY); if (r) kalenderEvents = JSON.parse(r); }
+  catch(e) { kalenderEvents = []; }
+}
+function saveKalenderEvents() {
+  localStorage.setItem(KALENDER_EVENTS_KEY, JSON.stringify(kalenderEvents));
 }
 function updateAgenturDatalist() {
   const dl = document.getElementById('agentur-list');
@@ -11605,7 +11726,19 @@ function renderList() {
       </div>`;
   }
 
+  const viewToggleHtml = `
+    <div class="view-toggle">
+      <button class="view-toggle-btn${fahrtenListMode==='list'?' active':''}" onclick="setFahrtenListMode('list')">☰ Liste</button>
+      <button class="view-toggle-btn${fahrtenListMode==='kalender'?' active':''}" onclick="setFahrtenListMode('kalender')">📅 Kalender</button>
+    </div>`;
+
+  if (fahrtenListMode === 'kalender') {
+    document.getElementById('app-main').innerHTML = viewToggleHtml + renderKalenderHTML();
+    return;
+  }
+
   document.getElementById('app-main').innerHTML = `
+    ${viewToggleHtml}
     ${filterBarHtml}
     ${dashHtml}
     <div class="list-toolbar">
@@ -11622,6 +11755,183 @@ function renderList() {
     </div>
     ${tableHtml}`;
 
+}
+
+function setFahrtenListMode(mode) {
+  fahrtenListMode = mode;
+  renderList();
+}
+
+// ── Kalender-Rendering ────────────────────────────────────────────────────────
+function renderKalenderHTML() {
+  const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
+  const DOW = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+
+  const year  = kalenderYear;
+  const month = kalenderMonth;
+
+  // Build day → fahrten map
+  const fahrtByDay = {};
+  fahrten.forEach(f => {
+    const d = (f.anBord || '').slice(0, 10);
+    if (!d) return;
+    if (!fahrtByDay[d]) fahrtByDay[d] = [];
+    fahrtByDay[d].push(f);
+  });
+
+  // Build day → events map
+  const evtByDay = {};
+  kalenderEvents.forEach(e => {
+    if (!evtByDay[e.date]) evtByDay[e.date] = [];
+    evtByDay[e.date].push(e);
+  });
+
+  // First day of month (Mon-based: 0=Mon…6=Sun)
+  const firstDate = new Date(year, month, 1);
+  const firstDow = (firstDate.getDay() + 6) % 7; // Mon=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Chip color by Einsatztyp
+  function chipClass(art) {
+    if (!art) return 'kal-chip-fahrt';
+    if (art === 'Radar')    return 'kal-chip-radar';
+    if (art === 'AG-Fahrt') return 'kal-chip-ag';
+    if (art === '2+2')      return 'kal-chip-2p2';
+    if (art === 'WR')       return 'kal-chip-wr';
+    if (art === 'WB')       return 'kal-chip-wb';
+    return 'kal-chip-fahrt';
+  }
+
+  function dayCell(dayNum, outside) {
+    if (!dayNum) return `<div class="kal-day kal-outside"></div>`;
+    const pad = n => String(n).padStart(2,'0');
+    const dateStr = `${year}-${pad(month+1)}-${pad(dayNum)}`;
+    const isToday = dateStr === today;
+    const fs = fahrtByDay[dateStr] || [];
+    const es = evtByDay[dateStr] || [];
+
+    let chips = '';
+    fs.forEach(f => {
+      const dur = calcDuration(f.anBord, f.vonBord) || '';
+      const label = (f.schiffsname || f.artDesEinsatzes || 'Fahrt').slice(0, 18);
+      const title = [f.schiffsname, f.streckeVon && f.streckeNach ? `${f.streckeVon}→${f.streckeNach}` : '', dur].filter(Boolean).join(' · ');
+      chips += `<div class="kal-chip ${chipClass(f.artDesEinsatzes)}" title="${esc(title)}" onclick="goAktuelleReiseWith('${esc(f.id)}')">${esc(label)}${dur ? ` <b>${esc(dur)}</b>` : ''}</div>`;
+    });
+    es.forEach(e => {
+      const cls = e.type === 'DV' ? 'kal-chip-dv' : e.type === 'krank' ? 'kal-chip-krank' : 'kal-chip-frei';
+      const label = e.type === 'DV' ? 'DV' : e.type === 'krank' ? '🤒 Krank' : '🟢 Frei';
+      const notiz = e.notiz ? `: ${e.notiz}` : '';
+      chips += `<div class="kal-chip ${cls}" title="${esc(e.type + notiz)}" onclick="kalDeleteEvent('${esc(e.id)}')" title="Klick zum Löschen">${esc(label)}${e.notiz ? ` – ${esc(e.notiz.slice(0,12))}` : ''}</div>`;
+    });
+
+    const addBtn = outside ? '' : `<button class="kal-add-btn" onclick="kalAddEvent('${dateStr}')">+ eintragen</button>`;
+    return `<div class="kal-day${isToday?' kal-today':''}${outside?' kal-outside':''}">
+      <div class="kal-day-num">${dayNum}</div>
+      ${chips}
+      ${addBtn}
+    </div>`;
+  }
+
+  // Build grid cells
+  let cells = '';
+  // Leading empty cells
+  for (let i = 0; i < firstDow; i++) cells += dayCell(null, true);
+  for (let d = 1; d <= daysInMonth; d++) cells += dayCell(d, false);
+  // Trailing empty cells to fill last row
+  const total = firstDow + daysInMonth;
+  const remainder = total % 7;
+  if (remainder !== 0) for (let i = 0; i < 7 - remainder; i++) cells += dayCell(null, true);
+
+  const dowHtml = DOW.map(d => `<div class="kal-dow">${d}</div>`).join('');
+
+  return `<div class="kal-wrap">
+    <div class="kal-nav">
+      <button class="kal-nav-btn" onclick="kalPrevMonth()">‹</button>
+      <span class="kal-month-label">${MONTH_NAMES[month]} ${year}</span>
+      <button class="kal-nav-btn" onclick="kalNextMonth()">›</button>
+    </div>
+    <div class="kal-grid">${dowHtml}${cells}</div>
+    <div class="kal-legend">
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#3b82f6"></div> Schiff</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#9333ea"></div> Radar</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#eab308"></div> AG-Fahrt</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#22c55e"></div> 2+2</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#f97316"></div> WR</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#ec4899"></div> WB</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#ef4444"></div> DV</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#fb923c"></div> Krank</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#10b981"></div> Frei</div>
+    </div>
+  </div>`;
+}
+
+function kalPrevMonth() {
+  kalenderMonth--;
+  if (kalenderMonth < 0) { kalenderMonth = 11; kalenderYear--; }
+  renderList();
+}
+function kalNextMonth() {
+  kalenderMonth++;
+  if (kalenderMonth > 11) { kalenderMonth = 0; kalenderYear++; }
+  renderList();
+}
+
+let _kalAddDate = null;
+let _kalAddType = 'DV';
+
+function kalAddEvent(dateStr) {
+  _kalAddDate = dateStr;
+  _kalAddType = 'DV';
+  const overlay = document.createElement('div');
+  overlay.className = 'kal-popup-overlay';
+  overlay.id = 'kal-popup-overlay';
+  overlay.innerHTML = `
+    <div class="kal-popup">
+      <h3>Eintrag für ${dateStr.split('-').reverse().join('.')}</h3>
+      <div class="kal-type-btns">
+        <button class="kal-type-btn dv selected" id="kal-btn-DV" onclick="kalSelectType('DV')">DV</button>
+        <button class="kal-type-btn krank" id="kal-btn-krank" onclick="kalSelectType('krank')">Krank</button>
+        <button class="kal-type-btn frei" id="kal-btn-frei" onclick="kalSelectType('frei')">Frei</button>
+      </div>
+      <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="60">
+      <div class="kal-popup-btns">
+        <button class="btn btn-secondary" onclick="kalClosePopup()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="kalSaveEvent()">Speichern</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) kalClosePopup(); });
+  document.body.appendChild(overlay);
+  document.getElementById('kal-notiz-input').focus();
+}
+
+function kalSelectType(type) {
+  _kalAddType = type;
+  ['DV','krank','frei'].forEach(t => {
+    const btn = document.getElementById('kal-btn-' + t);
+    if (btn) btn.classList.toggle('selected', t === type);
+  });
+}
+
+function kalSaveEvent() {
+  const notiz = (document.getElementById('kal-notiz-input')?.value || '').trim();
+  const newEvt = { id: uid(), date: _kalAddDate, type: _kalAddType, notiz };
+  kalenderEvents.push(newEvt);
+  saveKalenderEvents();
+  kalClosePopup();
+  renderList();
+}
+
+function kalDeleteEvent(id) {
+  if (!confirm('Eintrag löschen?')) return;
+  kalenderEvents = kalenderEvents.filter(e => e.id !== id);
+  saveKalenderEvents();
+  renderList();
+}
+
+function kalClosePopup() {
+  const el = document.getElementById('kal-popup-overlay');
+  if (el) el.remove();
 }
 
 function setSort(field) {
@@ -13381,6 +13691,7 @@ function exportExcel() {
 ════════════════════════════════════════════ */
 (async () => {
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
+  loadKalenderEvents();
   updateAgenturDatalist();
   goList();
   // BSH Wasserstandsvorhersage im Hintergrund laden (nach 4s Verzögerung)
