@@ -298,29 +298,46 @@
     .kal-month-label { font-size: 20px; font-weight: 700; color: var(--text); }
     .kal-grid {
       display: grid; grid-template-columns: repeat(7, 1fr);
-      gap: 4px;
+      border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden;
     }
     .kal-dow {
       text-align: center; font-size: 11px; font-weight: 700; letter-spacing: .5px;
-      color: var(--text-muted); padding: 4px 0 8px; text-transform: uppercase;
+      color: var(--text-muted); padding: 4px 0 6px; text-transform: uppercase;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
     }
+    .kal-dow:not(:last-child) { border-right: 1px solid var(--border); }
     .kal-day {
-      min-height: 90px; background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r-sm); padding: 5px 5px 5px; cursor: pointer;
-      transition: background .12s; display: flex; flex-direction: column; gap: 3px;
+      min-height: 90px; background: var(--surface);
+      border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+      padding: 4px 4px 4px; cursor: pointer;
+      transition: background .12s; display: flex; flex-direction: column; gap: 2px;
     }
+    .kal-day:nth-child(7n) { border-right: none; }
     .kal-day:hover { background: var(--blue-pale); }
-    .kal-day.kal-today { border-color: var(--blue); box-shadow: 0 0 0 2px rgba(42,100,149,.2); }
-    .kal-day.kal-outside { background: var(--bg); opacity: .45; cursor: default; }
+    .kal-day.kal-today { background: rgba(42,100,149,.07); }
+    .kal-day.kal-today .kal-day-num-wrap { border-left: 3px solid var(--blue); padding-left: 3px; }
+    .kal-day.kal-outside { background: var(--bg); opacity: .4; cursor: default; }
     .kal-day.kal-outside:hover { background: var(--bg); }
     .kal-day-num {
-      font-size: 12px; font-weight: 700; color: var(--text-muted);
-      line-height: 1; margin-bottom: 2px;
+      font-size: 11px; font-weight: 700; color: var(--text-muted);
+      line-height: 1; margin-bottom: 1px;
     }
-    .kal-day.kal-today .kal-day-num {
-      color: var(--blue); background: var(--blue-pale);
-      border-radius: 50%; width: 20px; height: 20px;
-      display: flex; align-items: center; justify-content: center; font-size: 11px;
+    .kal-day.kal-today .kal-day-num { color: var(--blue); font-weight: 800; }
+    /* tiny time tick bar across top of each day cell */
+    .kal-tl-tick {
+      display: flex; position: relative; height: 10px; margin-bottom: 1px;
+    }
+    .kal-tl-tick-lbl {
+      position: absolute; font-size: 8px; color: var(--text-muted); opacity: .7;
+      transform: translateX(-50%); line-height: 1; top: 0;
+    }
+    .kal-tl-tick-line {
+      position: absolute; top: 7px; bottom: 0; width: 1px; background: var(--border); opacity: .8;
+    }
+    /* sunrise/sunset gradient bar */
+    .kal-sun-bar {
+      height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
     }
     .kal-chip {
       font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 3px;
@@ -337,10 +354,10 @@
     .kal-chip-krank  { background: #fff3e0; color: #7c3300; border-left: 3px solid #fb923c; cursor:pointer; }
     .kal-chip-frei   { background: #d1fae5; color: #065f46; border-left: 3px solid #10b981; cursor:pointer; }
     .kal-add-btn {
-      margin-top: auto; font-size: 10px; color: var(--text-muted);
+      margin-top: auto; font-size: 9px; color: var(--text-muted);
       opacity: 0; transition: opacity .15s;
       background: none; border: 1px dashed var(--border); border-radius: 3px;
-      padding: 2px 4px; cursor: pointer; width: 100%;
+      padding: 1px 3px; cursor: pointer; width: 100%; text-align: center;
     }
     .kal-day:hover .kal-add-btn { opacity: 1; }
     .kal-legend {
@@ -379,6 +396,107 @@
       font-size: 14px;
     }
     .kal-popup-btns { display: flex; gap: 8px; justify-content: flex-end; }
+    .kal-field-group { display: flex; flex-direction: column; gap: 6px; }
+    .kal-field-label { font-size: 12px; font-weight: 700; color: var(--text-muted); letter-spacing: .3px; text-transform: uppercase; }
+    .kal-field-row { display: flex; gap: 10px; }
+    .kal-field-col { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+    .kal-sublabel { font-size: 11px; color: var(--text-muted); }
+    .kal-popup input[type="datetime-local"],
+    .kal-popup input[type="date"],
+    .kal-popup input[type="time"],
+    .kal-popup input[type="number"] {
+      width: 100%; padding: 7px 8px; border-radius: var(--r-sm);
+      border: 1px solid var(--border); background: var(--bg); color: var(--text);
+      font-size: 13px; color-scheme: light dark;
+    }
+    /* ── TIMELINE BARS ───────────────────────────────────────────── */
+    .kal-day { min-height: 130px; }
+    .kal-tl-wrap { position: relative; margin-top: 3px; flex: 1; }
+    .kal-tl-bar {
+      position: absolute; height: 11px; border-radius: 3px;
+      min-width: 3px; overflow: hidden; display: flex;
+      align-items: center; z-index: 1; cursor: pointer;
+    }
+    .kal-tl-lbl {
+      font-size: 8px; font-weight: 700; color: rgba(255,255,255,.95);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      padding: 0 2px; line-height: 1;
+    }
+    .kal-tide-row {
+      font-size: 9px; color: var(--text-muted);
+      padding: 1px 0; border-top: 1px dashed var(--border);
+      margin-top: 2px; display: flex; gap: 5px; flex-wrap: wrap;
+    }
+    .kal-tide-hw { color: #1d4ed8; font-weight: 700; }
+    .kal-tide-nw { color: #b91c1c; font-weight: 700; }
+    .kal-chip-urlaub { background: #ede9fe; color: #4c1d95; border-left: 3px solid #7c3aed; cursor: pointer; }
+    .kal-type-btn.urlaub { background: #ede9fe; color: #4c1d95; border-color: #c4b5fd; }
+    .kal-balance-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700;
+      background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7;
+    }
+    .kal-tide-toggle {
+      font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: var(--r-sm);
+      border: 1.5px solid var(--border); background: var(--surface); color: var(--text);
+      cursor: pointer; transition: all .12s;
+    }
+    .kal-tide-toggle.active { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .kal-view-btns { display: flex; gap: 3px; }
+    .kal-view-btn {
+      font-size: 11px; font-weight: 600; padding: 4px 10px;
+      border-radius: var(--r-sm); border: 1.5px solid var(--border);
+      background: var(--surface); color: var(--text-muted); cursor: pointer;
+    }
+    .kal-view-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+    /* Weekly view */
+    .kal-week-wrap { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .kal-week-col { flex: 1; border-right: 1px solid var(--border); min-width: 0; }
+    .kal-week-col:last-child { border-right: none; }
+    .kal-week-header { padding: 6px 4px; text-align: center; font-size: 11px; font-weight: 700; background: var(--bg); border-bottom: 1px solid var(--border); }
+    .kal-week-header.today { background: var(--blue-pale); color: var(--blue); }
+    .kal-week-body { position: relative; background: var(--surface); }
+    .kal-week-bar {
+      position: absolute; left: 4px; right: 4px; border-radius: 3px;
+      font-size: 9px; font-weight: 700; color: #fff; padding: 1px 4px;
+      overflow: hidden; cursor: pointer; z-index: 2; white-space: nowrap;
+    }
+    .kal-week-hour {
+      position: absolute; left: 0; right: 0; border-top: 1px solid var(--border);
+      font-size: 8px; color: var(--text-muted); padding-left: 3px; line-height: 1; z-index: 1;
+    }
+    /* Daily view */
+    .kal-day-wrap { background: var(--surface); border-radius: var(--r); border: 1px solid var(--border); overflow: hidden; }
+    .kal-day-timeline { position: relative; margin-left: 44px; }
+    .kal-day-hour-label { position: absolute; left: -42px; font-size: 10px; color: var(--text-muted); line-height: 1; width: 38px; text-align: right; }
+    .kal-day-hour-line { position: absolute; left: 0; right: 0; border-top: 1px solid var(--border); }
+    .kal-day-bar {
+      position: absolute; border-radius: 5px;
+      font-size: 11px; font-weight: 700; color: #fff; padding: 3px 8px;
+      overflow: hidden; cursor: pointer; white-space: nowrap; text-overflow: ellipsis;
+    }
+    /* Yearly view */
+    .kal-year-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    @media (max-width: 900px) { .kal-year-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .kal-year-grid { grid-template-columns: repeat(2, 1fr); } }
+    .kal-year-month { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px; cursor: pointer; }
+    .kal-year-month:hover { background: var(--blue-pale); }
+    .kal-year-month-title { font-size: 13px; font-weight: 700; color: var(--navy); margin-bottom: 7px; }
+    .kal-year-mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; font-size: 9px; text-align: center; }
+    .kal-year-mini-dow { font-weight: 700; color: var(--text-muted); padding: 1px 0; }
+    .kal-year-mini-day { border-radius: 2px; padding: 2px 1px; cursor: pointer; }
+    .kal-year-mini-day:hover { background: var(--blue-pale); }
+    .kal-year-mini-day.has-fahrt { background: #dbeafe; color: #1e40af; font-weight: 700; }
+    .kal-year-mini-day.has-event { background: #fee2e2; color: #991b1b; font-weight: 700; }
+    .kal-year-mini-day.has-both  { background: #fef9c3; color: #854d0e; font-weight: 700; }
+    .kal-year-mini-day.outside   { opacity: .3; }
+    .kal-year-mini-day.is-today  { background: var(--blue); color: #fff !important; font-weight: 700; }
+    /* Einstellungen */
+    .einst-section { margin-bottom: 24px; }
+    .einst-title { font-size: 16px; font-weight: 700; color: var(--navy); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+    .einst-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+    .einst-label { font-size: 13px; font-weight: 600; color: var(--text); min-width: 200px; }
+    .einst-input { padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; }
     /* ── end KALENDER ─────────────────────────────────────────────── */
 
     .entries-table {
@@ -1553,6 +1671,14 @@
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
         Import / Export
       </button>
+      <button class="nav-btn" id="nav-uebersicht" onclick="goUebersicht()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="9" x2="9" y2="21"/></svg>
+        Übersicht
+      </button>
+      <button class="nav-btn" id="nav-einst" onclick="goEinstellungen()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Einstellungen
+      </button>
     </nav>
     <div class="header-right">
       <button class="new-btn" id="new-btn" onclick="goForm(null)">
@@ -1609,10 +1735,14 @@ let filterPreset  = '';
 
 // ── Kalender ─────────────────────────────────────────────────────────────────
 const KALENDER_EVENTS_KEY = 'seelotse_kalender_events_v1';
-let kalenderEvents  = [];           // [{id, date:'YYYY-MM-DD', type:'DV'|'krank'|'frei', notiz}]
-let fahrtenListMode = 'list';       // 'list' | 'kalender'
-let kalenderYear    = new Date().getFullYear();
-let kalenderMonth   = new Date().getMonth(); // 0-based
+let kalenderEvents     = [];        // [{id, date:'YYYY-MM-DD', type:'DV'|'krank'|'frei', notiz}]
+let fahrtenListMode    = 'list';    // 'list' | 'kalender'
+let kalenderYear       = new Date().getFullYear();
+let kalenderMonth      = new Date().getMonth(); // 0-based
+let kalenderShowTides  = false;
+let kalenderTideStation= 'Cuxhaven'; // 'Cuxhaven' | 'Brunsbuettel' | 'Hamburg'
+let kalenderView       = 'month';    // 'year' | 'month' | 'week' | 'day'
+let kalenderDay        = new Date().getDate();
 
 // EPP Datenbank
 const EPP_STORAGE_KEY = 'seelotse_epp_v1';
@@ -4255,6 +4385,94 @@ function loadKalenderEvents() {
 function saveKalenderEvents() {
   localStorage.setItem(KALENDER_EVENTS_KEY, JSON.stringify(kalenderEvents));
 }
+
+// ── Freitage-Konto ────────────────────────────────────────────────────────────
+// ── Sunrise / Sunset (simplified NOAA, Hamburg Elbe area) ─────────────────────
+const _SUN_LAT = 53.54, _SUN_LON = 9.97;
+const _D2R = Math.PI / 180, _R2D = 180 / Math.PI;
+
+function _isDST(utcDate) {
+  const y = utcDate.getUTCFullYear();
+  const lsm = new Date(Date.UTC(y,2,31)); lsm.setUTCDate(31 - lsm.getUTCDay());
+  const lso = new Date(Date.UTC(y,9,31)); lso.setUTCDate(31 - lso.getUTCDay());
+  return utcDate >= lsm && utcDate < lso;
+}
+
+function calcSunTimes(dateStr) {
+  const [yr,mo,da] = dateStr.split('-').map(Number);
+  const a = Math.floor((14-mo)/12), y=yr+4800-a, m=mo+12*a-3;
+  const JD = da + Math.floor((153*m+2)/5) + 365*y + Math.floor(y/4) - Math.floor(y/100) + Math.floor(y/400) - 32045 + 0.5;
+  const n = JD - 2451545.0;
+  const Lg = ((280.460 + 0.9856474*n) % 360 + 360) % 360;
+  const g  = ((357.528 + 0.9856003*n) % 360 + 360) % 360;
+  const ec = Lg + 1.915*Math.sin(g*_D2R) + 0.020*Math.sin(2*g*_D2R);
+  const decl = Math.asin(Math.sin(23.439*_D2R)*Math.sin(ec*_D2R))*_R2D;
+  const RA   = Math.atan2(Math.cos(23.439*_D2R)*Math.sin(ec*_D2R), Math.cos(ec*_D2R))*_R2D;
+  const EqT  = ((Lg - RA + 540) % 360 - 180) * 4;
+  const solarNoon = 720 - 4*_SUN_LON - EqT;
+  const latR = _SUN_LAT * _D2R, declR = decl * _D2R;
+  const sinLat = Math.sin(latR), cosLat = Math.cos(latR);
+  const sinDecl = Math.sin(declR), cosDecl = Math.cos(declR);
+  function hourAngle(zenithDeg) {
+    const c = (Math.cos(zenithDeg*_D2R) - sinLat*sinDecl) / (cosLat*cosDecl);
+    return Math.abs(c) <= 1 ? Math.acos(c)*_R2D : null;
+  }
+  const H = hourAngle(90.833);
+  const HC = hourAngle(96);   // civil twilight
+  const tzOff = _isDST(new Date(dateStr+'T12:00:00Z')) ? 120 : 60;
+  if (H === null) {
+    return sinLat*sinDecl > 0 ? {polarDay:true} : {polarNight:true};
+  }
+  return {
+    dawn: solarNoon - (HC||H+6)*4 + tzOff,
+    rise: solarNoon - H*4 + tzOff,
+    set:  solarNoon + H*4 + tzOff,
+    dusk: solarNoon + (HC||H+6)*4 + tzOff,
+  };
+}
+
+function sunBarHtml(dateStr) {
+  const s = calcSunTimes(dateStr);
+  if (!s) return '';
+  if (s.polarDay)   return '<div class="kal-sun-bar" style="background:#fef08a"></div>';
+  if (s.polarNight) return '<div class="kal-sun-bar" style="background:#1e3a5f"></div>';
+  const pct = x => (Math.max(0,Math.min(1440,x))/1440*100).toFixed(1)+'%';
+  const bg = `linear-gradient(to right,#1e3a5f 0%,#1e3a5f ${pct(s.dawn)},#4a7ab5 ${pct(s.dawn)},#4a7ab5 ${pct(s.rise)},#fde68a ${pct(s.rise)},#fde68a ${pct(s.set)},#4a7ab5 ${pct(s.set)},#4a7ab5 ${pct(s.dusk)},#1e3a5f ${pct(s.dusk)},#1e3a5f 100%)`;
+  return `<div class="kal-sun-bar" style="background:${bg}" title="Aufgang ${Math.round(s.rise)%60<10?Math.floor(s.rise/60)+':0'+Math.round(s.rise)%60:Math.floor(s.rise/60)+':'+Math.round(s.rise)%60} · Untergang ${Math.round(s.set)%60<10?Math.floor(s.set/60)+':0'+Math.round(s.set)%60:Math.floor(s.set/60)+':'+Math.round(s.set)%60}"></div>`;
+}
+
+const FREITAG_KONTO_KEY = 'seelotse_freitag_konto_v1';
+let freitagsKonto = { startDatum: '', startAnzahl: 0 };
+
+function loadFreitagsKonto() {
+  try {
+    const r = localStorage.getItem(FREITAG_KONTO_KEY);
+    if (r) freitagsKonto = Object.assign({ startDatum: '', startAnzahl: 0 }, JSON.parse(r));
+  } catch(e) {}
+}
+function saveFreitagsKonto() {
+  localStorage.setItem(FREITAG_KONTO_KEY, JSON.stringify(freitagsKonto));
+}
+function calcFreitagsBalance() {
+  const { startDatum, startAnzahl } = freitagsKonto;
+  if (!startDatum) return null;
+  const MAX_TAGE = 40;
+  const todayD = new Date();
+  // Apply +2 on 1st of each month, but cap at MAX_TAGE each time
+  let balance = Math.min(MAX_TAGE, parseFloat(startAnzahl) || 0);
+  const startDate = new Date(startDatum + 'T12:00:00Z');
+  let firstOfMonth = new Date(startDate.getUTCFullYear(), startDate.getUTCMonth() + 1, 1);
+  while (firstOfMonth <= todayD) {
+    if (balance < MAX_TAGE) balance = Math.min(MAX_TAGE, balance + 2);
+    firstOfMonth.setMonth(firstOfMonth.getMonth() + 1);
+  }
+  // Subtract consumed days
+  const taken = kalenderEvents
+    .filter(e => e.type === 'frei' && e.freiDatum >= startDatum)
+    .reduce((s, e) => s + parseFloat(e.freiAnzahl || 1), 0);
+  return balance - taken;
+}
+
 function updateAgenturDatalist() {
   const dl = document.getElementById('agentur-list');
   if (!dl) return;
@@ -6305,6 +6523,222 @@ function goImportExport() {
   renderImportExport();
 }
 
+// ── Übersicht ─────────────────────────────────────────────────────────────────
+function goUebersicht() {
+  currentView = 'uebersicht';
+  setNavActive('nav-uebersicht');
+  document.getElementById('new-btn').style.display = 'none';
+  document.getElementById('app-main').innerHTML = renderUebersichtHTML();
+}
+
+function renderUebersichtHTML() {
+  const today = new Date().toISOString().slice(0,10);
+  const monthStart = today.slice(0,7) + '-01';
+  return `<div style="padding:20px;max-width:900px;margin:0 auto">
+    <h2 style="font-size:18px;font-weight:700;margin-bottom:16px">Ereignisübersicht</h2>
+    <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:3px">VON</label>
+        <input type="date" id="ueb-von" value="${monthStart}" style="padding:7px 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:3px">BIS</label>
+        <input type="date" id="ueb-bis" value="${today}" style="padding:7px 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <label style="font-size:11px;font-weight:700;color:var(--text-muted);display:block;margin-bottom:3px">TYP</label>
+        <select id="ueb-typ" style="padding:7px 10px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+          <option value="">Alle</option>
+          <option value="DV">DV</option>
+          <option value="krank">Krank</option>
+          <option value="frei">Frei</option>
+          <option value="urlaub">Urlaub</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="uebersichtFilter()">Anzeigen</button>
+      <button class="btn btn-secondary" onclick="uebersichtExportXLSX()" title="Als Excel exportieren">📊 Excel</button>
+    </div>
+    <div id="ueb-result"></div>
+  </div>`;
+}
+
+function _uebGetRows(von, bis, typ) {
+  return kalenderEvents.filter(e => {
+    if (typ && e.type !== typ) return false;
+    const d = e.date || '';
+    return d >= von && d <= bis;
+  }).sort((a,b) => (a.date||'') < (b.date||'') ? -1 : 1);
+}
+
+function uebersichtFilter() {
+  const von = document.getElementById('ueb-von')?.value || '';
+  const bis = document.getElementById('ueb-bis')?.value || '';
+  const typ = document.getElementById('ueb-typ')?.value || '';
+  const rows = _uebGetRows(von, bis, typ);
+  const el = document.getElementById('ueb-result');
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = '<p style="color:var(--text-muted);font-size:13px;margin-top:8px">Keine Einträge gefunden.</p>'; return; }
+
+  const typeColor = {DV:'#ef4444',krank:'#fb923c',frei:'#10b981',urlaub:'#7c3aed'};
+  const typeBg   = {DV:'#fee2e2',krank:'#fff3e0',frei:'#d1fae5',urlaub:'#ede9fe'};
+  const typeLabel = {DV:'DV',krank:'Krank',frei:'Frei',urlaub:'Urlaub'};
+
+  const thead = `<tr style="background:var(--surface-2,var(--surface))">
+    <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Typ</th>
+    <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Von</th>
+    <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Bis</th>
+    <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Details</th>
+    <th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:700;color:var(--text-muted);border-bottom:2px solid var(--border)">Notiz</th>
+  </tr>`;
+
+  const fmtDt = dt => {
+    if (!dt) return '–';
+    const [d, t] = dt.split('T');
+    const parts = d.split('-');
+    return `${parts[2]}.${parts[1]}.${parts[0]}${t ? ' ' + t.slice(0,5) : ''}`;
+  };
+
+  const tbodyRows = rows.map(e => {
+    let von2 = '–', bis2 = '–', detail = '';
+    if (e.type === 'DV')     { von2 = fmtDt(e.dvVon); bis2 = fmtDt(e.dvBis); detail = [e.dvGrund, e.verhVon?'Verh. '+fmtDt(e.verhVon)+'–'+fmtDt(e.verhBis):''].filter(Boolean).join(' | '); }
+    else if (e.type==='krank') { von2 = fmtDt(e.krankVon); bis2 = fmtDt(e.krankBis); }
+    else if (e.type==='frei')  { von2 = fmtDt(e.freiDatum||e.date); detail = (e.freiTyp||'')+' · '+e.freiAnzahl+' Tage'+(e.freiLotsen?' · '+e.freiLotsen+' Ls':''); }
+    else if (e.type==='urlaub'){ von2 = fmtDt(e.urlaubVon); bis2 = fmtDt(e.urlaubBis); }
+    const bg = typeBg[e.type]||'';
+    const col = typeColor[e.type]||'#888';
+    const lbl = typeLabel[e.type]||e.type;
+    return `<tr style="border-bottom:1px solid var(--border)">
+      <td style="padding:7px 10px"><span style="background:${bg};color:${col};border-left:3px solid ${col};padding:2px 6px;border-radius:3px;font-size:11px;font-weight:700">${lbl}</span></td>
+      <td style="padding:7px 10px;font-size:13px">${von2}</td>
+      <td style="padding:7px 10px;font-size:13px">${bis2}</td>
+      <td style="padding:7px 10px;font-size:12px;color:var(--text-muted)">${esc(detail)}</td>
+      <td style="padding:7px 10px;font-size:12px;color:var(--text-muted)">${esc(e.notiz||'')}</td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `<div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;background:var(--surface);border-radius:var(--r);overflow:hidden;border:1px solid var(--border)">
+      <thead>${thead}</thead>
+      <tbody>${tbodyRows}</tbody>
+    </table>
+    <p style="font-size:11px;color:var(--text-muted);margin-top:8px">${rows.length} Einträge</p>
+  </div>`;
+}
+
+function uebersichtExportXLSX() {
+  const von = document.getElementById('ueb-von')?.value || '';
+  const bis = document.getElementById('ueb-bis')?.value || '';
+  const typ = document.getElementById('ueb-typ')?.value || '';
+  const rows = _uebGetRows(von, bis, typ);
+  if (!rows.length) { alert('Keine Daten zum Exportieren.'); return; }
+
+  const fmtDt = dt => {
+    if (!dt) return '';
+    const [d, t] = dt.split('T');
+    const parts = d.split('-');
+    return `${parts[2]}.${parts[1]}.${parts[0]}${t ? ' ' + t.slice(0,5) : ''}`;
+  };
+  const typeLabel = {DV:'DV',krank:'Krank',frei:'Frei',urlaub:'Urlaub'};
+
+  const headers = ['Typ','Von','Bis','Details','Notiz'];
+  const dataRows = rows.map(e => {
+    let von2='',bis2='',detail='';
+    if(e.type==='DV'){von2=fmtDt(e.dvVon);bis2=fmtDt(e.dvBis);detail=[e.dvGrund,e.verhVon?'Verh. '+fmtDt(e.verhVon)+'–'+fmtDt(e.verhBis):''].filter(Boolean).join(' | ');}
+    else if(e.type==='krank'){von2=fmtDt(e.krankVon);bis2=fmtDt(e.krankBis);}
+    else if(e.type==='frei'){von2=fmtDt(e.freiDatum||e.date);detail=(e.freiTyp||'')+' · '+e.freiAnzahl+' Tage'+(e.freiLotsen?' · '+e.freiLotsen+' Ls':'');}
+    else if(e.type==='urlaub'){von2=fmtDt(e.urlaubVon);bis2=fmtDt(e.urlaubBis);}
+    return [typeLabel[e.type]||e.type, von2, bis2, detail, e.notiz||''];
+  });
+
+  // Build CSV (fallback — XLSX.js may not be loaded at this path)
+  const csvLines = [headers, ...dataRows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(';'));
+  const csvBlob = new Blob(['﻿' + csvLines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(csvBlob);
+  const datePart = von && bis ? `_${von}_${bis}` : '';
+  a.download = `seelotse_uebersicht${datePart}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function goEinstellungen() {
+  currentView = 'einstellungen';
+  setNavActive('nav-einst');
+  document.getElementById('new-btn').style.display = 'none';
+  document.getElementById('app-main').innerHTML = renderEinstellungenHTML();
+}
+
+function renderEinstellungenHTML() {
+  const balance = calcFreitagsBalance();
+  const balStr = balance !== null ? `${balance.toFixed(1)} Tage` : '–';
+  const pad = n => String(n).padStart(2,'0');
+  return `<div style="max-width:620px;margin:0 auto;padding:20px">
+    <h2 style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:24px">Einstellungen</h2>
+
+    <div class="einst-section">
+      <div class="einst-title">🗓️ Freitage-Konto</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Trage hier deinen Startstand ein. Ab diesem Datum werden automatisch am 1. jedes Monats <b>2 freie Tage</b> gutgeschrieben. Jeder eingetragene freie Tag wird abgezogen.
+      </p>
+      <div class="einst-row">
+        <span class="einst-label">Startdatum</span>
+        <input type="date" class="einst-input" id="einst-start-datum"
+          value="${freitagsKonto.startDatum || ''}"
+          style="width:180px">
+      </div>
+      <div class="einst-row">
+        <span class="einst-label">Freitage-Stand am Startdatum</span>
+        <input type="number" class="einst-input" id="einst-start-anzahl"
+          value="${freitagsKonto.startAnzahl || 0}"
+          min="0" max="200" step="0.5"
+          style="width:100px">
+      </div>
+      <div class="einst-row">
+        <span class="einst-label" style="color:var(--text-muted)">Aktueller Kontostand</span>
+        <span class="kal-balance-badge">${balStr}</span>
+      </div>
+      <button class="btn btn-primary" onclick="saveEinstellungenFreitag()">Freitage-Konto speichern</button>
+    </div>
+
+    <div class="einst-section">
+      <div class="einst-title">📋 Kalender-Standardansicht</div>
+      <div class="einst-row">
+        <span class="einst-label">Standard-Ansicht beim Öffnen</span>
+        <select class="einst-input" id="einst-kal-view" style="width:160px">
+          <option value="month"${kalenderView==='month'?' selected':''}>Monatsansicht</option>
+          <option value="week"${kalenderView==='week'?' selected':''}>Wochenansicht</option>
+          <option value="day"${kalenderView==='day'?' selected':''}>Tagesansicht</option>
+          <option value="year"${kalenderView==='year'?' selected':''}>Jahresansicht</option>
+        </select>
+      </div>
+      <div class="einst-row">
+        <span class="einst-label">Gezeitenstation (Standard)</span>
+        <select class="einst-input" id="einst-tide-station" style="width:160px">
+          ${['Cuxhaven','Brunsbuettel','Hamburg'].map(s=>`<option value="${s}"${s===kalenderTideStation?' selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="saveEinstellungenKalender()">Kalender-Einstellungen speichern</button>
+    </div>
+  </div>`;
+}
+
+function saveEinstellungenFreitag() {
+  freitagsKonto.startDatum  = document.getElementById('einst-start-datum')?.value || '';
+  freitagsKonto.startAnzahl = parseFloat(document.getElementById('einst-start-anzahl')?.value || 0);
+  saveFreitagsKonto();
+  showToast('Freitage-Konto gespeichert');
+  document.getElementById('app-main').innerHTML = renderEinstellungenHTML();
+}
+
+function saveEinstellungenKalender() {
+  const v = document.getElementById('einst-kal-view')?.value;
+  if (v) kalenderView = v;
+  const s = document.getElementById('einst-tide-station')?.value;
+  if (s) kalenderTideStation = s;
+  showToast('Kalender-Einstellungen gespeichert');
+  document.getElementById('app-main').innerHTML = renderEinstellungenHTML();
+}
+
 function goWetter() {
   currentView = 'wetter';
   setNavActive('nav-wetter');
@@ -6877,7 +7311,7 @@ function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _a
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
   const container = document.getElementById('ais-table-container');
-  if (!container) { aisDisconnect(); return; }   // Seite verlassen
+  if (!container) return;   // Hintergrundmodus – nur Daten sammeln, nicht rendern
   if (!_aisProxyUrl()) { _aisShowSetup(); return; }  // kein Proxy → Setup anzeigen
 
   const now    = Date.now();
@@ -7208,12 +7642,14 @@ function _aisRenderTable() {
 
 // ── Seitennavigation ──────────────────────────────────────────────
 function goVerkehr() {
-  aisDisconnect();
-  _aisShips.clear();
-  _aisInitialLoaded = false;
+  const alreadyLive = _aisWs && (_aisWs.readyState === 0 || _aisWs.readyState === 1);
+  if (!alreadyLive) {
+    aisDisconnect();
+    _aisShips.clear();
+    _aisInitialLoaded = false;
+  }
   _aisSearch = '';
-  _aisWatchFound.clear(); // neue Sitzung → Alarme zurücksetzen
-  // Defaults setzen, dann gespeicherte Einstellungen laden (überschreiben die Defaults)
+  _aisWatchFound.clear();
   _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null };
   _aisCustomKm = null;
   _aisCollapsed = { in: false, out: false };
@@ -11765,136 +12201,510 @@ function setFahrtenListMode(mode) {
 // ── Kalender-Rendering ────────────────────────────────────────────────────────
 function renderKalenderHTML() {
   const MONTH_NAMES = ['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];
-  const DOW = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+  const DOW_SHORT = ['Mo','Di','Mi','Do','Fr','Sa','So'];
+  const DOW_LONG  = ['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'];
 
   const year  = kalenderYear;
   const month = kalenderMonth;
-
-  // Build day → fahrten map
-  const fahrtByDay = {};
-  fahrten.forEach(f => {
-    const d = (f.anBord || '').slice(0, 10);
-    if (!d) return;
-    if (!fahrtByDay[d]) fahrtByDay[d] = [];
-    fahrtByDay[d].push(f);
-  });
-
-  // Build day → events map
-  const evtByDay = {};
-  kalenderEvents.forEach(e => {
-    if (!evtByDay[e.date]) evtByDay[e.date] = [];
-    evtByDay[e.date].push(e);
-  });
-
-  // First day of month (Mon-based: 0=Mon…6=Sun)
-  const firstDate = new Date(year, month, 1);
-  const firstDow = (firstDate.getDay() + 6) % 7; // Mon=0
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
   const today = new Date().toISOString().slice(0, 10);
+  const pad = n => String(n).padStart(2,'0');
 
-  // Chip color by Einsatztyp
-  function chipClass(art) {
-    if (!art) return 'kal-chip-fahrt';
-    if (art === 'Radar')    return 'kal-chip-radar';
-    if (art === 'AG-Fahrt') return 'kal-chip-ag';
-    if (art === '2+2')      return 'kal-chip-2p2';
-    if (art === 'WR')       return 'kal-chip-wr';
-    if (art === 'WB')       return 'kal-chip-wb';
-    return 'kal-chip-fahrt';
+  const EINSATZ_COLORS = {
+    default: '#3b82f6', Radar: '#9333ea', 'AG-Fahrt': '#eab308',
+    '2+2': '#22c55e', WR: '#f97316', WB: '#ec4899'
+  };
+  function einsatzColor(art) { return EINSATZ_COLORS[art] || EINSATZ_COLORS.default; }
+
+  const monthStart = `${year}-${pad(month+1)}-01`;
+  const monthEnd   = `${year}-${pad(month+1)}-${pad(new Date(year, month+1, 0).getDate())}`;
+
+  function addToMap(map, dateStr, item) {
+    if (!map[dateStr]) map[dateStr] = [];
+    if (!map[dateStr].find(x => x.id === item.id)) map[dateStr].push(item);
   }
 
-  function dayCell(dayNum, outside) {
-    if (!dayNum) return `<div class="kal-day kal-outside"></div>`;
-    const pad = n => String(n).padStart(2,'0');
-    const dateStr = `${year}-${pad(month+1)}-${pad(dayNum)}`;
+  // Timezone-safe date iteration: use noon UTC to avoid local-midnight-wrapping bugs
+  function iterDateRange(startD, endD, cb) {
+    if (!startD) return;
+    const safe = ds => new Date(ds.slice(0,10) + 'T12:00:00Z');
+    let cur = safe(startD);
+    const last = safe(endD || startD);
+    while (cur <= last) {
+      cb(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+  }
+
+  // Build maps spanning multiple days
+  const fahrtByDay = {};
+  fahrten.forEach(f => {
+    if (!(f.anBord || '').slice(0, 10)) return;
+    iterDateRange(f.anBord, f.vonBord || f.anBord, ds => {
+      if (ds >= monthStart && ds <= monthEnd) addToMap(fahrtByDay, ds, f);
+    });
+  });
+
+  const evtByDay = {};
+  kalenderEvents.forEach(e => {
+    let endD = e.date;
+    if (e.type === 'urlaub' && e.urlaubBis) endD = e.urlaubBis.slice(0, 10);
+    else if (e.type === 'DV' && e.dvBis) endD = e.dvBis.slice(0, 10);
+    else if (e.type === 'krank' && e.krankBis) endD = e.krankBis.slice(0, 10);
+    iterDateRange(e.date, endD, ds => {
+      if (ds >= monthStart && ds <= monthEnd) addToMap(evtByDay, ds, e);
+    });
+  });
+
+  // ── Bar segment helper ────────────────────────────────────────────────
+  function timeToMin(dtStr) {
+    if (!dtStr) return null;
+    const t = dtStr.includes('T') ? dtStr.slice(11, 16) : dtStr.slice(0, 5);
+    const [h, m] = (t || '00:00').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+
+  function barSegment(dateStr, startDt, endDt) {
+    const startDay = (startDt || dateStr).slice(0, 10);
+    const endDay   = endDt ? endDt.slice(0, 10) : startDay;
+    let leftMin, rightMin;
+    if (startDay <= dateStr) leftMin = startDay === dateStr ? (timeToMin(startDt) ?? 0) : 0;
+    else return null;
+    if (endDay >= dateStr)   rightMin = endDay === dateStr ? (timeToMin(endDt) ?? 1440) : 1440;
+    else return null;
+    return { l: (leftMin / 1440) * 100, w: Math.max(0.5, ((rightMin - leftMin) / 1440) * 100) };
+  }
+
+  function makePctBar(dateStr, startDt, endDt, topPx, color, lbl, onclick) {
+    const s = barSegment(dateStr, startDt, endDt);
+    if (!s) return '';
+    const l = Math.max(0, Math.min(99, s.l));
+    const w = Math.min(100 - l, s.w);
+    const oc = onclick ? `onclick="${onclick}"` : '';
+    const titleStr = `${lbl} ${[startDt, endDt].filter(Boolean).map(d => d.slice(11,16)).join('–')}`;
+    return `<div class="kal-tl-bar" style="left:${l.toFixed(1)}%;width:${w.toFixed(1)}%;top:${topPx}px;background:${color}" title="${esc(titleStr)}" ${oc}><span class="kal-tl-lbl">${esc(lbl)}</span></div>`;
+  }
+
+  // ── Tide info ─────────────────────────────────────────────────────────
+  function tideRow(dateStr) {
+    if (!kalenderShowTides) return '';
+    const db = (tideDbs && tideDbs[kalenderTideStation]) || [];
+    const entries = db.filter(t => (t.dt || '').slice(0, 10) === dateStr);
+    if (!entries.length) return `<div class="kal-tide-row" style="font-style:italic;font-size:8px">–</div>`;
+    const parts = entries.slice(0, 4).map(t =>
+      `<span class="${t.type==='HW'?'kal-tide-hw':'kal-tide-nw'}">${t.type} ${(t.dt||'').slice(11,16)}</span>`
+    );
+    return `<div class="kal-tide-row">${parts.join(' ')}</div>`;
+  }
+
+  // ── Month/week day cell ───────────────────────────────────────────────
+  const TH = 12, TG = 2;
+  function TY(i) { return i * (TH + TG); }
+
+  function dayCell(dateStr, outside) {
+    if (!dateStr) return `<div class="kal-day kal-outside"></div>`;
+    const dayNum = parseInt(dateStr.slice(8));
     const isToday = dateStr === today;
     const fs = fahrtByDay[dateStr] || [];
     const es = evtByDay[dateStr] || [];
 
-    let chips = '';
+    let bars = '', track = 0;
     fs.forEach(f => {
-      const dur = calcDuration(f.anBord, f.vonBord) || '';
-      const label = (f.schiffsname || f.artDesEinsatzes || 'Fahrt').slice(0, 18);
-      const title = [f.schiffsname, f.streckeVon && f.streckeNach ? `${f.streckeVon}→${f.streckeNach}` : '', dur].filter(Boolean).join(' · ');
-      chips += `<div class="kal-chip ${chipClass(f.artDesEinsatzes)}" title="${esc(title)}" onclick="goAktuelleReiseWith('${esc(f.id)}')">${esc(label)}${dur ? ` <b>${esc(dur)}</b>` : ''}</div>`;
+      bars += makePctBar(dateStr, f.anBord, f.vonBord, TY(track),
+        einsatzColor(f.artDesEinsatzes),
+        (f.schiffsname || f.artDesEinsatzes || 'F').slice(0, 12),
+        `goAktuelleReiseWith('${esc(f.id)}')`);
+      track++;
     });
     es.forEach(e => {
-      const cls = e.type === 'DV' ? 'kal-chip-dv' : e.type === 'krank' ? 'kal-chip-krank' : 'kal-chip-frei';
-      const label = e.type === 'DV' ? 'DV' : e.type === 'krank' ? '🤒 Krank' : '🟢 Frei';
-      const notiz = e.notiz ? `: ${e.notiz}` : '';
-      chips += `<div class="kal-chip ${cls}" title="${esc(e.type + notiz)}" onclick="kalDeleteEvent('${esc(e.id)}')" title="Klick zum Löschen">${esc(label)}${e.notiz ? ` – ${esc(e.notiz.slice(0,12))}` : ''}</div>`;
+      let color = '#ef4444', lbl = 'DV', s = e.date+'T00:00', en = e.date+'T23:59';
+      if (e.type === 'DV')      { color='#ef4444'; lbl='DV'; s=e.dvVon||s; en=e.dvBis||en; }
+      else if (e.type==='krank') { color='#fb923c'; lbl='🤒'; s=e.krankVon||s; en=e.krankBis||en; }
+      else if (e.type==='frei')  { const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6; color='#10b981'; lbl=e.freiTyp||'F'; s=(e.freiDatum||e.date)+'T'+pad(h)+':00'; en=(e.freiDatum||e.date)+'T23:59'; }
+      else if (e.type==='urlaub') { color='#7c3aed'; lbl='🏖'; s=e.urlaubVon||s; en=e.urlaubBis||en; }
+      bars += makePctBar(dateStr, s, en, TY(track), color, lbl, `kalEditEvent('${esc(e.id)}')`);
+      track++;
     });
 
-    const addBtn = outside ? '' : `<button class="kal-add-btn" onclick="kalAddEvent('${dateStr}')">+ eintragen</button>`;
+    const tlH = Math.max(24, track * (TH + TG) + 2);
+    const addBtn = outside ? '' : `<button class="kal-add-btn" onclick="kalAddEvent('${dateStr}')">+</button>`;
+    const tickHtml = `<div class="kal-tl-tick">
+      <span class="kal-tl-tick-lbl" style="left:0%">0</span>
+      <span class="kal-tl-tick-line" style="left:0%"></span>
+      <span class="kal-tl-tick-lbl" style="left:25%">6</span>
+      <span class="kal-tl-tick-line" style="left:25%"></span>
+      <span class="kal-tl-tick-lbl" style="left:50%">12</span>
+      <span class="kal-tl-tick-line" style="left:50%"></span>
+      <span class="kal-tl-tick-lbl" style="left:75%">18</span>
+      <span class="kal-tl-tick-line" style="left:75%"></span>
+      <span class="kal-tl-tick-lbl" style="left:100%">24</span>
+    </div>`;
     return `<div class="kal-day${isToday?' kal-today':''}${outside?' kal-outside':''}">
       <div class="kal-day-num">${dayNum}</div>
-      ${chips}
+      ${outside ? '' : sunBarHtml(dateStr)}
+      ${outside ? '' : tickHtml}
+      ${tideRow(dateStr)}
+      <div class="kal-tl-wrap" style="min-height:${tlH}px">${bars}</div>
       ${addBtn}
     </div>`;
   }
 
-  // Build grid cells
-  let cells = '';
-  // Leading empty cells
-  for (let i = 0; i < firstDow; i++) cells += dayCell(null, true);
-  for (let d = 1; d <= daysInMonth; d++) cells += dayCell(d, false);
-  // Trailing empty cells to fill last row
-  const total = firstDow + daysInMonth;
-  const remainder = total % 7;
-  if (remainder !== 0) for (let i = 0; i < 7 - remainder; i++) cells += dayCell(null, true);
-
-  const dowHtml = DOW.map(d => `<div class="kal-dow">${d}</div>`).join('');
-
-  return `<div class="kal-wrap">
-    <div class="kal-nav">
-      <button class="kal-nav-btn" onclick="kalPrevMonth()">‹</button>
-      <span class="kal-month-label">${MONTH_NAMES[month]} ${year}</span>
-      <button class="kal-nav-btn" onclick="kalNextMonth()">›</button>
-    </div>
-    <div class="kal-grid">${dowHtml}${cells}</div>
-    <div class="kal-legend">
+  // ── Legend ────────────────────────────────────────────────────────────
+  function legendHtml() {
+    const balance = calcFreitagsBalance();
+    const balBadge = balance !== null
+      ? `<span class="kal-balance-badge">🗓️ Freitage-Konto: <b>${balance.toFixed(1)}</b> Tage</span>` : '';
+    return `<div class="kal-legend">
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#3b82f6"></div> Schiff</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#9333ea"></div> Radar</div>
-      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#eab308"></div> AG-Fahrt</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#eab308"></div> AG</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#22c55e"></div> 2+2</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#f97316"></div> WR</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#ec4899"></div> WB</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#ef4444"></div> DV</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#fb923c"></div> Krank</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#10b981"></div> Frei</div>
-    </div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#7c3aed"></div> Urlaub</div>
+      ${balBadge}
+    </div>`;
+  }
+
+  // ── Pre-compute nav title (view-specific) ────────────────────────────
+  let _navTitle = '';
+  if (kalenderView === 'year') {
+    _navTitle = String(year);
+  } else if (kalenderView === 'month') {
+    _navTitle = `${MONTH_NAMES[month]} ${year}`;
+  } else if (kalenderView === 'week') {
+    const _ctr = new Date(year, month, kalenderDay || 1);
+    const _wd0 = (_ctr.getDay() + 6) % 7;
+    const _ws  = new Date(_ctr); _ws.setDate(_ctr.getDate() - _wd0);
+    const _we  = new Date(_ws);  _we.setDate(_ws.getDate() + 6);
+    _navTitle = `${_ws.getDate()}.${_ws.getMonth()+1}. – ${_we.getDate()}.${_we.getMonth()+1}. ${year}`;
+  } else if (kalenderView === 'day') {
+    _navTitle = `${kalenderDay || 1}. ${MONTH_NAMES[month]} ${year}`;
+  }
+
+  // ── Nav bar ───────────────────────────────────────────────────────────
+  const viewBtnHtml = ['year','month','week','day'].map(v => {
+    const lbl = {year:'Jahr',month:'Monat',week:'Woche',day:'Tag'}[v];
+    return `<button class="kal-view-btn${kalenderView===v?' active':''}" onclick="setKalView('${v}')">${lbl}</button>`;
+  }).join('');
+  const tideBtnHtml = `<button class="kal-tide-toggle${kalenderShowTides?' active':''}" onclick="kalToggleTides()">🌊 Gezeiten</button>`;
+  const stationHtml = kalenderShowTides
+    ? `<select onchange="setKalTideStation(this.value)" style="font-size:11px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text)">
+        ${['Cuxhaven','Brunsbuettel','Hamburg'].map(s=>`<option value="${s}"${s===kalenderTideStation?' selected':''}>${s}</option>`).join('')}
+      </select>` : '';
+
+  const navHtml = `<div class="kal-nav">
+    <button class="kal-nav-btn" onclick="kalPrev()">‹</button>
+    <span class="kal-month-label">${esc(_navTitle)}</span>
+    <button class="kal-nav-btn" onclick="kalNext()">›</button>
+    <span style="flex:1"></span>
+    <div class="kal-view-btns">${viewBtnHtml}</div>
+    ${tideBtnHtml}${stationHtml}
   </div>`;
+
+  // ── YEAR VIEW ─────────────────────────────────────────────────────────
+  if (kalenderView === 'year') {
+    let months = '';
+    for (let m = 0; m < 12; m++) {
+      const mp = pad(m+1);
+      const dim = new Date(year, m+1, 0).getDate();
+      const fd  = (new Date(year, m, 1).getDay() + 6) % 7;
+      let mini = DOW_SHORT.map(d => `<div class="kal-year-mini-dow">${d[0]}</div>`).join('');
+      for (let i = 0; i < fd; i++) mini += `<div class="kal-year-mini-day outside"></div>`;
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${mp}-${pad(d)}`;
+        const hF = !!(fahrtByDay[ds]?.length), hE = !!(evtByDay[ds]?.length);
+        const cls = ds===today ? 'is-today' : (hF&&hE) ? 'has-both' : hF ? 'has-fahrt' : hE ? 'has-event' : '';
+        mini += `<div class="kal-year-mini-day ${cls}" onclick="kalGoDay('${ds}')" title="${ds}">${d}</div>`;
+      }
+      months += `<div class="kal-year-month" onclick="kalGoMonth(${m})">
+        <div class="kal-year-month-title">${MONTH_NAMES[m]}</div>
+        <div class="kal-year-mini">${mini}</div>
+      </div>`;
+    }
+    return `<div class="kal-wrap">
+      ${navHtml}
+      <div class="kal-year-grid">${months}</div>
+    </div>`;
+  }
+
+  // ── MONTH VIEW ────────────────────────────────────────────────────────
+  if (kalenderView === 'month') {
+    const fd  = (new Date(year, month, 1).getDay() + 6) % 7;
+    const dim = new Date(year, month+1, 0).getDate();
+    let cells = '';
+    for (let i = 0; i < fd; i++) cells += `<div class="kal-day kal-outside"></div>`;
+    for (let d = 1; d <= dim; d++) cells += dayCell(`${year}-${pad(month+1)}-${pad(d)}`, false);
+    const rem = (fd + dim) % 7;
+    if (rem) for (let i = 0; i < 7-rem; i++) cells += `<div class="kal-day kal-outside"></div>`;
+    const dowHtml = DOW_SHORT.map(d => `<div class="kal-dow">${d}</div>`).join('');
+    return `<div class="kal-wrap">
+      ${navHtml}
+      <div class="kal-grid">${dowHtml}${cells}</div>
+      ${legendHtml()}
+    </div>`;
+  }
+
+  // ── WEEK VIEW ─────────────────────────────────────────────────────────
+  if (kalenderView === 'week') {
+    const center = new Date(year, month, kalenderDay || 1);
+    const dow0 = (center.getDay() + 6) % 7;
+    const wStart = new Date(center); wStart.setDate(center.getDate() - dow0);
+    const HPXW = 32; // px per hour
+    const THW  = HPXW * 24;
+
+    function weekBarPx(dateStr, startDt, endDt, color, lbl, lPct, wPct, onclick) {
+      const seg = barSegment(dateStr, startDt, endDt);
+      if (!seg) return '';
+      const topPx = (seg.l / 100) * THW;
+      const hPx   = Math.max(HPXW * 0.4, (Math.min(100, seg.l + seg.w) / 100) * THW - topPx);
+      const oc    = onclick ? `onclick="${onclick}"` : '';
+      return `<div class="kal-week-bar" style="top:${topPx.toFixed(0)}px;height:${hPx.toFixed(0)}px;background:${color};left:${lPct}%;right:${100-lPct-wPct}%" title="${esc(lbl)}" ${oc}>${esc(lbl)}</div>`;
+    }
+
+    let cols = '';
+    for (let d = 0; d < 7; d++) {
+      const dt = new Date(wStart); dt.setDate(wStart.getDate() + d);
+      const ds = dt.toISOString().slice(0, 10);
+      const isToday2 = ds === today;
+      const dayN = dt.getDate();
+      const fs2 = fahrtByDay[ds] || [], es2 = evtByDay[ds] || [];
+
+      let bars2 = '';
+      const n = fs2.length || 1;
+      fs2.forEach((f, i) => {
+        const lp = 4 + i * (88/n), wp = 88/n - 2;
+        bars2 += weekBarPx(ds, f.anBord, f.vonBord, einsatzColor(f.artDesEinsatzes),
+          (f.schiffsname||'Fahrt'), lp, wp, `goAktuelleReiseWith('${esc(f.id)}')`);
+      });
+      es2.forEach(e => {
+        let col2='#ef4444',lbl='DV',s=e.date+'T00:00',en=e.date+'T23:59';
+        if(e.type==='DV'){s=e.dvVon||s;en=e.dvBis||en;col2='#ef4444';lbl='DV';}
+        else if(e.type==='krank'){s=e.krankVon||s;en=e.krankBis||en;col2='#fb923c';lbl='🤒 Krank';}
+        else if(e.type==='frei'){const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6;s=(e.freiDatum||e.date)+'T'+pad(h)+':00';en=(e.freiDatum||e.date)+'T23:59';col2='#10b981';lbl=e.freiTyp||'Frei';}
+        else if(e.type==='urlaub'){s=e.urlaubVon||s;en=e.urlaubBis||en;col2='#7c3aed';lbl='🏖 Urlaub';}
+        bars2 += weekBarPx(ds, s, en, col2, lbl, 50, 46, `kalEditEvent('${esc(e.id)}')`);
+      });
+
+      let hlns = '';
+      for (let h = 0; h < 24; h++) hlns += `<div class="kal-week-hour" style="top:${h*HPXW}px">${pad(h)}:00</div>`;
+
+      cols += `<div class="kal-week-col">
+        <div class="kal-week-header${isToday2?' today':''}">
+          <div style="font-size:9px;color:var(--text-muted)">${DOW_SHORT[(dt.getDay()+6)%7]}</div>
+          <div style="font-size:15px;font-weight:700;cursor:pointer" onclick="kalGoDay('${ds}')">${dayN}</div>
+        </div>
+        <div class="kal-week-body" style="height:${THW}px">${hlns}${bars2}</div>
+      </div>`;
+    }
+
+    const wEnd = new Date(wStart); wEnd.setDate(wStart.getDate() + 6);
+    const wLabel = `${wStart.getDate()}.${wStart.getMonth()+1}. – ${wEnd.getDate()}.${wEnd.getMonth()+1}. ${year}`;
+    return `<div class="kal-wrap">
+      ${navHtml}
+      <div class="kal-week-wrap" style="overflow-y:auto;max-height:72vh">${cols}</div>
+      ${legendHtml()}
+    </div>`;
+  }
+
+  // ── DAY VIEW ──────────────────────────────────────────────────────────
+  if (kalenderView === 'day') {
+    const ds = `${year}-${pad(month+1)}-${pad(kalenderDay||1)}`;
+    const HPXD = 48; const THD = HPXD * 24;
+    const dowLabel = DOW_LONG[(new Date(ds).getDay()+6)%7];
+    const fs3 = fahrtByDay[ds] || [], es3 = evtByDay[ds] || [];
+
+    function dayBarPx(startDt, endDt, color, lbl, lPct, wPct, onclick) {
+      const seg = barSegment(ds, startDt, endDt);
+      if (!seg) return '';
+      const topPx = (seg.l / 100) * THD;
+      const hPx   = Math.max(HPXD * 0.5, (Math.min(100, seg.l + seg.w) / 100) * THD - topPx);
+      const oc    = onclick ? `onclick="${onclick}"` : '';
+      return `<div class="kal-day-bar" style="top:${topPx.toFixed(0)}px;height:${hPx.toFixed(0)}px;background:${color};left:${lPct}%;right:${100-lPct-wPct}%;line-height:${hPx.toFixed(0)}px" title="${esc(lbl)}" ${oc}>${esc(lbl)}</div>`;
+    }
+
+    let bars3 = '';
+    const n3 = fs3.length || 1;
+    fs3.forEach((f, i) => {
+      const lp3 = 2 + i * (48/n3), wp3 = 48/n3 - 2;
+      const lbl3 = [f.schiffsname, f.streckeVon&&f.streckeNach?f.streckeVon+'→'+f.streckeNach:'', calcDuration(f.anBord,f.vonBord)||''].filter(Boolean).join(' · ');
+      bars3 += dayBarPx(f.anBord, f.vonBord, einsatzColor(f.artDesEinsatzes), lbl3, lp3, wp3, `goAktuelleReiseWith('${esc(f.id)}')`);
+    });
+    es3.forEach(e => {
+      let col3='#ef4444',lbl3='DV',s=e.date+'T00:00',en=e.date+'T23:59';
+      if(e.type==='DV'){s=e.dvVon||s;en=e.dvBis||en;col3='#ef4444';lbl3='DV '+(e.dvVon||'').slice(11,16)+'–'+(e.dvBis||'').slice(11,16);}
+      else if(e.type==='krank'){s=e.krankVon||s;en=e.krankBis||en;col3='#fb923c';lbl3='🤒 Krank';}
+      else if(e.type==='frei'){const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6;s=(e.freiDatum||e.date)+'T'+pad(h)+':00';en=(e.freiDatum||e.date)+'T23:59';col3='#10b981';lbl3=(e.freiTyp||'Frei')+(e.freiLotsen?' · '+e.freiLotsen+' Ls':'');}
+      else if(e.type==='urlaub'){s=e.urlaubVon||s;en=e.urlaubBis||en;col3='#7c3aed';lbl3='🏖 Urlaub'+(e.notiz?' – '+e.notiz:'');}
+      bars3 += dayBarPx(s, en, col3, lbl3, 52, 46, `kalEditEvent('${esc(e.id)}')`);
+    });
+
+    let hourLines = '';
+    const nowH = today === ds ? new Date().getHours() : -1;
+    for (let h = 0; h < 24; h++) {
+      const isNow = h === nowH;
+      hourLines += `<div class="kal-day-hour-line" style="top:${h*HPXD}px;${isNow?'border-color:var(--blue);border-width:2px':''}">
+        <span class="kal-day-hour-label" style="top:${h*HPXD - 5}px;${isNow?'color:var(--blue);font-weight:700':''}">${pad(h)}:00</span>
+      </div>`;
+    }
+
+    return `<div class="kal-wrap">
+      ${navHtml}
+      <div style="font-size:14px;font-weight:600;color:var(--text-muted);margin-bottom:8px">${dowLabel}, ${parseInt(ds.slice(8))}. ${MONTH_NAMES[month]} ${year}</div>
+      ${tideRow(ds) ? `<div style="margin-bottom:8px">${tideRow(ds)}</div>` : ''}
+      <div class="kal-day-wrap">
+        <div class="kal-day-timeline" style="height:${THD}px;position:relative">${hourLines}${bars3}</div>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-secondary" style="font-size:13px" onclick="kalAddEvent('${ds}')">+ Eintrag hinzufügen</button>
+      </div>
+      ${legendHtml()}
+    </div>`;
+  }
+
+  return '<div>Ungültige Ansicht</div>';
 }
 
-function kalPrevMonth() {
-  kalenderMonth--;
-  if (kalenderMonth < 0) { kalenderMonth = 11; kalenderYear--; }
+// ── Kalender Navigation ───────────────────────────────────────────────────────
+function setKalView(v) {
+  kalenderView = v;
+  if (v === 'day' && !kalenderDay) kalenderDay = new Date().getDate();
   renderList();
 }
-function kalNextMonth() {
-  kalenderMonth++;
-  if (kalenderMonth > 11) { kalenderMonth = 0; kalenderYear++; }
+function kalGoDay(dateStr) {
+  kalenderYear  = parseInt(dateStr.slice(0, 4));
+  kalenderMonth = parseInt(dateStr.slice(5, 7)) - 1;
+  kalenderDay   = parseInt(dateStr.slice(8));
+  kalenderView  = 'day';
+  renderList();
+}
+function kalGoMonth(m) { kalenderMonth = m; kalenderView = 'month'; renderList(); }
+
+function kalPrev() {
+  if (kalenderView === 'year')  { kalenderYear--; renderList(); return; }
+  if (kalenderView === 'month') { kalenderMonth--; if(kalenderMonth<0){kalenderMonth=11;kalenderYear--;} renderList(); return; }
+  const d = new Date(kalenderYear, kalenderMonth, kalenderDay||1);
+  d.setDate(d.getDate() - (kalenderView==='week' ? 7 : 1));
+  kalenderYear = d.getFullYear(); kalenderMonth = d.getMonth(); kalenderDay = d.getDate();
+  renderList();
+}
+function kalNext() {
+  if (kalenderView === 'year')  { kalenderYear++; renderList(); return; }
+  if (kalenderView === 'month') { kalenderMonth++; if(kalenderMonth>11){kalenderMonth=0;kalenderYear++;} renderList(); return; }
+  const d = new Date(kalenderYear, kalenderMonth, kalenderDay||1);
+  d.setDate(d.getDate() + (kalenderView==='week' ? 7 : 1));
+  kalenderYear = d.getFullYear(); kalenderMonth = d.getMonth(); kalenderDay = d.getDate();
   renderList();
 }
 
+function kalToggleTides() { kalenderShowTides = !kalenderShowTides; renderList(); }
+function setKalTideStation(s) { kalenderTideStation = s; renderList(); }
+function kalPrevMonth() { kalPrev(); }
+function kalNextMonth() { kalNext(); }
+
+// ── Kalender Event Popup ──────────────────────────────────────────────────────
 let _kalAddDate = null;
 let _kalAddType = 'DV';
+let _kalEditId  = null; // null = create new, else id of event being edited
+
+function _kalFieldHtml(type, dateStr) {
+  const balance = calcFreitagsBalance();
+  const balHtml = balance !== null
+    ? `<div class="kal-balance-badge" style="margin-bottom:8px;font-size:12px">🗓️ Freitage-Konto: <b>${balance.toFixed(1)}</b> Tage verfügbar</div>` : '';
+
+  if (type === 'DV') return `
+    <div class="kal-field-group">
+      <label class="kal-sublabel">Beginn DV-Zeit</label>
+      <input type="datetime-local" id="kal-dv-von" value="${dateStr}T13:00">
+    </div>
+    <div class="kal-field-group">
+      <label class="kal-sublabel">Beginn Verhinderung</label>
+      <input type="datetime-local" id="kal-verh-von" value="${dateStr}T13:00">
+    </div>
+    <div class="kal-field-group">
+      <label class="kal-sublabel">Ende Verhinderung</label>
+      <input type="datetime-local" id="kal-verh-bis" value="${dateStr}T13:00">
+    </div>
+    <div class="kal-field-group">
+      <label class="kal-sublabel">Ende DV-Zeit</label>
+      <input type="datetime-local" id="kal-dv-bis" value="${dateStr}T13:00">
+    </div>
+    <div class="kal-field-group">
+      <label class="kal-sublabel">Grund der DV</label>
+      <input type="text" id="kal-dv-grund" placeholder="z. B. Lotsenversetzboot ausgefallen" maxlength="120" style="width:100%;padding:7px 8px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+    </div>
+    <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="80">`;
+
+  if (type === 'krank') return `
+    <div class="kal-field-group">
+      <div class="kal-field-label">Krankheitszeitraum</div>
+      <div class="kal-field-row">
+        <div class="kal-field-col"><label class="kal-sublabel">Anfang</label>
+          <input type="datetime-local" id="kal-krank-von" value="${dateStr}T00:00"></div>
+        <div class="kal-field-col"><label class="kal-sublabel">Ende</label>
+          <input type="datetime-local" id="kal-krank-bis" value="${dateStr}T23:59"></div>
+      </div>
+    </div>
+    <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="80">`;
+
+  if (type === 'frei') return `
+    ${balHtml}
+    <div class="kal-field-group">
+      <div class="kal-field-label">Freier Tag</div>
+      <div class="kal-field-row" style="align-items:flex-end;flex-wrap:wrap">
+        <div class="kal-field-col"><label class="kal-sublabel">Datum</label>
+          <input type="date" id="kal-frei-datum" value="${dateStr}"></div>
+        <div class="kal-field-col"><label class="kal-sublabel">Typ</label>
+          <select id="kal-frei-typ" style="width:100%;padding:7px 8px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+            <option value="MOFA">MOFA (06:00)</option>
+            <option value="MiFA">MiFA (12:00)</option>
+            <option value="AFA">AFA (18:00)</option>
+          </select></div>
+        <div class="kal-field-col"><label class="kal-sublabel">Anzahl Tage</label>
+          <input type="number" id="kal-frei-anzahl" value="1" min="0.5" max="30" step="0.5"></div>
+      </div>
+    </div>
+    <div class="kal-field-group">
+      <div class="kal-field-label">Lotsenanzahl</div>
+      <input type="number" id="kal-frei-lotsen" placeholder="Anzahl Lotsen aus dem Buch" min="1" max="100" step="1">
+    </div>
+    <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="80">`;
+
+  if (type === 'urlaub') return `
+    <div class="kal-field-group">
+      <div class="kal-field-label">Urlaubszeitraum</div>
+      <div class="kal-field-row">
+        <div class="kal-field-col"><label class="kal-sublabel">Von (Datum)</label>
+          <input type="date" id="kal-urlaub-von-d" value="${dateStr}"></div>
+        <div class="kal-field-col"><label class="kal-sublabel">Bis (Datum)</label>
+          <input type="date" id="kal-urlaub-bis-d" value="${dateStr}"></div>
+      </div>
+      <p class="kal-sublabel" style="margin-top:4px;color:var(--text-muted)">Uhrzeit wird automatisch auf 12:00 gesetzt</p>
+    </div>
+    <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="80">`;
+
+  return '';
+}
 
 function kalAddEvent(dateStr) {
   _kalAddDate = dateStr;
   _kalAddType = 'DV';
+  _kalEditId  = null;
   const overlay = document.createElement('div');
   overlay.className = 'kal-popup-overlay';
   overlay.id = 'kal-popup-overlay';
   overlay.innerHTML = `
-    <div class="kal-popup">
+    <div class="kal-popup" style="width:440px;max-width:96vw">
       <h3>Eintrag für ${dateStr.split('-').reverse().join('.')}</h3>
-      <div class="kal-type-btns">
+      <div class="kal-type-btns" style="flex-wrap:wrap;gap:6px">
         <button class="kal-type-btn dv selected" id="kal-btn-DV" onclick="kalSelectType('DV')">DV</button>
-        <button class="kal-type-btn krank" id="kal-btn-krank" onclick="kalSelectType('krank')">Krank</button>
-        <button class="kal-type-btn frei" id="kal-btn-frei" onclick="kalSelectType('frei')">Frei</button>
+        <button class="kal-type-btn krank" id="kal-btn-krank" onclick="kalSelectType('krank')">🤒 Krank</button>
+        <button class="kal-type-btn frei" id="kal-btn-frei" onclick="kalSelectType('frei')">🟢 Frei</button>
+        <button class="kal-type-btn urlaub" id="kal-btn-urlaub" onclick="kalSelectType('urlaub')">🏖️ Urlaub</button>
       </div>
-      <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="60">
+      <div id="kal-fields">${_kalFieldHtml('DV', dateStr)}</div>
       <div class="kal-popup-btns">
         <button class="btn btn-secondary" onclick="kalClosePopup()">Abbrechen</button>
         <button class="btn btn-primary" onclick="kalSaveEvent()">Speichern</button>
@@ -11902,34 +12712,141 @@ function kalAddEvent(dateStr) {
     </div>`;
   overlay.addEventListener('click', e => { if (e.target === overlay) kalClosePopup(); });
   document.body.appendChild(overlay);
-  document.getElementById('kal-notiz-input').focus();
+  document.getElementById('kal-notiz-input')?.focus();
 }
 
 function kalSelectType(type) {
   _kalAddType = type;
-  ['DV','krank','frei'].forEach(t => {
+  ['DV','krank','frei','urlaub'].forEach(t => {
     const btn = document.getElementById('kal-btn-' + t);
     if (btn) btn.classList.toggle('selected', t === type);
   });
+  const flds = document.getElementById('kal-fields');
+  if (flds) flds.innerHTML = _kalFieldHtml(type, _kalAddDate);
+  document.getElementById('kal-notiz-input')?.focus();
 }
 
 function kalSaveEvent() {
   const notiz = (document.getElementById('kal-notiz-input')?.value || '').trim();
-  const newEvt = { id: uid(), date: _kalAddDate, type: _kalAddType, notiz };
-  kalenderEvents.push(newEvt);
+
+  let evt;
+  if (_kalEditId) {
+    evt = kalenderEvents.find(x => x.id === _kalEditId);
+    if (!evt) { _kalEditId = null; kalClosePopup(); return; }
+    evt.notiz = notiz;
+    evt.type  = _kalAddType;
+  } else {
+    evt = { id: uid(), date: _kalAddDate, type: _kalAddType, notiz };
+  }
+
+  if (_kalAddType === 'DV') {
+    evt.dvVon   = document.getElementById('kal-dv-von')?.value || '';
+    evt.dvBis   = document.getElementById('kal-dv-bis')?.value || '';
+    evt.verhVon = document.getElementById('kal-verh-von')?.value || '';
+    evt.verhBis = document.getElementById('kal-verh-bis')?.value || '';
+    evt.dvGrund = (document.getElementById('kal-dv-grund')?.value || '').trim();
+    if (evt.dvVon) evt.date = evt.dvVon.slice(0, 10);
+  } else if (_kalAddType === 'krank') {
+    evt.krankVon = document.getElementById('kal-krank-von')?.value || '';
+    evt.krankBis = document.getElementById('kal-krank-bis')?.value || '';
+    if (evt.krankVon) evt.date = evt.krankVon.slice(0, 10);
+  } else if (_kalAddType === 'frei') {
+    evt.freiDatum  = document.getElementById('kal-frei-datum')?.value || _kalAddDate;
+    evt.freiTyp    = document.getElementById('kal-frei-typ')?.value || 'MOFA';
+    evt.freiAnzahl = document.getElementById('kal-frei-anzahl')?.value || '1';
+    evt.freiLotsen = document.getElementById('kal-frei-lotsen')?.value || '';
+    evt.date = evt.freiDatum;
+  } else if (_kalAddType === 'urlaub') {
+    const vonD = document.getElementById('kal-urlaub-von-d')?.value || '';
+    const bisD = document.getElementById('kal-urlaub-bis-d')?.value || '';
+    evt.urlaubVon = vonD ? vonD + 'T12:00' : '';
+    evt.urlaubBis = bisD ? bisD + 'T12:00' : '';
+    if (vonD) evt.date = vonD;
+  }
+
+  if (!_kalEditId) kalenderEvents.push(evt);
+  _kalEditId = null;
   saveKalenderEvents();
   kalClosePopup();
   renderList();
 }
 
+function kalEditEvent(id) {
+  const e = kalenderEvents.find(x => x.id === id);
+  if (!e) return;
+  _kalAddDate = e.date;
+  _kalAddType = e.type;
+  _kalEditId  = id;
+  const dateFmt = e.date.split('-').reverse().join('.');
+  const typLabel = {DV:'DV',krank:'Krank',frei:'Frei',urlaub:'Urlaub'}[e.type] || e.type;
+  const overlay = document.createElement('div');
+  overlay.className = 'kal-popup-overlay';
+  overlay.id = 'kal-popup-overlay';
+  overlay.innerHTML = `
+    <div class="kal-popup" style="width:460px;max-width:96vw">
+      <h3>✏️ ${typLabel} bearbeiten – ${dateFmt}</h3>
+      <div class="kal-type-btns" style="flex-wrap:wrap;gap:6px">
+        <button class="kal-type-btn dv${e.type==='DV'?' selected':''}" id="kal-btn-DV" onclick="kalSelectType('DV')">DV</button>
+        <button class="kal-type-btn krank${e.type==='krank'?' selected':''}" id="kal-btn-krank" onclick="kalSelectType('krank')">🤒 Krank</button>
+        <button class="kal-type-btn frei${e.type==='frei'?' selected':''}" id="kal-btn-frei" onclick="kalSelectType('frei')">🟢 Frei</button>
+        <button class="kal-type-btn urlaub${e.type==='urlaub'?' selected':''}" id="kal-btn-urlaub" onclick="kalSelectType('urlaub')">🏖️ Urlaub</button>
+      </div>
+      <div id="kal-fields">${_kalFieldHtml(e.type, e.date)}</div>
+      <div class="kal-popup-btns">
+        <button class="btn" style="background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5;margin-right:auto" onclick="kalDeleteEditedEvent()">🗑️ Löschen</button>
+        <button class="btn btn-secondary" onclick="kalClosePopup()">Abbrechen</button>
+        <button class="btn btn-primary" onclick="kalSaveEvent()">Speichern</button>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', ev => { if (ev.target === overlay) { _kalEditId = null; kalClosePopup(); } });
+  document.body.appendChild(overlay);
+  _kalPrefillFields(e);
+}
+
+function _kalPrefillFields(e) {
+  const v = (id, val) => { if (val == null) return; const el = document.getElementById(id); if (el) el.value = val; };
+  v('kal-notiz-input', e.notiz);
+  if (e.type === 'DV') {
+    v('kal-dv-von',   e.dvVon);
+    v('kal-dv-bis',   e.dvBis);
+    v('kal-verh-von', e.verhVon);
+    v('kal-verh-bis', e.verhBis);
+    v('kal-dv-grund', e.dvGrund);
+  } else if (e.type === 'krank') {
+    v('kal-krank-von', e.krankVon);
+    v('kal-krank-bis', e.krankBis);
+  } else if (e.type === 'frei') {
+    v('kal-frei-datum',  e.freiDatum || e.date);
+    v('kal-frei-typ',    e.freiTyp);
+    v('kal-frei-anzahl', e.freiAnzahl);
+    v('kal-frei-lotsen', e.freiLotsen);
+  } else if (e.type === 'urlaub') {
+    v('kal-urlaub-von-d', (e.urlaubVon || '').slice(0, 10));
+    v('kal-urlaub-bis-d', (e.urlaubBis || '').slice(0, 10));
+  }
+}
+
+function kalDeleteEditedEvent() {
+  if (!_kalEditId) return;
+  if (confirm('Eintrag wirklich löschen?')) {
+    kalenderEvents = kalenderEvents.filter(x => x.id !== _kalEditId);
+    _kalEditId = null;
+    saveKalenderEvents();
+    kalClosePopup();
+    renderList();
+  }
+}
+
 function kalDeleteEvent(id) {
-  if (!confirm('Eintrag löschen?')) return;
-  kalenderEvents = kalenderEvents.filter(e => e.id !== id);
-  saveKalenderEvents();
-  renderList();
+  if (confirm('Eintrag wirklich löschen?')) {
+    kalenderEvents = kalenderEvents.filter(x => x.id !== id);
+    saveKalenderEvents();
+    renderList();
+  }
 }
 
 function kalClosePopup() {
+  _kalEditId = null;
   const el = document.getElementById('kal-popup-overlay');
   if (el) el.remove();
 }
@@ -13692,10 +14609,18 @@ function exportExcel() {
 (async () => {
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
   loadKalenderEvents();
+  loadFreitagsKonto();
   updateAgenturDatalist();
   goList();
   // BSH Wasserstandsvorhersage im Hintergrund laden (nach 4s Verzögerung)
   setTimeout(() => fetchBSHVorhersage().catch(() => {}), 4000);
+  // AIS-Daten im Hintergrund vorladen, damit Verkehr-Seite sofort Daten zeigt
+  setTimeout(() => {
+    if (_aisProxyUrl() && !_aisWs) {
+      _aisLoadFilters(); _aisLoadWatch();
+      aisConnect();
+    }
+  }, 8000);
 })();
 </script>
 
