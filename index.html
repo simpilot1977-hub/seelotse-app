@@ -6855,6 +6855,31 @@ function renderEinstellungenHTML() {
       </div>
       <button class="btn btn-primary" onclick="saveEinstellungenKalender()">Kalender-Einstellungen speichern</button>
     </div>
+
+    <div class="einst-section">
+      <div class="einst-title">🗺️ Verkehrsbereiche</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Zeichne Bereiche auf der Seekarte (Fahrwasser, Reede, …). Schiffe auf der Verkehrsseite werden dem passenden Bereich zugeordnet.
+      </p>
+      ${verkehrZones.length === 0
+        ? '<p style="font-size:13px;font-style:italic;color:var(--text-muted)">Noch keine Bereiche definiert.</p>'
+        : `<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">
+            ${verkehrZones.map(z => {
+              const COLS={fahrwasser:'#1d4ed8;background:#dbeafe',reede:'#15803d;background:#dcfce7',other:'#7c3aed;background:#f3e8ff'};
+              const [col] = (COLS[z.type]||'#374151;background:#f3f4f6').split(';');
+              const bg = (COLS[z.type]||'#374151;background:#f3f4f6').split(';')[1];
+              return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface)">
+                <span style="flex:1;font-weight:600">${z.name}</span>
+                <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;color:${col};${bg}">${z.type==='fahrwasser'?'Fahrwasser':z.type==='reede'?'Reede':'Sonstige'}</span>
+                <span style="font-size:11px;color:var(--text-muted)">${z.points.length} Punkte</span>
+                <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px" onclick="openZoneEditor('${z.id}')">✏️ Bearbeiten</button>
+                <button class="btn" style="font-size:12px;padding:4px 10px;background:#fee2e2;color:#991b1b;border:1.5px solid #fca5a5" onclick="deleteZone('${z.id}')">🗑️</button>
+              </div>`;
+            }).join('')}
+          </div>`
+      }
+      <button class="btn btn-primary" onclick="openZoneEditor(null)">+ Neuen Bereich anlegen</button>
+    </div>
   </div>`;
 }
 
@@ -7097,6 +7122,133 @@ function _aisShipType(t) {
   return { l:'Sonstige', e:'🚢' };
 }
 const _AIS_NAV = ['Fahrt','Ankern','Manövr.los','Eingeschr.','Tiefgang','Vertäut','Aufgelaufen','Fischerei','Segeln'];
+
+// ── Verkehr-Zonen ─────────────────────────────────────────────────
+const _ZONES_KEY = 'seelotse_verkehr_zones_v1';
+let verkehrZones = [];
+function loadVerkehrZones() {
+  try { const r = localStorage.getItem(_ZONES_KEY); if (r) verkehrZones = JSON.parse(r); } catch(e) { verkehrZones = []; }
+}
+function saveVerkehrZones() {
+  localStorage.setItem(_ZONES_KEY, JSON.stringify(verkehrZones));
+}
+function _pointInPolygon(lat, lng, pts) {
+  let inside = false;
+  for (let i=0, j=pts.length-1; i<pts.length; j=i++) {
+    const xi=pts[i].lat, yi=pts[i].lng, xj=pts[j].lat, yj=pts[j].lng;
+    if (((yi>lng)!=(yj>lng)) && (lat < (xj-xi)*(lng-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+function _shipCustomZone(s) {
+  if (s.lat==null||s.lon==null) return null;
+  for (const z of verkehrZones) {
+    if (z.points && z.points.length>=3 && _pointInPolygon(s.lat, s.lon, z.points)) return z;
+  }
+  return null;
+}
+
+// ── Zone-Editor State ──────────────────────────────────────────────
+let _zoneEdMap=null, _zoneEdPts=[], _zoneEdPoly=null, _zoneEdMarkers=[], _zoneEdId=null;
+
+function openZoneEditor(zoneId) {
+  _zoneEdId = zoneId||null;
+  const ex = zoneId ? verkehrZones.find(z=>z.id===zoneId) : null;
+  _zoneEdPts = ex ? ex.points.map(p=>({...p})) : [];
+  _zoneEdMarkers = [];
+  const TYPE_COLORS = { fahrwasser:'#2563eb', reede:'#15803d', other:'#9333ea' };
+  const modal = document.createElement('div');
+  modal.id='zone-editor-modal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;flex-direction:column';
+  modal.innerHTML=`
+    <div style="padding:10px 14px;background:var(--surface);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <strong style="font-size:13px">📐 Bereich zeichnen</strong>
+      <input id="ze-name" type="text" placeholder="Name (z.B. Fahrwasser Elbe)" value="${ex?.name||''}"
+        style="flex:1;min-width:160px;padding:6px 9px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
+      <select id="ze-type" style="padding:6px;border-radius:6px;border:1px solid var(--border);background:var(--bg);color:var(--text)">
+        <option value="fahrwasser"${ex?.type==='fahrwasser'?' selected':''}>Fahrwasser</option>
+        <option value="reede"${ex?.type==='reede'?' selected':''}>Reede</option>
+        <option value="other"${(!ex||ex.type==='other')?' selected':''}>Sonstige</option>
+      </select>
+      <button class="btn btn-secondary" onclick="zeUndo()" style="font-size:12px;padding:5px 9px">↩ Zurück</button>
+      <button class="btn btn-secondary" onclick="zeClear()" style="font-size:12px;padding:5px 9px">🗑</button>
+      <button class="btn btn-primary" onclick="zeSave()" style="font-size:12px;padding:5px 9px">💾 Speichern</button>
+      <button class="btn btn-secondary" onclick="zeClose()" style="font-size:12px;padding:5px 9px">✕</button>
+    </div>
+    <div style="font-size:11px;background:#1e3a5f;color:#93c5fd;padding:3px 14px">
+      Auf Karte klicken um Punkte zu setzen · Punkte: <b id="ze-cnt">0</b>
+    </div>
+    <div id="ze-map" style="flex:1;min-height:0"></div>`;
+  document.body.appendChild(modal);
+  setTimeout(()=>{
+    _zoneEdMap=L.map('ze-map').setView([53.75,9.3],9);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM',maxZoom:18}).addTo(_zoneEdMap);
+    if (ex && ex.points.length>=3) {
+      _zoneEdPoly=L.polygon(ex.points.map(p=>[p.lat,p.lng]),{color:TYPE_COLORS[ex.type]||'#2563eb',fillOpacity:0.2}).addTo(_zoneEdMap);
+      _zoneEdMap.fitBounds(_zoneEdPoly.getBounds(),{padding:[30,30]});
+    }
+    _zoneEdPts.forEach((_,i)=>_zeAddMarkerAt(i));
+    _zeUpdatePoly();
+    _zoneEdMap.on('click',e=>{
+      _zoneEdPts.push({lat:e.latlng.lat,lng:e.latlng.lng});
+      _zeAddMarkerAt(_zoneEdPts.length-1);
+      _zeUpdatePoly();
+      const c=document.getElementById('ze-cnt');if(c)c.textContent=_zoneEdPts.length;
+    });
+  },60);
+}
+function _zeAddMarkerAt(i){
+  const p=_zoneEdPts[i];
+  const m=L.marker([p.lat,p.lng]).addTo(_zoneEdMap).bindTooltip(String(i+1),{permanent:true,direction:'top',className:'ze-tip'});
+  _zoneEdMarkers.push(m);
+}
+function _zeUpdatePoly(){
+  if(_zoneEdPoly){_zoneEdPoly.remove();_zoneEdPoly=null;}
+  if(_zoneEdPts.length>=3&&_zoneEdMap){
+    const t=document.getElementById('ze-type')?.value||'fahrwasser';
+    const COLS={fahrwasser:'#2563eb',reede:'#15803d',other:'#9333ea'};
+    _zoneEdPoly=L.polygon(_zoneEdPts.map(p=>[p.lat,p.lng]),{color:COLS[t]||'#2563eb',fillOpacity:0.2}).addTo(_zoneEdMap);
+  }
+}
+function zeUndo(){
+  if(!_zoneEdPts.length)return;
+  _zoneEdPts.pop();
+  const m=_zoneEdMarkers.pop();if(m)m.remove();
+  _zeUpdatePoly();
+  const c=document.getElementById('ze-cnt');if(c)c.textContent=_zoneEdPts.length;
+}
+function zeClear(){
+  _zoneEdPts=[];_zoneEdMarkers.forEach(m=>m.remove());_zoneEdMarkers=[];
+  if(_zoneEdPoly){_zoneEdPoly.remove();_zoneEdPoly=null;}
+  const c=document.getElementById('ze-cnt');if(c)c.textContent=0;
+}
+function zeClose(){
+  if(_zoneEdMap){_zoneEdMap.remove();_zoneEdMap=null;}
+  _zoneEdPts=[];_zoneEdMarkers=[];_zoneEdPoly=null;
+  const m=document.getElementById('zone-editor-modal');if(m)m.remove();
+}
+function zeSave(){
+  const name=(document.getElementById('ze-name')?.value||'').trim();
+  const type=document.getElementById('ze-type')?.value||'other';
+  if(!name){alert('Bitte einen Namen eingeben.');return;}
+  if(_zoneEdPts.length<3){alert('Mindestens 3 Punkte benötigt.');return;}
+  if(_zoneEdId){
+    const z=verkehrZones.find(z=>z.id===_zoneEdId);
+    if(z){z.name=name;z.type=type;z.points=[..._zoneEdPts];}
+  } else {
+    verkehrZones.push({id:uid(),name,type,points:[..._zoneEdPts]});
+  }
+  saveVerkehrZones();
+  zeClose();
+  showToast('Zone gespeichert');
+  if(currentView==='einstellungen') document.getElementById('app-main').innerHTML=renderEinstellungenHTML();
+}
+function deleteZone(id){
+  if(!confirm('Zone wirklich löschen?'))return;
+  verkehrZones=verkehrZones.filter(z=>z.id!==id);
+  saveVerkehrZones();
+  document.getElementById('app-main').innerHTML=renderEinstellungenHTML();
+}
 
 // ── AIS State ─────────────────────────────────────────────────────
 let _aisWs              = null;
@@ -7570,9 +7722,12 @@ function _aisRenderTable() {
     const drg  = s.draught > 0 ? `${s.draught.toFixed(1)}m`  : '—';
     const sog  = s.sog     > 0 ? `${s.sog.toFixed(1)} kn`    : '—';
     const zone = shipZone(s);
-    const zoneBadge = zone === 'fahrwasser'
-      ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#dbeafe;color:#1d4ed8;font-weight:700;white-space:nowrap">⛵ FW</span>`
-      : `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#f0fdf4;color:#15803d;font-weight:700;white-space:nowrap">⚓ Reede</span>`;
+    const cz = _shipCustomZone(s);
+    const zoneBadge = cz
+      ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:${cz.type==='fahrwasser'?'#dbeafe':cz.type==='reede'?'#dcfce7':'#f3e8ff'};color:${cz.type==='fahrwasser'?'#1d4ed8':cz.type==='reede'?'#15803d':'#7c3aed'};font-weight:700;white-space:nowrap">${cz.name}</span>`
+      : zone === 'fahrwasser'
+        ? `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#dbeafe;color:#1d4ed8;font-weight:700;white-space:nowrap">⛵ FW</span>`
+        : `<span style="font-size:9px;padding:1px 4px;border-radius:3px;background:#f0fdf4;color:#15803d;font-weight:700;white-space:nowrap">⚓ Reede</span>`;
     const tonneBadge = (() => {
       const t = _nearestTonne(s.trackNm, s.dir);
       if (t) return `<br><span style="font-size:10px;font-weight:700;color:${t.css}">${t.label}</span>`;
@@ -14789,6 +14944,7 @@ function exportExcel() {
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
   loadKalenderEvents();
   loadFreitagsKonto();
+  loadVerkehrZones();
   updateAgenturDatalist();
   goList();
   // BSH Wasserstandsvorhersage im Hintergrund laden (nach 4s Verzögerung)
