@@ -339,6 +339,16 @@
     .kal-sun-bar {
       height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
     }
+    /* tide markers in vertical timeline (week/day views) */
+    .kal-tide-px-marker {
+      position: absolute; left: 0; right: 0; height: 0;
+      border-top: 1px dashed; z-index: 2; pointer-events: none;
+    }
+    .kal-tide-px-lbl {
+      position: absolute; left: 2px; top: 1px;
+      font-size: 8px; font-weight: 600; line-height: 1; opacity: .85;
+      white-space: nowrap;
+    }
     .kal-chip {
       font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 3px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -410,8 +420,8 @@
       font-size: 13px; color-scheme: light dark;
     }
     /* ── TIMELINE BARS ───────────────────────────────────────────── */
-    .kal-day { min-height: 130px; }
-    .kal-tl-wrap { position: relative; margin-top: 3px; flex: 1; }
+    .kal-day { min-height: 130px; overflow: visible; }
+    .kal-tl-wrap { position: relative; margin-top: 3px; flex: 1; overflow: visible; }
     .kal-tl-bar {
       position: absolute; height: 11px; border-radius: 3px;
       min-width: 3px; overflow: hidden; display: flex;
@@ -4431,14 +4441,51 @@ function calcSunTimes(dateStr) {
   };
 }
 
+function _sunFmtMin(m) {
+  const hh = Math.floor(Math.max(0,m)/60) % 24;
+  const mm = Math.round(Math.max(0,m)) % 60;
+  return String(hh).padStart(2,'0') + ':' + String(mm).padStart(2,'0');
+}
+
+// Horizontal bar for month view
 function sunBarHtml(dateStr) {
   const s = calcSunTimes(dateStr);
   if (!s) return '';
-  if (s.polarDay)   return '<div class="kal-sun-bar" style="background:#fef08a"></div>';
+  if (s.polarDay)   return '<div class="kal-sun-bar" style="background:#fde68a"></div>';
   if (s.polarNight) return '<div class="kal-sun-bar" style="background:#1e3a5f"></div>';
   const pct = x => (Math.max(0,Math.min(1440,x))/1440*100).toFixed(1)+'%';
   const bg = `linear-gradient(to right,#1e3a5f 0%,#1e3a5f ${pct(s.dawn)},#4a7ab5 ${pct(s.dawn)},#4a7ab5 ${pct(s.rise)},#fde68a ${pct(s.rise)},#fde68a ${pct(s.set)},#4a7ab5 ${pct(s.set)},#4a7ab5 ${pct(s.dusk)},#1e3a5f ${pct(s.dusk)},#1e3a5f 100%)`;
-  return `<div class="kal-sun-bar" style="background:${bg}" title="Aufgang ${Math.round(s.rise)%60<10?Math.floor(s.rise/60)+':0'+Math.round(s.rise)%60:Math.floor(s.rise/60)+':'+Math.round(s.rise)%60} · Untergang ${Math.round(s.set)%60<10?Math.floor(s.set/60)+':0'+Math.round(s.set)%60:Math.floor(s.set/60)+':'+Math.round(s.set)%60}"></div>`;
+  return `<div class="kal-sun-bar" style="background:${bg}" title="☀️ Aufgang ${_sunFmtMin(s.rise)} · Untergang ${_sunFmtMin(s.set)}"></div>`;
+}
+
+// Vertical gradient CSS string for week/day views (top=0h, bottom=24h)
+// Semi-transparent so hour lines and text remain readable
+function sunBgGradient(dateStr) {
+  const s = calcSunTimes(dateStr);
+  if (!s) return 'var(--surface)';
+  if (s.polarDay)   return 'linear-gradient(to bottom,rgba(253,230,138,.25),rgba(253,230,138,.25))';
+  if (s.polarNight) return 'linear-gradient(to bottom,rgba(30,58,95,.35),rgba(30,58,95,.35))';
+  const pct = x => (Math.max(0,Math.min(1440,x))/1440*100).toFixed(1)+'%';
+  return `linear-gradient(to bottom,rgba(30,58,95,.35) 0%,rgba(30,58,95,.35) ${pct(s.dawn)},rgba(74,122,181,.25) ${pct(s.dawn)},rgba(74,122,181,.25) ${pct(s.rise)},rgba(253,230,138,.2) ${pct(s.rise)},rgba(253,230,138,.2) ${pct(s.set)},rgba(74,122,181,.25) ${pct(s.set)},rgba(74,122,181,.25) ${pct(s.dusk)},rgba(30,58,95,.35) ${pct(s.dusk)},rgba(30,58,95,.35) 100%)`;
+}
+
+// Tide overlay markers for vertical px timelines (week/day)
+function tideOverlayPx(dateStr, totalPx) {
+  if (!kalenderShowTides) return '';
+  const db = (tideDbs && tideDbs[kalenderTideStation]) || [];
+  const entries = db.filter(t => (t.dt || '').slice(0, 10) === dateStr);
+  if (!entries.length) return '';
+  return entries.slice(0, 6).map(t => {
+    const timeParts = (t.dt || '').slice(11, 16).split(':');
+    const min = (+timeParts[0] || 0) * 60 + (+timeParts[1] || 0);
+    const topPx = (min / 1440 * totalPx).toFixed(0);
+    const isHW = t.type === 'HW';
+    const col = isHW ? '#2563eb' : '#64748b';
+    const lbl = `${t.type} ${(t.dt||'').slice(11,16)}`;
+    return `<div class="kal-tide-px-marker" style="top:${topPx}px;border-color:${col};color:${col}" title="${lbl}">
+      <span class="kal-tide-px-lbl">${lbl}</span>
+    </div>`;
+  }).join('');
 }
 
 const FREITAG_KONTO_KEY = 'seelotse_freitag_konto_v1';
@@ -12266,11 +12313,13 @@ function renderKalenderHTML() {
   function barSegment(dateStr, startDt, endDt) {
     const startDay = (startDt || dateStr).slice(0, 10);
     const endDay   = endDt ? endDt.slice(0, 10) : startDay;
-    let leftMin, rightMin;
-    if (startDay <= dateStr) leftMin = startDay === dateStr ? (timeToMin(startDt) ?? 0) : 0;
-    else return null;
-    if (endDay >= dateStr)   rightMin = endDay === dateStr ? (timeToMin(endDt) ?? 1440) : 1440;
-    else return null;
+    if (startDay > dateStr) return null;
+    const leftMin = startDay === dateStr ? (timeToMin(startDt) ?? 0) : 0;
+    if (endDay < dateStr) return null;
+    // Count days from dateStr to endDay so bar can overflow into next cells
+    const daysDiff = Math.round((new Date(endDay+'T12:00:00Z') - new Date(dateStr+'T12:00:00Z')) / 86400000);
+    const endMinInDay = timeToMin(endDt) ?? 1440;
+    const rightMin = daysDiff * 1440 + endMinInDay;
     return { l: (leftMin / 1440) * 100, w: Math.max(0.5, ((rightMin - leftMin) / 1440) * 100) };
   }
 
@@ -12278,10 +12327,10 @@ function renderKalenderHTML() {
     const s = barSegment(dateStr, startDt, endDt);
     if (!s) return '';
     const l = Math.max(0, Math.min(99, s.l));
-    const w = Math.min(100 - l, s.w);
+    const w = s.w; // allow overflow into next day cells — no 100% clip
     const oc = onclick ? `onclick="${onclick}"` : '';
     const titleStr = `${lbl} ${[startDt, endDt].filter(Boolean).map(d => d.slice(11,16)).join('–')}`;
-    return `<div class="kal-tl-bar" style="left:${l.toFixed(1)}%;width:${w.toFixed(1)}%;top:${topPx}px;background:${color}" title="${esc(titleStr)}" ${oc}><span class="kal-tl-lbl">${esc(lbl)}</span></div>`;
+    return `<div class="kal-tl-bar" style="left:${l.toFixed(1)}%;width:${w.toFixed(1)}%;top:${topPx}px;background:${color};z-index:3" title="${esc(titleStr)}" ${oc}><span class="kal-tl-lbl">${esc(lbl)}</span></div>`;
   }
 
   // ── Tide info ─────────────────────────────────────────────────────────
@@ -12491,12 +12540,14 @@ function renderKalenderHTML() {
       let hlns = '';
       for (let h = 0; h < 24; h++) hlns += `<div class="kal-week-hour" style="top:${h*HPXW}px">${pad(h)}:00</div>`;
 
+      const sunBg = sunBgGradient(ds);
+      const tidePx = tideOverlayPx(ds, THW);
       cols += `<div class="kal-week-col">
         <div class="kal-week-header${isToday2?' today':''}">
           <div style="font-size:9px;color:var(--text-muted)">${DOW_SHORT[(dt.getDay()+6)%7]}</div>
           <div style="font-size:15px;font-weight:700;cursor:pointer" onclick="kalGoDay('${ds}')">${dayN}</div>
         </div>
-        <div class="kal-week-body" style="height:${THW}px">${hlns}${bars2}</div>
+        <div class="kal-week-body" style="height:${THW}px;background:${sunBg}">${hlns}${tidePx}${bars2}</div>
       </div>`;
     }
 
@@ -12550,12 +12601,17 @@ function renderKalenderHTML() {
       </div>`;
     }
 
+    const sunBgD = sunBgGradient(ds);
+    const tidePxD = tideOverlayPx(ds, THD);
+    const s = calcSunTimes(ds);
+    const sunInfoD = s && !s.polarDay && !s.polarNight
+      ? `<div style="font-size:11px;color:var(--text-muted);margin-bottom:6px">☀️ Aufgang ${_sunFmtMin(s.rise)} · Untergang ${_sunFmtMin(s.set)} &nbsp;|&nbsp; 🌅 Beginn Dämmerung ${_sunFmtMin(s.dawn)} · Ende ${_sunFmtMin(s.dusk)}</div>` : '';
     return `<div class="kal-wrap">
       ${navHtml}
-      <div style="font-size:14px;font-weight:600;color:var(--text-muted);margin-bottom:8px">${dowLabel}, ${parseInt(ds.slice(8))}. ${MONTH_NAMES[month]} ${year}</div>
-      ${tideRow(ds) ? `<div style="margin-bottom:8px">${tideRow(ds)}</div>` : ''}
+      <div style="font-size:14px;font-weight:600;color:var(--text-muted);margin-bottom:4px">${dowLabel}, ${parseInt(ds.slice(8))}. ${MONTH_NAMES[month]} ${year}</div>
+      ${sunInfoD}
       <div class="kal-day-wrap">
-        <div class="kal-day-timeline" style="height:${THD}px;position:relative">${hourLines}${bars3}</div>
+        <div class="kal-day-timeline" style="height:${THD}px;position:relative;background:${sunBgD}">${hourLines}${tidePxD}${bars3}</div>
       </div>
       <div style="margin-top:12px">
         <button class="btn btn-secondary" style="font-size:13px" onclick="kalAddEvent('${ds}')">+ Eintrag hinzufügen</button>
