@@ -339,6 +339,10 @@
     .kal-sun-bar {
       height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
     }
+    /* tide color gradient bar (month view) */
+    .kal-tide-bar {
+      height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
+    }
     /* tide markers in vertical timeline (week/day views) */
     .kal-tide-px-marker {
       position: absolute; left: 0; right: 0; height: 0;
@@ -4488,6 +4492,91 @@ function tideOverlayPx(dateStr, totalPx) {
   }).join('');
 }
 
+// Direction-aware color for Schiff fahrten
+function fahrtColor(f) {
+  if (!f.artDesEinsatzes || f.artDesEinsatzes === 'Schiff') {
+    return f.ausgehend ? '#1d4ed8' : '#15803d';
+  }
+  const COLS = { Radar:'#9333ea','AG-Fahrt':'#eab308','2+2':'#22c55e',WR:'#f97316',WB:'#ec4899' };
+  return COLS[f.artDesEinsatzes] || '#3b82f6';
+}
+
+// Tide color gradient bar (horizontal, for month view)
+function tideGradientHtml(dateStr) {
+  if (!kalenderShowTides) return '';
+  const db = (tideDbs && tideDbs[kalenderTideStation]) || [];
+  if (!db.length) return '';
+  const safeD = d => new Date(d+'T12:00:00Z');
+  const prev = new Date(safeD(dateStr)); prev.setUTCDate(prev.getUTCDate()-1);
+  const next = new Date(safeD(dateStr)); next.setUTCDate(next.getUTCDate()+1);
+  const prevStr = prev.toISOString().slice(0,10);
+  const nextStr = next.toISOString().slice(0,10);
+  const evts = db
+    .filter(t => { const d=(t.dt||'').slice(0,10); return d===prevStr||d===dateStr||d===nextStr; })
+    .map(t => {
+      const d=(t.dt||'').slice(0,10);
+      const parts=(t.dt||'').slice(11,16).split(':');
+      const offset=d===prevStr?-1440:d===nextStr?1440:0;
+      return { min:(+parts[0]||0)*60+(+parts[1]||0)+offset, hw:t.type==='HW' };
+    })
+    .sort((a,b)=>a.min-b.min);
+  if (evts.length < 2) return '';
+  const HW=[37,99,235], NW=[239,68,68];
+  const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+  const rgba=(c)=>`rgba(${c[0]},${c[1]},${c[2]},.55)`;
+  const stops=[];
+  for (let i=0;i<evts.length-1;i++) {
+    const a=evts[i],b=evts[i+1];
+    if (b.min<0||a.min>1440) continue;
+    const span=b.min-a.min||1;
+    const ca=a.hw?HW:NW, cb=b.hw?HW:NW;
+    const pA=Math.max(0,a.min)/1440*100, pB=Math.min(1440,b.min)/1440*100;
+    const fA=(Math.max(0,a.min)-a.min)/span, fB=(Math.min(1440,b.min)-a.min)/span;
+    stops.push(`${rgba(mix(ca,cb,fA))} ${pA.toFixed(1)}%`);
+    stops.push(`${rgba(mix(ca,cb,fB))} ${pB.toFixed(1)}%`);
+  }
+  if (!stops.length) return '';
+  return `<div class="kal-tide-bar" style="background:linear-gradient(to right,${stops.join(',')})" title="Gezeiten ${kalenderTideStation}"></div>`;
+}
+
+// Tide vertical gradient CSS string (for week/day view backgrounds)
+function tideBgGradientV(dateStr) {
+  if (!kalenderShowTides) return '';
+  const db = (tideDbs && tideDbs[kalenderTideStation]) || [];
+  if (!db.length) return '';
+  const safeD = d => new Date(d+'T12:00:00Z');
+  const prev = new Date(safeD(dateStr)); prev.setUTCDate(prev.getUTCDate()-1);
+  const next = new Date(safeD(dateStr)); next.setUTCDate(next.getUTCDate()+1);
+  const prevStr = prev.toISOString().slice(0,10);
+  const nextStr = next.toISOString().slice(0,10);
+  const evts = db
+    .filter(t => { const d=(t.dt||'').slice(0,10); return d===prevStr||d===dateStr||d===nextStr; })
+    .map(t => {
+      const d=(t.dt||'').slice(0,10);
+      const parts=(t.dt||'').slice(11,16).split(':');
+      const offset=d===prevStr?-1440:d===nextStr?1440:0;
+      return { min:(+parts[0]||0)*60+(+parts[1]||0)+offset, hw:t.type==='HW' };
+    })
+    .sort((a,b)=>a.min-b.min);
+  if (evts.length < 2) return '';
+  const HW=[37,99,235], NW=[239,68,68];
+  const mix=(a,b,t)=>a.map((v,i)=>Math.round(v+(b[i]-v)*t));
+  const rgba=(c)=>`rgba(${c[0]},${c[1]},${c[2]},.32)`;
+  const stops=[];
+  for (let i=0;i<evts.length-1;i++) {
+    const a=evts[i],b=evts[i+1];
+    if (b.min<0||a.min>1440) continue;
+    const span=b.min-a.min||1;
+    const ca=a.hw?HW:NW, cb=b.hw?HW:NW;
+    const pA=Math.max(0,a.min)/1440*100, pB=Math.min(1440,b.min)/1440*100;
+    const fA=(Math.max(0,a.min)-a.min)/span, fB=(Math.min(1440,b.min)-a.min)/span;
+    stops.push(`${rgba(mix(ca,cb,fA))} ${pA.toFixed(1)}%`);
+    stops.push(`${rgba(mix(ca,cb,fB))} ${pB.toFixed(1)}%`);
+  }
+  if (!stops.length) return '';
+  return `linear-gradient(to bottom,${stops.join(',')})`;
+}
+
 const FREITAG_KONTO_KEY = 'seelotse_freitag_konto_v1';
 let freitagsKonto = { startDatum: '', startAnzahl: 0 };
 
@@ -6649,7 +6738,7 @@ function uebersichtFilter() {
     let von2 = '–', bis2 = '–', detail = '';
     if (e.type === 'DV')     { von2 = fmtDt(e.dvVon); bis2 = fmtDt(e.dvBis); detail = [e.dvGrund, e.verhVon?'Verh. '+fmtDt(e.verhVon)+'–'+fmtDt(e.verhBis):''].filter(Boolean).join(' | '); }
     else if (e.type==='krank') { von2 = fmtDt(e.krankVon); bis2 = fmtDt(e.krankBis); }
-    else if (e.type==='frei')  { von2 = fmtDt(e.freiDatum||e.date); detail = (e.freiTyp||'')+' · '+e.freiAnzahl+' Tage'+(e.freiLotsen?' · '+e.freiLotsen+' Ls':''); }
+    else if (e.type==='frei')  { von2 = fmtDt(e.freiDatum||e.date); detail = (e.freiTyp||'')+' · '+e.freiAnzahl+' Tage'; }
     else if (e.type==='urlaub'){ von2 = fmtDt(e.urlaubVon); bis2 = fmtDt(e.urlaubBis); }
     const bg = typeBg[e.type]||'';
     const col = typeColor[e.type]||'#888';
@@ -6692,7 +6781,7 @@ function uebersichtExportXLSX() {
     let von2='',bis2='',detail='';
     if(e.type==='DV'){von2=fmtDt(e.dvVon);bis2=fmtDt(e.dvBis);detail=[e.dvGrund,e.verhVon?'Verh. '+fmtDt(e.verhVon)+'–'+fmtDt(e.verhBis):''].filter(Boolean).join(' | ');}
     else if(e.type==='krank'){von2=fmtDt(e.krankVon);bis2=fmtDt(e.krankBis);}
-    else if(e.type==='frei'){von2=fmtDt(e.freiDatum||e.date);detail=(e.freiTyp||'')+' · '+e.freiAnzahl+' Tage'+(e.freiLotsen?' · '+e.freiLotsen+' Ls':'');}
+    else if(e.type==='frei'){von2=fmtDt(e.freiDatum||e.date);detail=(e.freiTyp||'')+' · '+e.freiAnzahl+' Tage';}
     else if(e.type==='urlaub'){von2=fmtDt(e.urlaubVon);bis2=fmtDt(e.urlaubBis);}
     return [typeLabel[e.type]||e.type, von2, bis2, detail, e.notiz||''];
   });
@@ -12297,6 +12386,7 @@ function renderKalenderHTML() {
     if (e.type === 'urlaub' && e.urlaubBis) endD = e.urlaubBis.slice(0, 10);
     else if (e.type === 'DV' && e.dvBis) endD = e.dvBis.slice(0, 10);
     else if (e.type === 'krank' && e.krankBis) endD = e.krankBis.slice(0, 10);
+    else if (e.type === 'frei' && e.freiBis) endD = e.freiBis.slice(0, 10);
     iterDateRange(e.date, endD, ds => {
       if (ds >= monthStart && ds <= monthEnd) addToMap(evtByDay, ds, e);
     });
@@ -12357,18 +12447,45 @@ function renderKalenderHTML() {
     const es = evtByDay[dateStr] || [];
 
     let bars = '', track = 0;
-    fs.forEach(f => {
-      bars += makePctBar(dateStr, f.anBord, f.vonBord, TY(track),
-        einsatzColor(f.artDesEinsatzes),
-        (f.schiffsname || f.artDesEinsatzes || 'F').slice(0, 12),
-        `goAktuelleReiseWith('${esc(f.id)}')`);
+
+    // Gap bars between consecutive Schiff voyages (pale yellow), then voyage bars
+    const schiffFs = fs.filter(f => (!f.artDesEinsatzes||f.artDesEinsatzes==='Schiff') && !f.abgeschöpft && f.anBord && f.vonBord)
+      .sort((a,b)=>a.anBord<b.anBord?-1:1);
+    const otherFs = fs.filter(f => f.artDesEinsatzes && f.artDesEinsatzes !== 'Schiff');
+    otherFs.forEach(f => {
+      bars += makePctBar(dateStr, f.anBord, f.vonBord, TY(track), fahrtColor(f),
+        (f.schiffsname||f.artDesEinsatzes||'F').slice(0,12), `goAktuelleReiseWith('${esc(f.id)}')`);
       track++;
     });
+    schiffFs.forEach((f, i) => {
+      if (i < schiffFs.length-1) {
+        const nx = schiffFs[i+1];
+        if (f.vonBord && nx.anBord && f.vonBord < nx.anBord) {
+          bars += makePctBar(dateStr, f.vonBord, nx.anBord, TY(track), 'rgba(253,224,71,.55)', 'Warte', '');
+          track++;
+        }
+      }
+      bars += makePctBar(dateStr, f.anBord, f.vonBord, TY(track), fahrtColor(f),
+        (f.schiffsname||'Schiff').slice(0,12), `goAktuelleReiseWith('${esc(f.id)}')`);
+      track++;
+    });
+    // Schiff voyages with abgeschöpft or no anBord/vonBord (draw without gap bars)
+    fs.filter(f => (!f.artDesEinsatzes||f.artDesEinsatzes==='Schiff') && (f.abgeschöpft || !f.anBord || !f.vonBord))
+      .forEach(f => {
+        bars += makePctBar(dateStr, f.anBord, f.vonBord, TY(track), fahrtColor(f),
+          (f.schiffsname||'Schiff').slice(0,12), `goAktuelleReiseWith('${esc(f.id)}')`);
+        track++;
+      });
+
     es.forEach(e => {
       let color = '#ef4444', lbl = 'DV', s = e.date+'T00:00', en = e.date+'T23:59';
-      if (e.type === 'DV')      { color='#ef4444'; lbl='DV'; s=e.dvVon||s; en=e.dvBis||en; }
+      if (e.type === 'DV')       { color='#ef4444'; lbl='DV'; s=e.dvVon||s; en=e.dvBis||en; }
       else if (e.type==='krank') { color='#fb923c'; lbl='🤒'; s=e.krankVon||s; en=e.krankBis||en; }
-      else if (e.type==='frei')  { const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6; color='#10b981'; lbl=e.freiTyp||'F'; s=(e.freiDatum||e.date)+'T'+pad(h)+':00'; en=(e.freiDatum||e.date)+'T23:59'; }
+      else if (e.type==='frei')  {
+        const ft={MOFA:'12:00',MIFA:'18:00',MiFA:'18:00',AFA:'18:00'}[e.freiTyp]||'12:00';
+        s=e.freiVon||(e.freiDatum||e.date)+'T'+ft; en=e.freiBis||(e.freiDatum||e.date)+'T23:59';
+        color='#10b981'; lbl=e.freiTyp||'Frei';
+      }
       else if (e.type==='urlaub') { color='#7c3aed'; lbl='🏖'; s=e.urlaubVon||s; en=e.urlaubBis||en; }
       bars += makePctBar(dateStr, s, en, TY(track), color, lbl, `kalEditEvent('${esc(e.id)}')`);
       track++;
@@ -12390,8 +12507,8 @@ function renderKalenderHTML() {
     return `<div class="kal-day${isToday?' kal-today':''}${outside?' kal-outside':''}">
       <div class="kal-day-num">${dayNum}</div>
       ${outside ? '' : sunBarHtml(dateStr)}
+      ${outside ? '' : tideGradientHtml(dateStr)}
       ${outside ? '' : tickHtml}
-      ${tideRow(dateStr)}
       <div class="kal-tl-wrap" style="min-height:${tlH}px">${bars}</div>
       ${addBtn}
     </div>`;
@@ -12403,7 +12520,8 @@ function renderKalenderHTML() {
     const balBadge = balance !== null
       ? `<span class="kal-balance-badge">🗓️ Freitage-Konto: <b>${balance.toFixed(1)}</b> Tage</span>` : '';
     return `<div class="kal-legend">
-      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#3b82f6"></div> Schiff</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#1d4ed8"></div> Ausgehend</div>
+      <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#15803d"></div> Einkommend</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#9333ea"></div> Radar</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#eab308"></div> AG</div>
       <div class="kal-legend-item"><div class="kal-legend-dot" style="background:#22c55e"></div> 2+2</div>
@@ -12451,6 +12569,7 @@ function renderKalenderHTML() {
     <span style="flex:1"></span>
     <div class="kal-view-btns">${viewBtnHtml}</div>
     ${tideBtnHtml}${stationHtml}
+    <button class="btn btn-primary" style="font-size:12px;padding:5px 10px;white-space:nowrap" onclick="kalAddEvent('${today}')">+ Eintrag</button>
   </div>`;
 
   // ── YEAR VIEW ─────────────────────────────────────────────────────────
@@ -12525,14 +12644,14 @@ function renderKalenderHTML() {
       const n = fs2.length || 1;
       fs2.forEach((f, i) => {
         const lp = 4 + i * (88/n), wp = 88/n - 2;
-        bars2 += weekBarPx(ds, f.anBord, f.vonBord, einsatzColor(f.artDesEinsatzes),
+        bars2 += weekBarPx(ds, f.anBord, f.vonBord, fahrtColor(f),
           (f.schiffsname||'Fahrt'), lp, wp, `goAktuelleReiseWith('${esc(f.id)}')`);
       });
       es2.forEach(e => {
         let col2='#ef4444',lbl='DV',s=e.date+'T00:00',en=e.date+'T23:59';
         if(e.type==='DV'){s=e.dvVon||s;en=e.dvBis||en;col2='#ef4444';lbl='DV';}
         else if(e.type==='krank'){s=e.krankVon||s;en=e.krankBis||en;col2='#fb923c';lbl='🤒 Krank';}
-        else if(e.type==='frei'){const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6;s=(e.freiDatum||e.date)+'T'+pad(h)+':00';en=(e.freiDatum||e.date)+'T23:59';col2='#10b981';lbl=e.freiTyp||'Frei';}
+        else if(e.type==='frei'){const ft={MOFA:'12:00',MIFA:'18:00',MiFA:'18:00',AFA:'18:00'}[e.freiTyp]||'12:00';s=e.freiVon||(e.freiDatum||e.date)+'T'+ft;en=e.freiBis||(e.freiDatum||e.date)+'T23:59';col2='#10b981';lbl=e.freiTyp||'Frei';}
         else if(e.type==='urlaub'){s=e.urlaubVon||s;en=e.urlaubBis||en;col2='#7c3aed';lbl='🏖 Urlaub';}
         bars2 += weekBarPx(ds, s, en, col2, lbl, 50, 46, `kalEditEvent('${esc(e.id)}')`);
       });
@@ -12541,13 +12660,15 @@ function renderKalenderHTML() {
       for (let h = 0; h < 24; h++) hlns += `<div class="kal-week-hour" style="top:${h*HPXW}px">${pad(h)}:00</div>`;
 
       const sunBg = sunBgGradient(ds);
+      const tideBgW = tideBgGradientV(ds);
+      const combinedBgW = tideBgW ? `${tideBgW},${sunBg}` : sunBg;
       const tidePx = tideOverlayPx(ds, THW);
       cols += `<div class="kal-week-col">
         <div class="kal-week-header${isToday2?' today':''}">
           <div style="font-size:9px;color:var(--text-muted)">${DOW_SHORT[(dt.getDay()+6)%7]}</div>
           <div style="font-size:15px;font-weight:700;cursor:pointer" onclick="kalGoDay('${ds}')">${dayN}</div>
         </div>
-        <div class="kal-week-body" style="height:${THW}px;background:${sunBg}">${hlns}${tidePx}${bars2}</div>
+        <div class="kal-week-body" style="height:${THW}px;background:${combinedBgW}">${hlns}${tidePx}${bars2}</div>
       </div>`;
     }
 
@@ -12581,13 +12702,13 @@ function renderKalenderHTML() {
     fs3.forEach((f, i) => {
       const lp3 = 2 + i * (48/n3), wp3 = 48/n3 - 2;
       const lbl3 = [f.schiffsname, f.streckeVon&&f.streckeNach?f.streckeVon+'→'+f.streckeNach:'', calcDuration(f.anBord,f.vonBord)||''].filter(Boolean).join(' · ');
-      bars3 += dayBarPx(f.anBord, f.vonBord, einsatzColor(f.artDesEinsatzes), lbl3, lp3, wp3, `goAktuelleReiseWith('${esc(f.id)}')`);
+      bars3 += dayBarPx(f.anBord, f.vonBord, fahrtColor(f), lbl3, lp3, wp3, `goAktuelleReiseWith('${esc(f.id)}')`);
     });
     es3.forEach(e => {
       let col3='#ef4444',lbl3='DV',s=e.date+'T00:00',en=e.date+'T23:59';
       if(e.type==='DV'){s=e.dvVon||s;en=e.dvBis||en;col3='#ef4444';lbl3='DV '+(e.dvVon||'').slice(11,16)+'–'+(e.dvBis||'').slice(11,16);}
       else if(e.type==='krank'){s=e.krankVon||s;en=e.krankBis||en;col3='#fb923c';lbl3='🤒 Krank';}
-      else if(e.type==='frei'){const h={MOFA:6,MiFA:12,AFA:18}[e.freiTyp]||6;s=(e.freiDatum||e.date)+'T'+pad(h)+':00';en=(e.freiDatum||e.date)+'T23:59';col3='#10b981';lbl3=(e.freiTyp||'Frei')+(e.freiLotsen?' · '+e.freiLotsen+' Ls':'');}
+      else if(e.type==='frei'){const ft={MOFA:'12:00',MIFA:'18:00',MiFA:'18:00',AFA:'18:00'}[e.freiTyp]||'12:00';s=e.freiVon||(e.freiDatum||e.date)+'T'+ft;en=e.freiBis||(e.freiDatum||e.date)+'T23:59';col3='#10b981';lbl3=(e.freiTyp||'Frei')+(e.freiAnzahl>1?' · '+e.freiAnzahl+'d':'');}
       else if(e.type==='urlaub'){s=e.urlaubVon||s;en=e.urlaubBis||en;col3='#7c3aed';lbl3='🏖 Urlaub'+(e.notiz?' – '+e.notiz:'');}
       bars3 += dayBarPx(s, en, col3, lbl3, 52, 46, `kalEditEvent('${esc(e.id)}')`);
     });
@@ -12602,6 +12723,8 @@ function renderKalenderHTML() {
     }
 
     const sunBgD = sunBgGradient(ds);
+    const tideBgD = tideBgGradientV(ds);
+    const combinedBgD = tideBgD ? `${tideBgD},${sunBgD}` : sunBgD;
     const tidePxD = tideOverlayPx(ds, THD);
     const s = calcSunTimes(ds);
     const sunInfoD = s && !s.polarDay && !s.polarNight
@@ -12611,7 +12734,7 @@ function renderKalenderHTML() {
       <div style="font-size:14px;font-weight:600;color:var(--text-muted);margin-bottom:4px">${dowLabel}, ${parseInt(ds.slice(8))}. ${MONTH_NAMES[month]} ${year}</div>
       ${sunInfoD}
       <div class="kal-day-wrap">
-        <div class="kal-day-timeline" style="height:${THD}px;position:relative;background:${sunBgD}">${hourLines}${tidePxD}${bars3}</div>
+        <div class="kal-day-timeline" style="height:${THD}px;position:relative;background:${combinedBgD}">${hourLines}${tidePxD}${bars3}</div>
       </div>
       <div style="margin-top:12px">
         <button class="btn btn-secondary" style="font-size:13px" onclick="kalAddEvent('${ds}')">+ Eintrag hinzufügen</button>
@@ -12710,21 +12833,18 @@ function _kalFieldHtml(type, dateStr) {
     <div class="kal-field-group">
       <div class="kal-field-label">Freier Tag</div>
       <div class="kal-field-row" style="align-items:flex-end;flex-wrap:wrap">
-        <div class="kal-field-col"><label class="kal-sublabel">Datum</label>
+        <div class="kal-field-col"><label class="kal-sublabel">Datum (Beginn)</label>
           <input type="date" id="kal-frei-datum" value="${dateStr}"></div>
+        <div class="kal-field-col"><label class="kal-sublabel">Anzahl Tage</label>
+          <input type="number" id="kal-frei-anzahl" value="1" min="1" max="30" step="1"></div>
         <div class="kal-field-col"><label class="kal-sublabel">Typ</label>
           <select id="kal-frei-typ" style="width:100%;padding:7px 8px;border-radius:var(--r-sm);border:1px solid var(--border);background:var(--bg);color:var(--text);font-size:13px">
-            <option value="MOFA">MOFA (06:00)</option>
-            <option value="MiFA">MiFA (12:00)</option>
-            <option value="AFA">AFA (18:00)</option>
+            <option value="MOFA">MOFA (12–12)</option>
+            <option value="MIFA">MIFA (18–18)</option>
+            <option value="AFA">AFA (18–18)</option>
           </select></div>
-        <div class="kal-field-col"><label class="kal-sublabel">Anzahl Tage</label>
-          <input type="number" id="kal-frei-anzahl" value="1" min="0.5" max="30" step="0.5"></div>
       </div>
-    </div>
-    <div class="kal-field-group">
-      <div class="kal-field-label">Lotsenanzahl</div>
-      <input type="number" id="kal-frei-lotsen" placeholder="Anzahl Lotsen aus dem Buch" min="1" max="100" step="1">
+      <p class="kal-sublabel" style="margin-top:4px;color:var(--text-muted)">MOFA: 12:00 Uhr bis nächsten Tag 12:00 · MIFA/AFA: 18:00 bis 18:00</p>
     </div>
     <input type="text" id="kal-notiz-input" placeholder="Notiz (optional)" maxlength="80">`;
 
@@ -12809,8 +12929,12 @@ function kalSaveEvent() {
   } else if (_kalAddType === 'frei') {
     evt.freiDatum  = document.getElementById('kal-frei-datum')?.value || _kalAddDate;
     evt.freiTyp    = document.getElementById('kal-frei-typ')?.value || 'MOFA';
-    evt.freiAnzahl = document.getElementById('kal-frei-anzahl')?.value || '1';
-    evt.freiLotsen = document.getElementById('kal-frei-lotsen')?.value || '';
+    evt.freiAnzahl = parseInt(document.getElementById('kal-frei-anzahl')?.value || '1', 10) || 1;
+    const freiTime = { MOFA: '12:00', MIFA: '18:00', AFA: '18:00' }[evt.freiTyp] || '12:00';
+    evt.freiVon = evt.freiDatum + 'T' + freiTime;
+    const endD = new Date(evt.freiDatum + 'T12:00:00Z');
+    endD.setUTCDate(endD.getUTCDate() + evt.freiAnzahl);
+    evt.freiBis = endD.toISOString().slice(0, 10) + 'T' + freiTime;
     evt.date = evt.freiDatum;
   } else if (_kalAddType === 'urlaub') {
     const vonD = document.getElementById('kal-urlaub-von-d')?.value || '';
@@ -12873,9 +12997,8 @@ function _kalPrefillFields(e) {
     v('kal-krank-bis', e.krankBis);
   } else if (e.type === 'frei') {
     v('kal-frei-datum',  e.freiDatum || e.date);
-    v('kal-frei-typ',    e.freiTyp);
-    v('kal-frei-anzahl', e.freiAnzahl);
-    v('kal-frei-lotsen', e.freiLotsen);
+    v('kal-frei-typ',    e.freiTyp === 'MiFA' ? 'MIFA' : (e.freiTyp || 'MOFA'));
+    v('kal-frei-anzahl', e.freiAnzahl || 1);
   } else if (e.type === 'urlaub') {
     v('kal-urlaub-von-d', (e.urlaubVon || '').slice(0, 10));
     v('kal-urlaub-bis-d', (e.urlaubBis || '').slice(0, 10));
