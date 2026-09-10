@@ -7698,9 +7698,9 @@ function _aisRenderTable() {
   //   ab Tonne 1 → tatsächliche Elbe-Fahrrinnenbreite (Tonnenstrich BB/SB)
   // _aisFilter.fahrwasserNm dient als optionaler manueller Override (nur wenn > 0 gesetzt).
   function shipZone(s) {
-    if (s.elbeDistNm == null) return 'reede';
-    // SOG-Heuristik: fahrende Schiffe können nicht auf Reede liegen
-    if (s.sog != null && s.sog > 3) return 'fahrwasser';
+    if (s.elbeDistNm == null) return 'other';
+    // Schiffe weiter als 2 sm von der Radarlinie entfernt gehören nicht zur Elbe
+    if (s.elbeDistNm > 2.0) return 'other';
     const halfW = _aisFilter.fahrwasserNm > 0
       ? _aisFilter.fahrwasserNm
       : _elbeFahrwasserNm(s.trackNm);
@@ -7716,6 +7716,8 @@ function _aisRenderTable() {
   }
   function applyFilter(list) {
     return list.filter(s => {
+      // Schiff muss in Reichweite der Elbe-Radarlinie sein (max. 2 sm)
+      if (s.elbeDistNm == null || s.elbeDistNm > 2.0) return false;
       const tL = _aisShipType(s.shipType).l;
       if (_aisFilter.lotsenpflicht) { if (!_isLotsenpflichtig(s)) return false; }
       else {
