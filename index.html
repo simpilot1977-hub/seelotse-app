@@ -8137,14 +8137,33 @@ function _aisRenderTable() {
       }).addTo(m);
       allVis.forEach(({s, dir}) => {
         const col = dir === 'in' ? '#16a34a' : dir === 'out' ? '#dc2626' : '#64748b';
+        const name = (s.name || String(s.mmsi)).substring(0, 14);
+        const labelW = Math.max(32, name.length * 6.2 + 12);
+        const svgW = Math.max(labelW + 8, 44);
+        const cx = svgW / 2;
+        const cog = s.cog || 0;
+        // Geschwindigkeitsvektor: 6–24 px je nach SOG
+        const vecLen = s.sog > 0.5 ? Math.min(24, Math.max(6, s.sog * 2)) : 0;
+        const arrowTip = -16 - vecLen;
+        const vecSvg = vecLen > 0 ? `
+          <line x1="0" y1="-16" x2="0" y2="${arrowTip}" stroke="${col}" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+          <polygon points="0,${arrowTip - 4} 3.5,${arrowTip + 3} -3.5,${arrowTip + 3}" fill="${col}" opacity="0.75"/>` : '';
         const ico = L.divIcon({
           className: '',
-          html: `<div style="background:${col};color:#fff;padding:2px 5px;border-radius:4px;font-size:10px;font-weight:700;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">${dir==='in'?'▲':'▼'} ${s.name||s.mmsi}</div>`,
-          iconAnchor: [0, 10]
+          html: `<svg width="${svgW}" height="54" xmlns="http://www.w3.org/2000/svg" style="overflow:visible;display:block">
+            <g transform="translate(${cx},20) rotate(${cog})">
+              ${vecSvg}
+              <polygon points="0,-15 8,10 0,6 -8,10" fill="${col}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            </g>
+            <rect x="${(svgW - labelW) / 2}" y="33" width="${labelW}" height="15" rx="3" fill="${col}" opacity="0.93"/>
+            <text x="${cx}" y="44.5" text-anchor="middle" dominant-baseline="middle" font-size="9" font-weight="700" fill="white" font-family="system-ui,sans-serif">${name}</text>
+          </svg>`,
+          iconSize: [svgW, 54],
+          iconAnchor: [cx, 20]
         });
         L.marker([s.lat, s.lon], {icon: ico})
           .addTo(m)
-          .bindPopup(`<b>${s.name||s.mmsi}</b><br>${s.length>0?'L:'+s.length+'m ':''}<br>SOG:${s.sog.toFixed(1)} kn<br>${s.destination||''}`);
+          .bindPopup(`<b>${s.name||s.mmsi}</b><br>COG: ${Math.round(cog)}° · SOG: ${s.sog.toFixed(1)} kn${s.length>0?'<br>L:'+s.length+'m':''}${s.destination?'<br>→ '+s.destination:''}`);
       });
       setTimeout(() => m.invalidateSize(), 100);
     }
