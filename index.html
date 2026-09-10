@@ -337,12 +337,25 @@
     }
     /* sunrise/sunset gradient bar */
     .kal-sun-bar {
-      height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
+      height: 10px; width: 100%; border-radius: 2px; margin-bottom: 2px; flex-shrink: 0;
+      position: relative; overflow: visible;
     }
     /* tide color gradient bar (month view) */
     .kal-tide-bar {
-      height: 4px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
+      height: 8px; width: 100%; border-radius: 1px; margin-bottom: 2px; flex-shrink: 0;
+      position: relative; overflow: visible;
     }
+    /* time labels on sun/tide bars */
+    .kal-bar-time-lbl {
+      position: absolute; top: -12px; font-size: 6.5px; font-weight: 700; line-height: 1;
+      transform: translateX(-50%); white-space: nowrap; pointer-events: none; opacity: .9;
+    }
+    .kal-bar-time-lbl-bot {
+      position: absolute; bottom: -11px; font-size: 6.5px; font-weight: 700; line-height: 1;
+      transform: translateX(-50%); white-space: nowrap; pointer-events: none; opacity: .9;
+    }
+    .kal-tide-lbl-hw { color: #1d4ed8; }
+    .kal-tide-lbl-nw { color: #dc2626; }
     /* tide markers in vertical timeline (week/day views) */
     .kal-tide-px-marker {
       position: absolute; left: 0; right: 0; height: 0;
@@ -1656,6 +1669,11 @@
       </div>
     </div>
     <div class="header-divider"></div>
+    <button class="new-btn" id="new-btn" onclick="goForm(null)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Neue Fahrt
+    </button>
+    <div class="header-divider"></div>
     <nav class="header-nav">
       <button class="nav-btn active" id="nav-list" onclick="goList()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -1695,10 +1713,6 @@
       </button>
     </nav>
     <div class="header-right">
-      <button class="new-btn" id="new-btn" onclick="goForm(null)">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Neue Fahrt
-      </button>
       <button id="theme-toggle" onclick="toggleDarkMode()" title="Tag/Nacht umschalten" style="background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:var(--r-sm);width:38px;height:38px;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;transition:background .15s;flex-shrink:0" onmouseenter="this.style.background='rgba(255,255,255,.22)'" onmouseleave="this.style.background='rgba(255,255,255,.12)'">🌙</button>
       <span class="header-copyright">© Nils Flegel</span>
     </div>
@@ -4273,11 +4287,12 @@ async function _getAutoSavePermission() {
 
 function _buildAutoSaveBlob() {
   const payload = {
-    _version: 1,
+    _version: 2,
     _savedAt: new Date().toISOString(),
     fahrten,
     eppFahrten,
     tideDbs,
+    kalenderEvents,
   };
   return new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
 }
@@ -4330,7 +4345,8 @@ async function setupAutoSave() {
     await writable.write(_buildAutoSaveBlob());
     await writable.close();
     showToast('✓ Auto-Speicherung eingerichtet. Daten werden automatisch gespeichert.', 'success');
-    renderImportExport();
+    if (currentView === 'einstellungen') document.getElementById('app-main').innerHTML = renderEinstellungenHTML();
+    else renderImportExport();
   } catch(e) {
     if (e.name !== 'AbortError') showToast('Fehler beim Einrichten der Auto-Speicherung.', 'error');
   }
@@ -4340,7 +4356,8 @@ async function removeAutoSave() {
   _autoSaveHandle = null;
   await _idbDel('settings', 'autoSaveHandle');
   showToast('Auto-Speicherung deaktiviert.', 'info');
-  renderImportExport();
+  if (currentView === 'einstellungen') document.getElementById('app-main').innerHTML = renderEinstellungenHTML();
+  else renderImportExport();
 }
 
 async function restoreFromAutoSave(input) {
@@ -4353,7 +4370,7 @@ async function restoreFromAutoSave(input) {
       // Support both plain array (old export) and new payload format
       if (Array.isArray(data)) {
         fahrten = data;
-      } else if (data._version === 1) {
+      } else if (data._version >= 1) {
         if (Array.isArray(data.fahrten))    fahrten    = data.fahrten;
         if (Array.isArray(data.eppFahrten)) eppFahrten = data.eppFahrten;
         if (data.tideDbs && typeof data.tideDbs === 'object') {
@@ -4361,6 +4378,10 @@ async function restoreFromAutoSave(input) {
           saveTideDbs();
         }
         if (Array.isArray(data.eppFahrten)) saveEPPData();
+        if (Array.isArray(data.kalenderEvents)) {
+          kalenderEvents = data.kalenderEvents;
+          saveKalenderEvents();
+        }
       } else throw new Error('Unbekanntes Format');
       saveData();
       showToast(`✓ Wiederhergestellt: ${fahrten.length} Fahrten.`, 'success');
@@ -4392,12 +4413,18 @@ function saveData() {
   updateAgenturDatalist();
   _autoSaveToFile();                                           // Auto-Speicherung in Datei
 }
-function loadKalenderEvents() {
+async function loadKalenderEvents() {
+  try {
+    const fromIdb = await _idbGet('settings', 'kalenderEvents');
+    if (fromIdb && Array.isArray(fromIdb)) { kalenderEvents = fromIdb; return; }
+  } catch(e) {}
   try { const r = localStorage.getItem(KALENDER_EVENTS_KEY); if (r) kalenderEvents = JSON.parse(r); }
   catch(e) { kalenderEvents = []; }
 }
 function saveKalenderEvents() {
   localStorage.setItem(KALENDER_EVENTS_KEY, JSON.stringify(kalenderEvents));
+  _idbSet('settings', 'kalenderEvents', kalenderEvents).catch(() => {});
+  _autoSaveToFile();
 }
 
 // ── Freitage-Konto ────────────────────────────────────────────────────────────
@@ -4458,8 +4485,13 @@ function sunBarHtml(dateStr) {
   if (s.polarDay)   return '<div class="kal-sun-bar" style="background:#fde68a"></div>';
   if (s.polarNight) return '<div class="kal-sun-bar" style="background:#1e3a5f"></div>';
   const pct = x => (Math.max(0,Math.min(1440,x))/1440*100).toFixed(1)+'%';
+  const pctN = x => (Math.max(0,Math.min(1440,x))/1440*100).toFixed(1);
   const bg = `linear-gradient(to right,#1e3a5f 0%,#1e3a5f ${pct(s.dawn)},#4a7ab5 ${pct(s.dawn)},#4a7ab5 ${pct(s.rise)},#fde68a ${pct(s.rise)},#fde68a ${pct(s.set)},#4a7ab5 ${pct(s.set)},#4a7ab5 ${pct(s.dusk)},#1e3a5f ${pct(s.dusk)},#1e3a5f 100%)`;
-  return `<div class="kal-sun-bar" style="background:${bg}" title="☀️ Aufgang ${_sunFmtMin(s.rise)} · Untergang ${_sunFmtMin(s.set)}"></div>`;
+  const rT = _sunFmtMin(s.rise), sT = _sunFmtMin(s.set);
+  return `<div class="kal-sun-bar" style="background:${bg}" title="☀️ Aufgang ${rT} · Untergang ${sT}">
+    <span class="kal-bar-time-lbl" style="left:${pctN(s.rise)}%;color:#92400e">↑${rT}</span>
+    <span class="kal-bar-time-lbl" style="left:${pctN(s.set)}%;color:#1e3a5f">↓${sT}</span>
+  </div>`;
 }
 
 // Vertical gradient CSS string for week/day views (top=0h, bottom=24h)
@@ -4536,7 +4568,12 @@ function tideGradientHtml(dateStr) {
     stops.push(`${rgba(mix(ca,cb,fB))} ${pB.toFixed(1)}%`);
   }
   if (!stops.length) return '';
-  return `<div class="kal-tide-bar" style="background:linear-gradient(to right,${stops.join(',')})" title="Gezeiten ${kalenderTideStation}"></div>`;
+  const p2 = n => String(Math.floor(n/60)).padStart(2,'0')+':'+String(Math.round(n%60)).padStart(2,'0');
+  const tideLabels = evts.filter(e=>e.min>=0&&e.min<=1440).map(e=>{
+    const lPct=(e.min/1440*100).toFixed(1);
+    return `<span class="kal-bar-time-lbl kal-tide-lbl-${e.hw?'hw':'nw'}" style="left:${lPct}%">${e.hw?'HW':'NW'} ${p2(e.min)}</span>`;
+  }).join('');
+  return `<div class="kal-tide-bar" style="background:linear-gradient(to right,${stops.join(',')})" title="Gezeiten ${kalenderTideStation}">${tideLabels}</div>`;
 }
 
 // Tide vertical gradient CSS string (for week/day view backgrounds)
@@ -6810,6 +6847,27 @@ function renderEinstellungenHTML() {
   const pad = n => String(n).padStart(2,'0');
   return `<div style="max-width:620px;margin:0 auto;padding:20px">
     <h2 style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:24px">Einstellungen</h2>
+
+    <div class="einst-section">
+      <div class="einst-title">💾 Automatische Sicherung</div>
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
+        Wähle eine Datei auf deinem Gerät aus, in der alle Daten <b>automatisch nach jeder Eingabe</b> gesichert werden (Fahrten, Kalender-Einträge, EPP). Die Datei wird bei jedem Speichern aktualisiert.
+      </p>
+      <div id="autosave-status" style="font-size:13px;margin-bottom:14px">
+        ${_autoSaveHandle
+          ? '<span style="color:#16a34a">✓ Automatische Sicherung aktiv</span>'
+          : '<span style="color:var(--text-muted)">⚠️ Nicht eingerichtet – Daten nur im Browser-Speicher</span>'}
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="setupAutoSave()">
+          ${_autoSaveHandle ? '📁 Sicherungsdatei ändern' : '📁 Sicherungsdatei wählen'}
+        </button>
+        ${_autoSaveHandle ? '<button class="btn btn-secondary" onclick="removeAutoSave()">Deaktivieren</button>' : ''}
+      </div>
+      ${!('showSaveFilePicker' in window)
+        ? '<p style="font-size:12px;color:#dc2626;margin-top:10px">⚠️ Diese Funktion erfordert Chrome oder Edge (kein Safari).</p>'
+        : ''}
+    </div>
 
     <div class="einst-section">
       <div class="einst-title">🗓️ Freitage-Konto</div>
@@ -14941,8 +14999,8 @@ function exportExcel() {
    INIT
 ════════════════════════════════════════════ */
 (async () => {
-  await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle()]);
-  loadKalenderEvents();
+  if (navigator.storage?.persist) navigator.storage.persist();
+  await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle(), loadKalenderEvents()]);
   loadFreitagsKonto();
   loadVerkehrZones();
   updateAgenturDatalist();
