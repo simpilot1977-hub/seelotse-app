@@ -6,7 +6,11 @@
 
 const AIS_WS_URL  = 'wss://stream.aisstream.io/v0/stream';
 const AIS_API_KEY = 'cef13862ef8e366459beaafc142f50bc4ab60d77';
-const BOUNDING_BOX = [[53.4, 8.0], [54.1, 10.2]];
+// Zwei Boxen: Elbe (Racon→Hamburg) + Deutsche Bucht Ansteuerung (Helgoland/Außenelbe)
+const BOUNDING_BOXES = [
+  [[53.4, 8.0], [54.1, 10.2]],   // Elbe: Racon → Hamburg
+  [[53.7, 6.5], [55.2, 8.2]],    // Deutsche Bucht: Ansteuerung von Außen
+];
 
 export default {
   async fetch(request, env, ctx) {
@@ -54,7 +58,7 @@ export default {
         try {
           const sub = JSON.stringify({
             APIKey: AIS_API_KEY,
-            BoundingBoxes: [BOUNDING_BOX],
+            BoundingBoxes: BOUNDING_BOXES,
             FilterMessageTypes: ['PositionReport', 'ShipStaticData', 'ExtendedClassBPositionReport'],
           });
           aisWs.send(sub);
