@@ -7316,8 +7316,8 @@ let _aisRenderTimer        = null;
 let _aisRenderPending      = false;
 let _aisInitialLoaded      = false;
 let _karteShipUpdatePending = false;
-let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
-let _aisCustomKm        = null;
+let _aisFilter          = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, wpFrom: null, wpTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
+let _aisCustomWp        = null; // Index in KARTE_WP
 let _aisCollapsed       = { in: false, out: false };
 
 // ── AIS Schiffssuche & Alarm ──────────────────────────────────────────────────
@@ -7566,7 +7566,7 @@ function _aisUpdateBadge() {
 // ── Filter & Sort ─────────────────────────────────────────────────
 function _aisEtaMs(s, wpKey) {
   const wpNm = wpKey === 'custom'
-    ? (_aisCustomKm !== null ? _elbKmToNm(_aisCustomKm) : null)
+    ? (_aisCustomWp !== null ? _etCum[_aisCustomWp] : null)
     : _etCum[ELBE_WP_IDX[wpKey]];
   if (wpNm === null) return Infinity;
   const rem  = s.dir === 'in' ? wpNm - s.trackNm : s.trackNm - wpNm;
@@ -7588,12 +7588,12 @@ function _aisSaveFilters() {
       hideAnc:       _aisFilter.hideAnc,
       sortIn:        _aisFilter.sortIn,
       sortOut:       _aisFilter.sortOut,
-      kmFrom:        _aisFilter.kmFrom,
-      kmTo:          _aisFilter.kmTo,
+      wpFrom:        _aisFilter.wpFrom,
+      wpTo:          _aisFilter.wpTo,
       lotsenpflicht: _aisFilter.lotsenpflicht,
       showDbicht:    _aisFilter.showDbicht,
       showKarte:     _aisFilter.showKarte,
-      customKm:      _aisCustomKm,
+      customWp:      _aisCustomWp,
       collapsed:     _aisCollapsed,
     }));
   } catch {}
@@ -7613,19 +7613,19 @@ function _aisLoadFilters() {
       hideAnc:      d.hideAnc      ?? false,
       sortIn:       d.sortIn       ?? null,
       sortOut:      d.sortOut      ?? null,
-      kmFrom:       d.kmFrom       ?? null,
-      kmTo:         d.kmTo         ?? null,
+      wpFrom:       d.wpFrom ?? null,
+      wpTo:         d.wpTo   ?? null,
       lotsenpflicht: d.lotsenpflicht ?? false,
       showDbicht:   d.showDbicht   ?? false,
       showKarte:    d.showKarte    ?? false,
     };
-    _aisCustomKm  = d.customKm  ?? null;
+    _aisCustomWp  = d.customWp  ?? null;
     _aisCollapsed = d.collapsed ?? { in: false, out: false };
   } catch {}
 }
 function _aisResetAllFilters() {
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
-  _aisCustomKm = null;
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, wpFrom: null, wpTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
+  _aisCustomWp = null;
   _aisCollapsed = { in: false, out: false };
   _aisSaveFilters(); _aisRenderTable();
 }
@@ -7666,9 +7666,8 @@ function _aisPrintTable() {
     <script>window.onload=()=>window.print();<\/script></body></html>`);
   w.document.close();
 }
-function _aisSetCustomKm(v) {
-  const n = parseInt(v);
-  _aisCustomKm = (!v || isNaN(n)) ? null : Math.max(620, Math.min(760, n));
+function _aisSetCustomWp(v) {
+  _aisCustomWp = (v === '' || v === null) ? null : parseInt(v);
   _aisSaveFilters(); _aisRenderTable();
 }
 function _aisSortIn(key)  { _aisFilter.sortIn  = _aisFilter.sortIn  === key ? null : key; _aisSaveFilters(); _aisRenderTable(); }
@@ -7677,9 +7676,9 @@ function _aisToggleSection(key) { _aisCollapsed[key] = !_aisCollapsed[key]; _ais
 function _aisSetMaxAge(v)        { _aisFilter.maxAge        = parseInt(v)   || 0;   _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetFahrwasserNm(v)  { _aisFilter.fahrwasserNm  = parseFloat(v) || 0; _aisSaveFilters(); _aisRenderTable(); }
 function _aisSetZoneFilter(v)    { _aisFilter.zoneFilter    = v;                     _aisSaveFilters(); _aisRenderTable(); }
-function _aisSetKmFrom(v) { _aisFilter.kmFrom = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
-function _aisSetKmTo(v)   { _aisFilter.kmTo   = (v === '' || v === null) ? null : parseFloat(v); _aisSaveFilters(); _aisRenderTable(); }
-function _aisResetRange() { _aisFilter.kmFrom = null; _aisFilter.kmTo = null; _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetWpFrom(v) { _aisFilter.wpFrom = (v === '' || v === null) ? null : parseInt(v); _aisSaveFilters(); _aisRenderTable(); }
+function _aisSetWpTo(v)   { _aisFilter.wpTo   = (v === '' || v === null) ? null : parseInt(v); _aisSaveFilters(); _aisRenderTable(); }
+function _aisResetRange() { _aisFilter.wpFrom = null; _aisFilter.wpTo = null; _aisSaveFilters(); _aisRenderTable(); }
 
 // ── Tabellen-Rendering ────────────────────────────────────────────
 function _aisRenderTable() {
@@ -7716,8 +7715,13 @@ function _aisRenderTable() {
   }
   function applyFilter(list) {
     return list.filter(s => {
-      // Schiff muss in Reichweite der Elbe-Radarlinie sein (max. 2 sm)
-      if (s.elbeDistNm == null || s.elbeDistNm > 2.0) return false;
+      // Enger Korridor entlang Radarlinie:
+      //   E3 → Racon (offene See, nahe Außenweser): 0.27 sm ≈ 500 m Halbbreite
+      //   Racon → Hamburg (Elbe-Fluss): 1.5 sm (schließt Reede ein)
+      if (s.elbeDistNm == null) return false;
+      const _raconNm = _etCum[ELBE_WP_IDX.racon];
+      const maxDistNm = s.trackNm < _raconNm ? 0.27 : 1.5;
+      if (s.elbeDistNm > maxDistNm) return false;
       const tL = _aisShipType(s.shipType).l;
       if (_aisFilter.lotsenpflicht) { if (!_isLotsenpflichtig(s)) return false; }
       else {
@@ -7730,11 +7734,10 @@ function _aisRenderTable() {
         if (ageMin > _aisFilter.maxAge) return false;
       }
       if (_aisFilter.zoneFilter !== 'all' && shipZone(s) !== _aisFilter.zoneFilter) return false;
-      if (_aisFilter.kmFrom !== null || _aisFilter.kmTo !== null) {
-        const km = _elbKm(s.trackNm);
-        const lo = _aisFilter.kmTo   !== null ? _aisFilter.kmTo   : 620;
-        const hi = _aisFilter.kmFrom !== null ? _aisFilter.kmFrom : 755;
-        if (km < lo || km > hi) return false;
+      if (_aisFilter.wpFrom !== null || _aisFilter.wpTo !== null) {
+        const fromNm = _aisFilter.wpFrom !== null ? _etCum[_aisFilter.wpFrom] : 0;
+        const toNm   = _aisFilter.wpTo   !== null ? _etCum[_aisFilter.wpTo]   : _etCum[_etCum.length-1];
+        if (s.trackNm < fromNm || s.trackNm > toNm) return false;
       }
       return true;
     });
@@ -7798,8 +7801,8 @@ function _aisRenderTable() {
   }
 
   function customEtaCell(s) {
-    if (_aisCustomKm === null) return '<td class="ais-eta">—</td>';
-    const wpNm = _elbKmToNm(_aisCustomKm);
+    if (_aisCustomWp === null) return '<td class="ais-eta">—</td>';
+    const wpNm = _etCum[_aisCustomWp];
     const rem  = s.dir === 'in' ? wpNm - s.trackNm : s.trackNm - wpNm;
     if (rem < -2)  return `<td class="ais-eta" style="color:#16a34a">✓</td>`;
     if (rem < 0.5) return `<td class="ais-eta soon">~jetzt</td>`;
@@ -7808,8 +7811,8 @@ function _aisRenderTable() {
   }
 
   const customDdOpts = `<option value="">— Ort —</option>` +
-    ELBE_KM_MARKS.map(m => `<option value="${m.km}"${_aisCustomKm===m.km?' selected':''}>${m.n} (km ${m.km})</option>`).join('');
-  const customThInput = `<select onchange="_aisSetCustomKm(this.value)" onclick="event.stopPropagation()"
+    KARTE_WP.map((wp, i) => `<option value="${i}"${_aisCustomWp===i?' selected':''}>${wp.label}</option>`).join('');
+  const customThInput = `<select onchange="_aisSetCustomWp(this.value)" onclick="event.stopPropagation()"
     style="font-size:10px;padding:1px 4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text);font-family:inherit;max-width:130px">${customDdOpts}</select>`;
 
   function shipRow(s, wps) {
@@ -7873,27 +7876,27 @@ function _aisRenderTable() {
   const lenVal = _aisFilter.minLen > 0 ? _aisFilter.minLen : '';
   const sogVal = _aisFilter.minSog > 0 ? _aisFilter.minSog : '';
 
-  // Bereichs-Filter Dropdowns
-  const kmFromSel = _aisFilter.kmFrom;
-  const kmToSel   = _aisFilter.kmTo;
-  const rangeActive = kmFromSel !== null || kmToSel !== null;
-  // Von-Dropdown: absteigend (Racon oben, Hamburg unten)
+  // Bereichs-Filter — Wegpunkte der Radarlinie (KARTE_WP / ELBE_TRACK)
+  const wpFromSel = _aisFilter.wpFrom;
+  const wpToSel   = _aisFilter.wpTo;
+  const rangeActive = wpFromSel !== null || wpToSel !== null;
   const rangeFromOpts = `<option value="">Von …</option>` +
-    ELBE_KM_MARKS.slice().reverse().map(m =>
-      `<option value="${m.km}"${kmFromSel===m.km?' selected':''}>${m.n} (km ${m.km})</option>`
+    KARTE_WP.map((wp, i) =>
+      `<option value="${i}"${wpFromSel===i?' selected':''}>${wp.label}</option>`
     ).join('');
-  // Bis-Dropdown: aufsteigend nach km-Wert (Hamburg oben, Racon unten)
   const rangeToOpts = `<option value="">… bis</option>` +
-    ELBE_KM_MARKS.map(m =>
-      `<option value="${m.km}"${kmToSel===m.km?' selected':''}>${m.n} (km ${m.km})</option>`
+    KARTE_WP.map((wp, i) =>
+      `<option value="${i}"${wpToSel===i?' selected':''}>${wp.label}</option>`
     ).join('');
+  const wpFromLbl = wpFromSel !== null ? KARTE_WP[wpFromSel]?.label : null;
+  const wpToLbl   = wpToSel   !== null ? KARTE_WP[wpToSel]?.label   : null;
   const rangeClearBtn = rangeActive
     ? `<button onclick="_aisResetRange()" style="font-size:10px;padding:1px 7px;border:1.5px solid var(--border);border-radius:var(--r-sm);background:var(--bg);cursor:pointer;color:var(--danger);font-family:inherit">✕</button>`
     : '';
   const rangeLabel = rangeActive
-    ? `<span style="font-size:10px;color:var(--blue);font-weight:600;white-space:nowrap">km ${kmFromSel??755} – ${kmToSel??620}</span>`
+    ? `<span style="font-size:10px;color:var(--blue);font-weight:600;white-space:nowrap">${wpFromLbl??'E3'} → ${wpToLbl??'Hamburg'}</span>`
     : '';
-  const selStyle = (active) => `font-size:11px;padding:2px 4px;border:1.5px solid ${active?'var(--blue)':'var(--border)'};border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;max-width:148px`;
+  const selStyle = (active) => `font-size:11px;padding:2px 4px;border:1.5px solid ${active?'var(--blue)':'var(--border)'};border-radius:var(--r-sm);background:var(--bg);color:var(--text);font-family:inherit;max-width:160px`;
 
   const lotsenCls = _aisFilter.lotsenpflicht ? ' active' : '';
   const dbichtCls = _aisFilter.showDbicht    ? ' active' : '';
@@ -7932,9 +7935,9 @@ function _aisRenderTable() {
   </div>
   <div class="ais-filter-bar" style="gap:6px">
     <span style="font-size:11px;color:var(--text-muted);font-weight:600;white-space:nowrap">📍 Bereich:</span>
-    <select onchange="_aisSetKmFrom(this.value)" style="${selStyle(rangeActive)}">${rangeFromOpts}</select>
+    <select onchange="_aisSetWpFrom(this.value)" style="${selStyle(rangeActive)}">${rangeFromOpts}</select>
     <span style="font-size:12px;color:var(--text-muted)">→</span>
-    <select onchange="_aisSetKmTo(this.value)" style="${selStyle(rangeActive)}">${rangeToOpts}</select>
+    <select onchange="_aisSetWpTo(this.value)" style="${selStyle(rangeActive)}">${rangeToOpts}</select>
     ${rangeLabel}
     ${rangeClearBtn}
   </div>
@@ -8180,8 +8183,8 @@ function goVerkehr() {
   }
   _aisSearch = '';
   _aisWatchFound.clear();
-  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, kmFrom: null, kmTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
-  _aisCustomKm = null;
+  _aisFilter = { shownTypes: new Set(), minLen: 0, minSog: 0, maxAge: 30, fahrwasserNm: 0, zoneFilter: 'fahrwasser', hideAnc: false, sortIn: null, sortOut: null, wpFrom: null, wpTo: null, lotsenpflicht: false, showDbicht: false, showKarte: false };
+  _aisCustomWp = null;
   _aisCollapsed = { in: false, out: false };
   _aisLoadFilters();
   _aisLoadWatch();
