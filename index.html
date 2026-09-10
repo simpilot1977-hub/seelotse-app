@@ -7523,8 +7523,10 @@ function _aisMsgIn(msg) {
       if (sv.MaximumStaticDraught > 0) s.draught = sv.MaximumStaticDraught;
       const newLen = (sv.Dimension?.A ?? 0) + (sv.Dimension?.B ?? 0);
       if (newLen > 0) s.length = newLen;
+      const newBeam = (sv.Dimension?.C ?? 0) + (sv.Dimension?.D ?? 0);
+      if (newBeam > 0) s.beam = newBeam;
       const dest = (sv.Destination ?? '').trim().replace(/[^\x20-\x7E]/g,'').replace(/\s+/g,' ');
-      if (dest) s.destination = dest;
+      if (dest && dest !== '@@@@@@@@@@@@@@@@@@@@') s.destination = dest;
     }
   }
   if (!s.name && meta.ShipName) s.name = meta.ShipName.trim();
@@ -7775,9 +7777,10 @@ function _aisRenderTable() {
     const dot = age < 3
       ? '<span class="ais-status-dot"></span>'
       : `<span style="color:${dotColor};font-size:10px;font-weight:600" title="Signal vor ${age} min">${age}m&nbsp;</span>`;
-    const dest = s.destination ? `<span style="font-size:10px;color:var(--text-muted)"> → ${s.destination.substring(0,14)}</span>` : '';
-    const len  = s.length  > 0 ? `${s.length}m`              : '—';
-    const drg  = s.draught > 0 ? `${s.draught.toFixed(1)}m`  : '—';
+    const dest = s.destination ? `<div style="font-size:11px;font-weight:600;color:#0369a1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px" title="${s.destination}">→ ${s.destination}</div>` : '';
+    const len  = s.length  > 0 ? `${s.length}m`             : '—';
+    const beam = s.beam    > 0 ? `${s.beam}m`               : '';
+    const drg  = s.draught > 0 ? `${s.draught.toFixed(1)}m` : '—';
     const sog  = s.sog     > 0 ? `${s.sog.toFixed(1)} kn`    : '—';
     const zone = shipZone(s);
     const cz = _shipCustomZone(s);
@@ -7798,9 +7801,10 @@ function _aisRenderTable() {
     const watchBtn  = s.name ? `<button onclick="aisWatchToggle('${(s.name||'').replace(/'/g,"\\'")}')" title="${isWatched?'Aus Beobachtung entfernen':'Schiff beobachten'}"
       style="font-size:11px;border:none;background:transparent;cursor:pointer;padding:1px 3px;opacity:${isWatched?1:0.35}">${isWatched?'🔔':'🔕'}</button>` : '';
     const rowStyle  = isMatch ? 'background:rgba(251,191,36,0.15);' : (isWatched ? 'background:rgba(59,130,246,0.07);' : '');
+    const dimCell = `L:${len}${beam ? ' B:'+beam : ''}<br><span style="color:var(--text-muted)">T:${drg}</span>`;
     return `<tr style="${rowStyle}">
-      <td><div class="ais-ship-name">${dot}${tE} ${s.name || s.mmsi}${watchBtn}</div><div>${dest}<span class="ais-type-badge">${tL}</span> ${zoneBadge}</div></td>
-      <td style="font-size:11px;white-space:nowrap">${len}<br><span style="color:var(--text-muted)">${drg}</span></td>
+      <td style="max-width:220px"><div class="ais-ship-name">${dot}${tE} ${s.name || s.mmsi}${watchBtn}</div>${dest}<div style="margin-top:2px"><span class="ais-type-badge">${tL}</span> ${zoneBadge}</div></td>
+      <td style="font-size:11px;white-space:nowrap">${dimCell}</td>
       <td class="ais-pos">${posLabel(s.trackNm)}${tonneBadge}</td>
       <td class="ais-sog">${sog}</td>
       ${wpEtaCells(s, wps)}
@@ -7922,7 +7926,7 @@ function _aisRenderTable() {
       const siH = _aisFilter.sortIn==='hamburg'      ? ' sort-active' : '';
       const siX = _aisFilter.sortIn==='custom'       ? ' sort-active' : '';
       html += `<table class="ais-table"><thead><tr>
-        <th>Schiff</th><th>L / Tg</th>
+        <th>Schiff</th><th>Abmessungen</th>
         <th class="sortable${siP}" onclick="_aisSortIn('position')" title="Nach Position sortieren (HH-nah zuerst)">Position${siP?' ▼':' ⇅'}</th>
         <th>SOG</th>
         <th class="sortable${siC}" onclick="_aisSortIn('cuxhaven')">ETA Cux${siC?' ▲':' ⇅'}</th>
@@ -7952,7 +7956,7 @@ function _aisRenderTable() {
       const soR = _aisFilter.sortOut==='racon'        ? ' sort-active' : '';
       const soX = _aisFilter.sortOut==='custom'       ? ' sort-active' : '';
       html += `<table class="ais-table"><thead><tr>
-        <th>Schiff</th><th>L / Tg</th>
+        <th>Schiff</th><th>Abmessungen</th>
         <th class="sortable${soP}" onclick="_aisSortOut('position')" title="Nach Position sortieren (Racon-nah zuerst)">Position${soP?' ▼':' ⇅'}</th>
         <th>SOG</th>
         <th class="sortable${soB}" onclick="_aisSortOut('brunsbuettel')">ETA Brb${soB?' ▲':' ⇅'}</th>
@@ -7969,7 +7973,7 @@ function _aisRenderTable() {
     html += `<div class="ais-section">
       <div class="ais-section-title">⚓ Ankernde / Liegende · ${ancList.length} Schiffe</div>
       <table class="ais-table"><thead><tr>
-        <th>Schiff</th><th>L / Tg</th><th>Position</th><th colspan="4">Status</th>
+        <th>Schiff</th><th>Abmessungen</th><th>Position</th><th colspan="4">Status</th>
       </tr></thead><tbody>`;
     for (const s of ancList) {
       const { l: tL, e: tE } = _aisShipType(s.shipType);
