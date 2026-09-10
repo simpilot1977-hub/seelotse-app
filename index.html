@@ -8049,13 +8049,20 @@ function _aisRenderTable() {
     const approaching = allShips.filter(s => {
       const distToRacon = _hvNm(s.lat, s.lon, _RACON_LAT, _RACON_LON);
       if (distToRacon < 0.5) return false; // bereits am Racon
-      const heading = s.cog;
-      const headingEast = (heading > 30 && heading < 170);
+      if (_aisFilter.lotsenpflicht && !_isLotsenpflichtig(s)) return false;
       const destMatch = s.destination && _ELBE_DEST_KW.some(kw => s.destination.toUpperCase().includes(kw));
-      return (s.lon < 8.15 || distToRacon < 30) && (headingEast || destMatch);
-    }).sort((a,b) => _hvNm(a.lat,a.lon,_RACON_LAT,_RACON_LON) - _hvNm(b.lat,b.lon,_RACON_LAT,_RACON_LON));
+      // Kurs auf Racon: osteinlaufend (aus W/NW) oder südwärts (aus N, z.B. Föhr)
+      const cog = s.cog;
+      const headingTowardElbe = (cog > 30 && cog < 170) || (cog > 160 && cog < 250);
+      if (!destMatch && !headingTowardElbe) return false;
+      return distToRacon < 120;
+    }).sort((a,b) => {
+      const etaA = a.sog > 0.3 ? _hvNm(a.lat,a.lon,_RACON_LAT,_RACON_LON) / a.sog : Infinity;
+      const etaB = b.sog > 0.3 ? _hvNm(b.lat,b.lon,_RACON_LAT,_RACON_LON) / b.sog : Infinity;
+      return etaA - etaB;
+    });
     html += `<div class="ais-section" style="border-left:4px solid #0284c7">
-      <div class="ais-section-title" style="color:#0284c7">🌊 Ansteuerung Deutsche Bucht → Elbe-Racon · ${approaching.length} Schiffe</div>`;
+      <div class="ais-section-title" style="color:#0284c7">🌊 Ansteuerung Deutsche Bucht → Elbe-Racon · ${approaching.length} Schiffe${_aisFilter.lotsenpflicht ? ' · 🚢 Lotsenpflichtig' : ''} · sortiert nach ETA</div>`;
     if (!approaching.length) {
       html += `<div class="ais-empty">Keine Schiffe in Ansteuerung erkannt<br><small>Bounding-Box muss ggf. erweitert werden (worker.js)</small></div>`;
     } else {

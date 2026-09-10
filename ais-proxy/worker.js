@@ -6,10 +6,11 @@
 
 const AIS_WS_URL  = 'wss://stream.aisstream.io/v0/stream';
 const AIS_API_KEY = 'cef13862ef8e366459beaafc142f50bc4ab60d77';
-// Zwei Boxen: Elbe (Racon→Hamburg) + Deutsche Bucht Ansteuerung (Helgoland/Außenelbe)
+// Drei Boxen: Elbe + Deutsche Bucht + südliche Nordsee ab Texel
 const BOUNDING_BOXES = [
-  [[53.4, 8.0], [54.1, 10.2]],   // Elbe: Racon → Hamburg
-  [[53.7, 6.5], [55.2, 8.2]],    // Deutsche Bucht: Ansteuerung von Außen
+  [[53.4,  8.0], [55.0, 10.2]],  // Elbe + Nordsee bis Föhr: Racon → Hamburg
+  [[53.7,  6.5], [55.5,  8.2]],  // Deutsche Bucht: Helgoland / Außenelbe
+  [[52.5,  4.5], [54.0,  6.6]],  // Südliche Nordsee: Texel → Deutsche Bucht
 ];
 
 export default {
