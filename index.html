@@ -4348,7 +4348,7 @@ function _updateAutoSaveStatus(state) {
 
 async function setupAutoSave() {
   if (!('showSaveFilePicker' in window)) {
-    showToast('Automatische Speicherung wird von diesem Browser nicht unterstützt (Chrome/Edge empfohlen).', 'error');
+    showToast('Nicht verfügbar auf iOS/iPadOS — alle iOS-Browser (auch Chrome) nutzen WebKit ohne File System API. Bitte das lokale Backup verwenden.', 'error');
     return;
   }
   try {
@@ -6884,7 +6884,7 @@ function renderEinstellungenHTML() {
         ${_autoSaveHandle ? '<button class="btn btn-secondary" onclick="removeAutoSave()">Deaktivieren</button>' : ''}
       </div>
       ${!('showSaveFilePicker' in window)
-        ? '<p style="font-size:12px;color:#dc2626;margin-top:10px">⚠️ Diese Funktion erfordert Chrome oder Edge (kein Safari).</p>'
+        ? '<p style="font-size:12px;color:#dc2626;margin-top:10px">⚠️ Diese Funktion wird auf iOS/iPadOS nicht unterstützt (auch Chrome auf iPad nutzt WebKit). Bitte stattdessen das lokale Backup unten verwenden.</p>'
         : ''}
     </div>
 
@@ -14994,7 +14994,7 @@ function renderImportExport() {
         <button class="btn btn-warn" onclick="removeAutoSave()">Deaktivieren</button>
       ` : `
         <p>Wähle einmalig einen Speicherort — danach sichert die App alle Daten (Fahrten, EPP, Gezeitendaten) automatisch nach jeder Eingabe.</p>
-        ${!fsaSupported ? '<div class="ie-warn-text">⚠️ Nicht verfügbar — bitte Chrome oder Edge verwenden</div>' : ''}
+        ${!fsaSupported ? '<div class="ie-warn-text">⚠️ Nicht verfügbar auf iOS/iPadOS (auch Chrome auf iPad) — bitte lokales Backup oben verwenden</div>' : ''}
         <button class="btn btn-primary" onclick="setupAutoSave()" style="background:#0ea5e9" ${!fsaSupported?'disabled':''}>Speicherort auswählen …</button>
       `}
     </div>
