@@ -4266,6 +4266,25 @@ async function _idbPutAll(store, items) {
   });
 }
 
+// ── Auto-Backup-Download bei "Fahrt speichern" ───────────────────────────────
+let _autoBackupOnSave = false;
+let _lastBackupTs     = 0;
+
+function _loadAutoBackupSetting() {
+  try {
+    _autoBackupOnSave = localStorage.getItem('seelotse_auto_backup_on_save') === 'true';
+    _lastBackupTs     = parseInt(localStorage.getItem('seelotse_last_backup_ts') || '0');
+  } catch(e) {}
+}
+function _saveAutoBackupSetting() {
+  try { localStorage.setItem('seelotse_auto_backup_on_save', String(_autoBackupOnSave)); } catch(e) {}
+}
+function toggleAutoBackupOnSave() {
+  _autoBackupOnSave = !_autoBackupOnSave;
+  _saveAutoBackupSetting();
+  renderImportExport();
+}
+
 // ── Auto-Speicherung (File System Access API) ─────────────────────────────────
 let _autoSaveHandle = null;      // FileSystemFileHandle | null
 let _autoSavePending = false;    // debounce flag
@@ -14611,6 +14630,10 @@ function handleSubmit(e) {
   }
 
   saveData();
+  if (navigator.storage?.persist) navigator.storage.persist();
+  if (_autoBackupOnSave) {
+    setTimeout(() => exportJSON(), 400);
+  }
   aktuelleReiseId = entry.id;
   goAktuelleReise();
 }
@@ -14933,6 +14956,30 @@ function renderImportExport() {
     try { autoSaveFileName = _autoSaveHandle.name || ''; } catch(e) {}
   }
 
+  const daysSinceBackup = _lastBackupTs
+    ? Math.floor((Date.now() - _lastBackupTs) / 86400000)
+    : null;
+  const backupStatusHtml = daysSinceBackup === null
+    ? '<div style="color:#b45309;font-size:12px;margin-bottom:8px">⚠️ Noch kein lokales Backup erstellt</div>'
+    : daysSinceBackup === 0
+      ? '<div style="color:#16a34a;font-size:12px;margin-bottom:8px">✓ Backup heute erstellt</div>'
+      : daysSinceBackup < 7
+        ? `<div style="color:#ca8a04;font-size:12px;margin-bottom:8px">Letztes Backup vor ${daysSinceBackup} Tag${daysSinceBackup===1?'':'en'}</div>`
+        : `<div style="color:#dc2626;font-size:12px;margin-bottom:8px">⚠️ Letztes Backup vor ${daysSinceBackup} Tagen — bitte sichern!</div>`;
+
+  const autoBackupCard = `
+    <div class="ie-card" style="border-top:3px solid #10b981;background:linear-gradient(135deg,#f0fdf4,#dcfce7)">
+      <div class="ie-icon">🛡️</div>
+      <h3>Lokales Backup (iOS / alle Geräte)</h3>
+      <p>Speichert die komplette Datenbank als JSON-Datei direkt auf dem Gerät — unabhängig vom Browser-Speicher. Funktioniert auf iPhone, iPad und allen anderen Geräten.</p>
+      ${backupStatusHtml}
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px;font-size:13px;font-weight:600">
+        <input type="checkbox" ${_autoBackupOnSave?'checked':''} onchange="toggleAutoBackupOnSave()" style="width:18px;height:18px;accent-color:#10b981;cursor:pointer">
+        Automatisch nach jedem „Fahrt speichern"
+      </label>
+      <button class="btn btn-success" onclick="exportJSON()" ${count===0?'disabled':''}>Jetzt Backup herunterladen</button>
+    </div>`;
+
   const autoSaveCard = `
     <div class="ie-card" style="border-top:3px solid #0ea5e9;background:linear-gradient(135deg,#f0f9ff,#e0f2fe)">
       <div class="ie-icon">💾</div>
@@ -14966,6 +15013,7 @@ function renderImportExport() {
       <p>Datenbank sichern, wiederherstellen oder nach Excel exportieren.</p>
     </div>
     <div class="ie-grid">
+      ${autoBackupCard}
       ${autoSaveCard}
       <div class="ie-card blue">
         <div class="ie-icon">📤</div>
@@ -15041,6 +15089,8 @@ function exportJSON() {
   a.download = `seelotse-master_backup_${ts}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  _lastBackupTs = Date.now();
+  try { localStorage.setItem('seelotse_last_backup_ts', String(_lastBackupTs)); } catch(e) {}
   showToast('✓ Sicherungskopie erstellt.', 'success');
 }
 
@@ -15184,6 +15234,7 @@ function exportExcel() {
 ════════════════════════════════════════════ */
 (async () => {
   if (navigator.storage?.persist) navigator.storage.persist();
+  _loadAutoBackupSetting();
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle(), loadKalenderEvents()]);
   loadFreitagsKonto();
   loadVerkehrZones();
