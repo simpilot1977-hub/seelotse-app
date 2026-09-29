@@ -4285,6 +4285,81 @@ function toggleAutoBackupOnSave() {
   renderImportExport();
 }
 
+// ── OPFS Auto-Backup (funktioniert auf iOS/iPadOS ab 16.4) ───────────────────
+let _opfsSupported   = false;
+let _opfsLastSavedAt = null;  // ISO-String, für synchrone UI-Anzeige
+const OPFS_BACKUP_FILE = 'seelotse-backup.json';
+
+async function _opfsInit() {
+  try {
+    const root = await navigator.storage.getDirectory();
+    _opfsSupported = true;
+    // Vorhandenen Backup-Zeitstempel auslesen
+    try {
+      const fh   = await root.getFileHandle(OPFS_BACKUP_FILE);
+      const file = await fh.getFile();
+      const data = JSON.parse(await file.text());
+      _opfsLastSavedAt = data._savedAt || null;
+    } catch(e) {}
+  } catch(e) {}
+}
+
+async function _saveToOPFS() {
+  if (!_opfsSupported) return;
+  try {
+    const now   = new Date().toISOString();
+    const root  = await navigator.storage.getDirectory();
+    const fh    = await root.getFileHandle(OPFS_BACKUP_FILE, { create: true });
+    const wr    = await fh.createWritable();
+    await wr.write(JSON.stringify({
+      _version: 2, _savedAt: now,
+      fahrten, eppFahrten, tideDbs, kalenderEvents,
+    }));
+    await wr.close();
+    _opfsLastSavedAt = now;
+  } catch(e) { console.warn('[OPFS] save:', e); }
+}
+
+async function _opfsStatus() {
+  if (!_opfsSupported) return null;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh   = await root.getFileHandle(OPFS_BACKUP_FILE);
+    const file = await fh.getFile();
+    const data = JSON.parse(await file.text());
+    return { savedAt: data._savedAt || null, count: data.fahrten?.length ?? 0, sizeKb: Math.round(file.size / 1024) };
+  } catch(e) { return { savedAt: null, count: 0 }; }
+}
+
+async function _restoreFromOPFSIfBetter() {
+  if (!_opfsSupported) return false;
+  try {
+    const root = await navigator.storage.getDirectory();
+    const fh   = await root.getFileHandle(OPFS_BACKUP_FILE);
+    const file = await fh.getFile();
+    const data = JSON.parse(await file.text());
+    if (data._version >= 1 && Array.isArray(data.fahrten) && data.fahrten.length > fahrten.length) {
+      fahrten        = data.fahrten;
+      if (Array.isArray(data.eppFahrten))   eppFahrten   = data.eppFahrten;
+      if (data.tideDbs)                      tideDbs      = data.tideDbs;
+      if (Array.isArray(data.kalenderEvents)) kalenderEvents = data.kalenderEvents;
+      _idbPutAll('fahrten', fahrten).catch(() => {});
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(fahrten));
+      return true;
+    }
+  } catch(e) {}
+  return false;
+}
+
+async function shareBackupToFiles() {
+  const blob = _buildAutoSaveBlob();
+  const file = new File([blob], OPFS_BACKUP_FILE, { type: 'application/json' });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Seelotse Backup' }); return; } catch(e) { if (e.name === 'AbortError') return; }
+  }
+  exportJSON();
+}
+
 // ── Auto-Speicherung (File System Access API) ─────────────────────────────────
 let _autoSaveHandle = null;      // FileSystemFileHandle | null
 let _autoSavePending = false;    // debounce flag
@@ -4430,7 +4505,8 @@ function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(fahrten)); // sync-Fallback
   _idbPutAll('fahrten', fahrten).catch(() => {});             // primärer Store
   updateAgenturDatalist();
-  _autoSaveToFile();                                           // Auto-Speicherung in Datei
+  _autoSaveToFile();                                           // Auto-Speicherung in Datei (Desktop)
+  _saveToOPFS().catch(() => {});                              // OPFS-Backup (iOS/alle Geräte)
 }
 async function loadKalenderEvents() {
   try {
@@ -4444,6 +4520,7 @@ function saveKalenderEvents() {
   localStorage.setItem(KALENDER_EVENTS_KEY, JSON.stringify(kalenderEvents));
   _idbSet('settings', 'kalenderEvents', kalenderEvents).catch(() => {});
   _autoSaveToFile();
+  _saveToOPFS().catch(() => {});
 }
 
 // ── Freitage-Konto ────────────────────────────────────────────────────────────
@@ -4691,6 +4768,7 @@ function saveEPPData() {
   localStorage.setItem(EPP_STORAGE_KEY, JSON.stringify(eppFahrten));
   _idbPutAll('eppFahrten', eppFahrten).catch(() => {});
   _autoSaveToFile();
+  _saveToOPFS().catch(() => {});
 }
 
 // ── Gezeiten-Datenbank ──────────────────────────────────────────────────────
@@ -4716,6 +4794,7 @@ function saveTideDbs() {
   localStorage.setItem(TIDE_DB_STORAGE_KEY, JSON.stringify(tideDbs));
   _idbPutAll('tideDbs', Object.entries(tideDbs).map(([station, entries]) => ({ station, entries }))).catch(() => {});
   _autoSaveToFile();
+  _saveToOPFS().catch(() => {});
 }
 
 // BSH VB2 Tide-Zeiten sind in MEZ (UTC+1) – ohne Zeitzonenangabe gespeichert.
@@ -14956,28 +15035,40 @@ function renderImportExport() {
     try { autoSaveFileName = _autoSaveHandle.name || ''; } catch(e) {}
   }
 
-  const daysSinceBackup = _lastBackupTs
-    ? Math.floor((Date.now() - _lastBackupTs) / 86400000)
+  // OPFS-Status für UI
+  const opfsTs = _opfsLastSavedAt ? new Date(_opfsLastSavedAt) : null;
+  const opfsDaysAgo = opfsTs ? Math.floor((Date.now() - opfsTs.getTime()) / 86400000) : null;
+  const opfsTimeStr = opfsTs
+    ? opfsTs.toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
     : null;
-  const backupStatusHtml = daysSinceBackup === null
-    ? '<div style="color:#b45309;font-size:12px;margin-bottom:8px">⚠️ Noch kein lokales Backup erstellt</div>'
+  const opfsStatusHtml = !_opfsSupported
+    ? '<div style="color:#6b7280;font-size:12px;margin-bottom:8px">ℹ️ OPFS nicht verfügbar (iOS &lt; 16.4)</div>'
+    : opfsTs === null
+      ? '<div style="color:#b45309;font-size:12px;margin-bottom:8px">⚠️ Noch kein OPFS-Backup vorhanden — wird beim nächsten Speichern angelegt</div>'
+      : `<div style="color:#16a34a;font-size:12px;margin-bottom:8px">✓ OPFS-Backup vom ${opfsTimeStr}</div>`;
+
+  // Download-Backup-Status für UI
+  const daysSinceBackup = _lastBackupTs ? Math.floor((Date.now() - _lastBackupTs) / 86400000) : null;
+  const dlStatusHtml = daysSinceBackup === null
+    ? ''
     : daysSinceBackup === 0
-      ? '<div style="color:#16a34a;font-size:12px;margin-bottom:8px">✓ Backup heute erstellt</div>'
-      : daysSinceBackup < 7
-        ? `<div style="color:#ca8a04;font-size:12px;margin-bottom:8px">Letztes Backup vor ${daysSinceBackup} Tag${daysSinceBackup===1?'':'en'}</div>`
-        : `<div style="color:#dc2626;font-size:12px;margin-bottom:8px">⚠️ Letztes Backup vor ${daysSinceBackup} Tagen — bitte sichern!</div>`;
+      ? '<div style="color:#16a34a;font-size:11px;margin-bottom:6px">✓ Datei-Backup heute erstellt</div>'
+      : `<div style="color:#ca8a04;font-size:11px;margin-bottom:6px">Letztes Datei-Backup vor ${daysSinceBackup} Tag${daysSinceBackup===1?'':'en'}</div>`;
+
+  const iosShareAvail = !!(navigator.share && typeof navigator.canShare === 'function');
 
   const autoBackupCard = `
     <div class="ie-card" style="border-top:3px solid #10b981;background:linear-gradient(135deg,#f0fdf4,#dcfce7)">
       <div class="ie-icon">🛡️</div>
-      <h3>Lokales Backup (iOS / alle Geräte)</h3>
-      <p>Speichert die komplette Datenbank als JSON-Datei direkt auf dem Gerät — unabhängig vom Browser-Speicher. Funktioniert auf iPhone, iPad und allen anderen Geräten.</p>
-      ${backupStatusHtml}
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin-bottom:12px;font-size:13px;font-weight:600">
-        <input type="checkbox" ${_autoBackupOnSave?'checked':''} onchange="toggleAutoBackupOnSave()" style="width:18px;height:18px;accent-color:#10b981;cursor:pointer">
-        Automatisch nach jedem „Fahrt speichern"
-      </label>
-      <button class="btn btn-success" onclick="exportJSON()" ${count===0?'disabled':''}>Jetzt Backup herunterladen</button>
+      <h3>Auto-Backup (iPad / alle Geräte)</h3>
+      <p>Alle Daten werden automatisch bei jeder Änderung in einem privaten Gerätespeicher (OPFS) gesichert — zusätzlich zu IndexedDB. Dieser Speicher überlebt das Löschen von Browser-Daten und wird beim nächsten App-Start automatisch wiederhergestellt wenn der Browser-Speicher leer ist.</p>
+      ${opfsStatusHtml}
+      <p style="font-size:12px;color:#374151;margin-bottom:10px;font-weight:500">Zusätzlich: Backup-Datei in Files-App / iCloud speichern:</p>
+      ${dlStatusHtml}
+      ${iosShareAvail
+        ? `<button class="btn btn-success" onclick="shareBackupToFiles()" ${count===0?'disabled':''} style="margin-bottom:6px">📤 In Files-App / iCloud speichern …</button>`
+        : `<button class="btn btn-success" onclick="exportJSON()" ${count===0?'disabled':''} style="margin-bottom:6px">⬇️ Backup-Datei herunterladen</button>`
+      }
     </div>`;
 
   const autoSaveCard = `
@@ -14994,7 +15085,7 @@ function renderImportExport() {
         <button class="btn btn-warn" onclick="removeAutoSave()">Deaktivieren</button>
       ` : `
         <p>Wähle einmalig einen Speicherort — danach sichert die App alle Daten (Fahrten, EPP, Gezeitendaten) automatisch nach jeder Eingabe.</p>
-        ${!fsaSupported ? '<div class="ie-warn-text">⚠️ Nicht verfügbar auf iOS/iPadOS (auch Chrome auf iPad) — bitte lokales Backup oben verwenden</div>' : ''}
+        ${!fsaSupported ? '<div class="ie-warn-text">⚠️ Nicht verfügbar auf iOS/iPadOS — alle iOS-Browser (auch Chrome) nutzen WebKit ohne File System API. Das Auto-Backup oben (OPFS) übernimmt diese Funktion automatisch.</div>' : ''}
         <button class="btn btn-primary" onclick="setupAutoSave()" style="background:#0ea5e9" ${!fsaSupported?'disabled':''}>Speicherort auswählen …</button>
       `}
     </div>
@@ -15235,7 +15326,13 @@ function exportExcel() {
 (async () => {
   if (navigator.storage?.persist) navigator.storage.persist();
   _loadAutoBackupSetting();
+  await _opfsInit();
   await Promise.all([loadData(), loadEPPData(), loadTideDbs(), _loadAutoSaveHandle(), loadKalenderEvents()]);
+  // Wenn Browser-Speicher leer → aus OPFS-Backup wiederherstellen
+  if (fahrten.length === 0) {
+    const restored = await _restoreFromOPFSIfBetter();
+    if (restored) showToast(`✓ ${fahrten.length} Fahrten aus OPFS-Backup wiederhergestellt.`, 'success');
+  }
   loadFreitagsKonto();
   loadVerkehrZones();
   updateAgenturDatalist();
